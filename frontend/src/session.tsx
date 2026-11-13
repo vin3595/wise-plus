@@ -25,10 +25,10 @@ const Ctx = createContext<Session | null>(null);
 /** Applies the restaurant's colour, title, icon and PWA manifest so the app looks like theirs. */
 function applyBranding(b: PublicBranding | null) {
   const root = document.documentElement;
-  root.style.setProperty("--brand", b?.primary_color || "#2563eb");
-  root.dataset.theme = b?.ui_theme || "steel";
+  root.style.setProperty("--brand", b?.primary_color || "#138996");
+  root.dataset.theme = b?.ui_theme || "ease";
   document.title = b?.app_name || "Wise";
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", b?.primary_color || "#2563eb");
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", b?.primary_color || "#138996");
   const manifest = document.getElementById("app-manifest");
   manifest?.setAttribute("href", b ? `/api/public/tenants/${b.login_id}/manifest.webmanifest` : "/manifest.webmanifest");
   const icon = b?.logo_url || "/icon.svg";

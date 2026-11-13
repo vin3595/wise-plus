@@ -128,7 +128,7 @@ interface TestQr { order_id: string; upi_string: string; amount_paise: number; e
 interface TestState { state: "paid" | "pending" | "failed" | "unknown"; message: string | null; reference: string | null; amount_paise: number | null }
 
 /** A real ₹1 Paytm QR, not linked to any bill: proves the MID, key, server and status check work. */
-function PaytmCheck({ saved, live }: { saved: boolean; live: boolean }) {
+function PaytmCheck({ saved }: { saved: boolean; live: boolean }) {
   const [qr, setQr] = useState<TestQr | null>(null);
   const [st, setSt] = useState<TestState | null>(null);
   const { busy, error, run } = useAction();

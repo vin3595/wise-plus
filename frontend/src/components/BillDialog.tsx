@@ -25,7 +25,7 @@ export default function BillDialog({ order, outlet, onClose, onBilled, upiAuto, 
   const [discReason, setDiscReason] = useState("");
   const [phone, setPhone] = useState(order.customer_phone || "");
   const [name, setName] = useState(order.customer_name || "");
-  const [declined, setDeclined] = useState(false);
+  const [declined] = useState(false);
   const [gstin, setGstin] = useState("");
   const [showGst, setShowGst] = useState(false);
   const [pays, setPays] = useState<PayRow[]>([{ mode: "cash", amount: "", reference: "" }]);

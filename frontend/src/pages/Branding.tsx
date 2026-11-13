@@ -3,16 +3,18 @@ import { api } from "../api";
 import { useSession } from "../session";
 import type { Brand, Tenant, UiTheme } from "../types";
 import { THEMES } from "../themes";
-import { Button, Card, ErrorText, Field, Input, useAction, Tab, Tabs } from "../ui";
+import { Button, Card, ErrorText, Field, Input, useAction, Tab, Tabs, Toggle } from "../ui";
+import { hapticsOn, setHaptics } from "../haptics";
 
 export default function Branding() {
   const { me, refresh, chooseRestaurant } = useSession();
   const t = me?.tenant;
-  const [form, setForm] = useState({ name: t?.name || "", app_name: t?.app_name || "", primary_color: t?.primary_color || "#2563eb", gstin: t?.gstin || "" });
+  const [form, setForm] = useState({ name: t?.name || "", app_name: t?.app_name || "", primary_color: t?.primary_color || "#138996", gstin: t?.gstin || "" });
   const save = useAction();
   const upload = useAction();
   const look = useAction();
   const [saved, setSaved] = useState(false);
+  const [haptic, setHaptic] = useState(hapticsOn);
 
   async function afterChange(updated: Tenant) {
     await refresh();
@@ -46,7 +48,7 @@ export default function Branding() {
         <p className="muted small">For the staff screens: counter, kitchen, setup. Your logo and brand colour stay in every look. Customer screens and printed bills don't change.</p>
         <div className="theme-picks">
           {THEMES.map((th) => (
-            <button key={th.id} type="button" className={`theme-pick ${(t?.ui_theme || "steel") === th.id ? "on" : ""}`} aria-pressed={(t?.ui_theme || "steel") === th.id}
+            <button key={th.id} type="button" className={`theme-pick ${(t?.ui_theme || "ease") === th.id ? "on" : ""}`} aria-pressed={(t?.ui_theme || "ease") === th.id}
               disabled={look.busy} onClick={() => look.run(async () => afterChange(await api<Tenant>("/tenant/branding", { method: "PATCH", body: { ui_theme: th.id as UiTheme } })))}>
               <img src={th.preview} alt="" />
               <strong>{th.name}</strong>
@@ -55,6 +57,7 @@ export default function Branding() {
           ))}
         </div>
         <ErrorText error={look.error} />
+        <Toggle checked={haptic} onChange={(v) => { setHaptic(v); setHaptics(v); }} label="Vibrate on tap (this phone or tablet only)" />
       </Card>
       </Tab>
       <Tab label="Name and colour"><Card title="Name and colour">

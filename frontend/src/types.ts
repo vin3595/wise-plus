@@ -79,7 +79,7 @@ export interface Outlet {
   stock_check_frequency_days: number;
   is_active: boolean;
   display_key: string;
-  kitchen_key: string;
+  kitchen_key?: string;
   upi_vpa: string | null;
   upi_payee_name: string | null;
   qr_ordering: boolean;
@@ -89,7 +89,6 @@ export interface Outlet {
   print_key?: string;
   table_labels: string[] | null;
   qr_key: string;
-  kitchen_key?: string;
   is_training?: boolean;    // practice copy: nothing there is real
   training_of?: string | null;
 }
@@ -236,7 +235,7 @@ export interface OutletMenuItem {
 }
 
 export type OrderType = "dine_in" | "takeaway" | "delivery";
-export type KotStatus = "new" | "preparing" | "ready" | "served";
+export type KotStatus = "new" | "preparing" | "ready" | "served" | "cancelled";
 export type OrderStatus = "pending" | "new" | "preparing" | "ready" | "completed" | "cancelled";
 
 export interface KotLine {
@@ -461,7 +460,7 @@ export interface SelfOrderStatus {
   upi_link: string | null;
 }
 
-export type UiTheme = "steel" | "board" | "irani" | "swiss" | "shake";
+export type UiTheme = "ease" | "steel" | "board" | "irani" | "swiss" | "shake";
 
 /** What cash taken out of / put into a drawer was for. */
 export type CashPurpose = "expense" | "drawing" | "supplier" | "topup" | "change" | "other";

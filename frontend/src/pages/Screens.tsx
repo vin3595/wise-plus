@@ -70,7 +70,7 @@ export default function Screens() {
     { kind: "kitchen", tab: "Kitchen", title: `Kitchen display${areaName ? `: ${areaName}` : ""}`, what: "Signs itself in. No chef PIN, no daily login. Sound on by itself.", url: kitchenUrl, show: true },
     { kind: "display", tab: "Order status TV", title: "Order status TV", what: "Token numbers: being prepared / ready to collect. Chime on by itself.", url: `${origin}/display/${o.display_key}?kiosk=1`, show: true },
     { kind: "kiosk", tab: "Kiosk", title: "Self-order kiosk", what: "Customers order and pay on the touch screen. Resets itself after 90 seconds idle.", url: `${origin}/kiosk/${o.qr_key}?kiosk=1`, show: o.kiosk_enabled },
-    { kind: "print", tab: "Print station", title: "KOT print station", what: "The PC with the USB/LAN kitchen printer. Prints by itself.", url: `${origin}/print/${o.print_key}?kiosk=1`, show: o.print_kots },
+    { kind: "print", tab: "Print station", title: "KOT print station", what: "The PC with the USB/LAN kitchen printer. Prints by itself.", url: `${origin}/print/${o.print_key}?kiosk=1`, show: !!o.print_kots },
   ];
 
   return (

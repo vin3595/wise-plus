@@ -64,7 +64,7 @@ export default function ShiftBar({ outletId, onChange }: { outletId: string; onC
   if (closed) {
     return (
       <div className="shift-bar closed">
-        <span>Shift closed. Expected cash {formatPaise(closed.expected_cash_paise)}, counted {formatPaise(closed.counted_cash_paise ?? 0)},{" "}
+        <span>Shift closed. Expected cash {formatPaise(closed.expected_cash_paise ?? 0)}, counted {formatPaise(closed.counted_cash_paise ?? 0)},{" "}
           <strong className={closed.variance_paise ? "error" : "ok"}>difference {formatPaise(closed.variance_paise ?? 0)}</strong>.
           {closed.manager_alerted && " Your manager has been told about the difference."}
           {" "}Sales {formatPaise(closed.sales_paise)} in {closed.bills} bills.</span>

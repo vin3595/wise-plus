@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import InstallApp from "./components/InstallApp";
-import { Link, Navigate, Route, Routes } from "react-router-dom";
+import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { BarChart3, ChefHat, ChevronDown, ClipboardList, LayoutDashboard, LogOut, Menu, Package, PanelLeftClose, PanelLeftOpen, Receipt,
+  Rocket, Settings as SettingsIcon, SlidersHorizontal, Store, UserCog, Users as UsersIcon, UtensilsCrossed, Wallet, X, type LucideIcon } from "lucide-react";
 import { useSession } from "./session";
 import Setup from "./pages/Setup";
 import Login from "./pages/Login";
@@ -36,8 +38,15 @@ import Cash from "./pages/Cash";
 import Reports from "./pages/Reports";
 import GettingStarted from "./pages/GettingStarted";
 
+const ICONS: Record<string, LucideIcon> = {
+  "Home": LayoutDashboard, "Orders": ClipboardList, "Kitchen display": ChefHat, "Bills": Receipt,
+  "Cash": Wallet, "Reports": BarChart3, "Stock": Package, "Customers": UsersIcon, "Getting started": Rocket,
+  "Menu": UtensilsCrossed, "Outlets and screens": Store, "Staff": UserCog, "Settings": SettingsIcon,
+};
+
 function Shell({ children }: { children: ReactNode }) {
   const { branding, me, can, signOut } = useSession();
+  const loc = useLocation();
   // One menu entry per job. An entry with several pages opens on the first one you may use, and the
   // others show as tabs along the top of the page, so the menu stays short.
   type Page = [string, string, boolean];
@@ -60,7 +69,7 @@ function Shell({ children }: { children: ReactNode }) {
     { label: "Settings", section: "Setup", pages: [["/payments", "Payments", can("tenant.settings")], ["/sms", "SMS", can("tenant.settings")],
       ["/branding", "Branding", can("tenant.settings")]] },
   ];
-  const path = location.pathname;
+  const path = loc.pathname;
   const onPage = (to: string) => to === "/" ? path === "/" : path === to || path.startsWith(to + "/");
   const visible = entries.map((e) => ({ ...e, pages: e.pages.filter(([, , ok]) => ok) })).filter((e) => e.pages.length > 0);
   const daily = visible.filter((e) => e.section !== "Setup");
@@ -68,67 +77,114 @@ function Shell({ children }: { children: ReactNode }) {
   const current = visible.find((e) => e.pages.some(([to]) => onPage(to)));
   const onSetup = current?.section === "Setup";
   const [showSetup, setShowSetup] = useState(() => { try { return localStorage.getItem("wise.nav_setup") === "1"; } catch { return false; } });
+  const setupOpen = showSetup || onSetup;
+  // The billing counter and the kitchen screen need the whole width: there the side menu shrinks to icons
+  // unless the person pinned it open.
+  const [pinned, setPinned] = useState<null | boolean>(() => { try { const v = localStorage.getItem("wise.nav_wide"); return v === null ? null : v === "1"; } catch { return null; } });
+  const wideScreen = path === "/orders" || path === "/kds";
+  const narrow = pinned === null ? wideScreen : !pinned;
   // Phones: the links live in a drawer opened from the top bar; it closes when a page opens.
   const [drawer, setDrawer] = useState(false);
+  useEffect(() => { setDrawer(false); }, [path]);
+  useEffect(() => {
+    if (!drawer) return;
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setDrawer(false); };
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [drawer]);
   // Keep the open tab in view when the tab row is wider than a phone.
   useEffect(() => { try { document.querySelector(".page-tabs a.on")?.scrollIntoView({ block: "nearest", inline: "nearest" }); } catch { /* old browsers */ } }, [path]);
-  const entryLink = (e: Entry) => (
-    <Link key={e.label} to={e.pages[0][0]} className={current?.label === e.label ? "active" : ""}>{e.label}</Link>
-  );
+  const entryLink = (e: Entry) => {
+    const Icon = ICONS[e.label] || LayoutDashboard;
+    const on = current?.label === e.label;
+    return (
+      <Link key={e.label} to={e.pages[0][0]} className={`side-link ${on ? "active" : ""}`} aria-current={on ? "page" : undefined} title={e.label}>
+        <Icon size={18} strokeWidth={1.75} aria-hidden /><span className="side-label">{e.label}</span>
+      </Link>
+    );
+  };
   const sections = (list: Entry[]) => {
     const out: [string, Entry[]][] = [];
     for (const e of list) { const g = out.find(([n]) => n === e.section); if (g) g[1].push(e); else out.push([e.section, [e]]); }
     return out;
   };
+  const appName = branding?.app_name || "Wise";
+  const logo = (size: "sm" | "md") => branding?.logo_url
+    ? <img className={`brand-logo ${size}`} src={branding.logo_url} alt="" />
+    : <span className={`logo-fallback ${size}`}>{appName[0]}</span>;
+  const who = (
+    <div className="side-who">
+      <span className="avatar" aria-hidden>{(me?.user.name || "U")[0].toUpperCase()}</span>
+      <span className="side-label who-text"><span className="who-name">{me?.user.name}</span><span className="who-role">{me?.user.role}</span></span>
+      <button className="icon-btn" onClick={signOut} aria-label="Sign out" title="Sign out"><LogOut size={16} aria-hidden /></button>
+    </div>
+  );
+  const groups = (list: Entry[], heads: boolean) => sections(list).map(([name, l]) => (
+    <section key={name} className="side-group" aria-label={name}>
+      {heads && <p className="side-head side-label">{name}</p>}
+      {l.map(entryLink)}
+    </section>
+  ));
   return (
-    <div className={`shell ${me?.training ? "is-training" : ""}`}>
+    <div className={`shell has-side ${narrow ? "side-narrow" : ""} ${me?.training ? "is-training" : ""}`}>
       {me?.training && <div className="training-bar" role="status">Training: practice only. Nothing here is a real bill, payment, stock or sale.</div>}
-      <header className="topbar">
+      <div className="shell-body">
         {visible.length > 1 && (
-          <button className="menu-btn" aria-expanded={drawer} aria-controls="app-drawer" onClick={() => setDrawer(!drawer)}>
-            <span aria-hidden>{drawer ? "✕" : "☰"}</span><span className="sr-only">{drawer ? "Close menu" : "Open menu"}</span>
-          </button>
+          <aside className="side" aria-label="Menu">
+            <div className="side-brand">{logo("md")}<span className="side-label"><strong>{appName}</strong></span></div>
+            <nav className="side-nav">
+              {groups(daily, visible.length > 4)}
+              {setupEntries.length > 0 && (
+                <section className="side-group" aria-label="Setup">
+                  <button className={`side-link side-fold ${setupOpen ? "open" : ""}`} aria-expanded={setupOpen} title="Setup"
+                    onClick={() => { const v = !setupOpen; setShowSetup(v); try { localStorage.setItem("wise.nav_setup", v ? "1" : "0"); } catch { /* */ } }}>
+                    <SlidersHorizontal size={18} strokeWidth={1.75} aria-hidden /><span className="side-label">Setup</span>
+                    <ChevronDown size={15} className="side-label fold-chev" aria-hidden />
+                  </button>
+                  {setupOpen && <div className="side-sub">{setupEntries.map(entryLink)}</div>}
+                </section>
+              )}
+            </nav>
+            <button className="side-pin" onClick={() => { const v = narrow; setPinned(v); try { localStorage.setItem("wise.nav_wide", v ? "1" : "0"); } catch { /* */ } }}
+              aria-label={narrow ? "Widen the menu" : "Shrink the menu to icons"} title={narrow ? "Widen the menu" : "Shrink the menu to icons"}>
+              {narrow ? <PanelLeftOpen size={17} aria-hidden /> : <PanelLeftClose size={17} aria-hidden />}
+            </button>
+            {who}
+          </aside>
         )}
-        <div className="brand-mark">
-          {branding?.logo_url ? <img src={branding.logo_url} alt="" /> : <span className="logo-fallback">{(branding?.app_name || "W")[0]}</span>}
-          <strong>{branding?.app_name || "Wise"}</strong>
+        <div className="shell-col">
+          <header className="topbar">
+            {visible.length > 1 && (
+              <button className="menu-btn" aria-expanded={drawer} aria-controls="app-drawer" onClick={() => setDrawer(!drawer)}>
+                <Menu size={21} aria-hidden /><span className="sr-only">Open menu</span>
+              </button>
+            )}
+            <div className="brand-mark">{logo("sm")}<strong>{appName}</strong></div>
+            <div className="top-title">{current?.label}</div>
+            <div className="topbar-right">
+              <InstallApp />
+              {visible.length <= 1 && <><span className="muted who">{me?.user.name} · {me?.user.role}</span>
+                <button className="link" onClick={signOut}>Sign out</button></>}
+            </div>
+          </header>
+          {current && current.pages.length > 1 && (
+            <nav className="page-tabs" aria-label={current.label}>
+              {current.pages.map(([to, label]) => <Link key={to} to={to} className={onPage(to) ? "on" : ""} aria-current={onPage(to) ? "page" : undefined}>{label}</Link>)}
+            </nav>
+          )}
+          <main className="main" key={current?.label || path}>{children}</main>
+          {branding?.show_powered_by !== false && <footer className="powered">Powered by Wise</footer>}
         </div>
-        <div className="topbar-right">
-          <InstallApp />
-          <span className="muted who">{me?.user.name} · {me?.user.role}</span>
-          <button className="link" onClick={signOut}>Sign out</button>
+      </div>
+      <div className={`drawer-back ${drawer ? "open" : ""}`} onClick={() => setDrawer(false)} aria-hidden={!drawer} />
+      <nav id="app-drawer" className={`drawer ${drawer ? "open" : ""}`} aria-label="Menu" aria-hidden={!drawer} inert={!drawer}>
+        <div className="drawer-top">
+          <div className="side-brand">{logo("md")}<strong>{appName}</strong></div>
+          <button className="icon-btn" onClick={() => setDrawer(false)} aria-label="Close menu"><X size={19} aria-hidden /></button>
         </div>
-      </header>
-      {drawer && (
-        <div className="drawer-back" onClick={() => setDrawer(false)} onKeyDown={(e) => { if (e.key === "Escape") setDrawer(false); }}>
-          <nav id="app-drawer" className="drawer" aria-label="Menu"
-            onClick={(e) => { e.stopPropagation(); if ((e.target as HTMLElement).closest("a")) setDrawer(false); }}>
-            <p className="drawer-who">{me?.user.name} · {me?.user.role}</p>
-            {sections(visible).map(([name, list]) => (
-              <section key={name} className="drawer-group" aria-label={name}>
-                {visible.length > 4 && <p className="drawer-head">{name}</p>}
-                {list.map(entryLink)}
-              </section>
-            ))}
-            <button className="link drawer-out" onClick={signOut}>Sign out</button>
-          </nav>
-        </div>
-      )}
-      <nav className="nav">
-        {daily.map(entryLink)}
-        {setupEntries.length > 0 && <button className={`nav-more ${showSetup || onSetup ? "open" : ""}`} aria-expanded={showSetup || onSetup}
-          onClick={() => { const v = !(showSetup || onSetup); setShowSetup(v); try { localStorage.setItem("wise.nav_setup", v ? "1" : "0"); } catch { /* */ } }}>Setup {showSetup || onSetup ? "▴" : "▾"}</button>}
+        <div className="drawer-links">{groups(visible, visible.length > 4)}</div>
+        {who}
       </nav>
-      {(showSetup || onSetup) && setupEntries.length > 0 && (
-        <nav className="nav subnav" aria-label="Setup">{setupEntries.map(entryLink)}</nav>
-      )}
-      {current && current.pages.length > 1 && (
-        <nav className="page-tabs" aria-label={current.label}>
-          {current.pages.map(([to, label]) => <Link key={to} to={to} className={onPage(to) ? "on" : ""} aria-current={onPage(to) ? "page" : undefined}>{label}</Link>)}
-        </nav>
-      )}
-      <main className="main">{children}</main>
-      {branding?.show_powered_by !== false && <footer className="powered">Powered by Wise</footer>}
     </div>
   );
 }

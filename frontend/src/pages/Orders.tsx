@@ -308,7 +308,7 @@ export default function Orders() {
   const [ads, setAds] = useState<ScreenState["ads"]>([]);
   useEffect(() => { if (!cart.length || declined || cleanMobile(phone)) setAsking(false); }, [cart.length, declined, phone]);
   const screenState: ScreenState = {
-    brand: { app_name: branding?.app_name || "Welcome", logo_url: branding?.logo_url || null, primary_color: branding?.primary_color || "#2563eb", outlet: outlet?.name || "" },
+    brand: { app_name: branding?.app_name || "Welcome", logo_url: branding?.logo_url || null, primary_color: branding?.primary_color || "#138996", outlet: outlet?.name || "" },
     // While a UPI QR is out the cart is already cleared: show the bill it is for.
     lines: cart.length || !upiReq?.slip ? cart.map((l) => ({ name: l.item.name + (short(l.variant.name) ? ` (${short(l.variant.name)})` : ""), qty: l.qty, amount_paise: unitPrice(l) * l.qty }))
       : upiReq.slip.lines.map((l) => ({ name: l.item_name + (short(l.variant_name) ? ` (${short(l.variant_name)})` : ""), qty: l.qty, amount_paise: l.gross_paise })),

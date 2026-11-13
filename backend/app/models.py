@@ -48,9 +48,9 @@ class Tenant(Base, Timestamps):
     # White-label branding
     app_name: Mapped[str | None] = mapped_column(String(60))
     logo_url: Mapped[str | None] = mapped_column(String(500))
-    primary_color: Mapped[str] = mapped_column(String(7), default="#2563eb", nullable=False)
+    primary_color: Mapped[str] = mapped_column(String(7), default="#138996", nullable=False)
     # Look of the staff app: steel | board | irani | swiss | shake (Setup > Branding).
-    ui_theme: Mapped[str] = mapped_column(String(12), default="steel", server_default="steel", nullable=False)
+    ui_theme: Mapped[str] = mapped_column(String(12), default="ease", server_default="ease", nullable=False)
     custom_domain: Mapped[str | None] = mapped_column(String(253), unique=True)
     show_powered_by: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     # Subscription
