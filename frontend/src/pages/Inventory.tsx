@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, newId } from "../api";
-import { formatPaise, inputToPaise } from "../money";
+import { formatPaise, inputToPaise, paiseToInput } from "../money";
+import { ScanBill, type ScanDraft } from "../components/ScanBill";
 import { useSession } from "../session";
 import type { Outlet, OutletMenu } from "../types";
 import { Button, Card, ErrorText, Field, Input, Select, useAction } from "../ui";
@@ -210,7 +211,7 @@ function CountTab({ outletId, items, costs, onSaved }: { outletId: string; items
 const STD: Record<Unit, { name: string; factor: number }[]> = { g: [{ name: "kg", factor: 1000 }], ml: [{ name: "l", factor: 1000 }], pc: [{ name: "dozen", factor: 12 }] };
 const unitsOf = (i: StockItem) => [{ name: i.unit, factor: 1 }, ...STD[i.unit], ...(i.purchase_units || [])];
 
-interface PLine { key: string; item: StockItem; qty: string; unit: string; amount: string; gst: string }
+interface PLine { key: string; item: StockItem | null; qty: string; unit: string; amount: string; gst: string; billName?: string; check?: string | null }
 
 function PurchasesTab({ outletId, items, suppliers, onChange }: { outletId: string; items: StockItem[]; suppliers: Supplier[]; onChange: () => void }) {
   const [list, setList] = useState<PurchaseRow[]>([]);
@@ -230,9 +231,36 @@ function PurchasesTab({ outletId, items, suppliers, onChange }: { outletId: stri
     setSaved(null);
   };
   const set = (k: string, patch: Partial<PLine>) => setLines((l) => l.map((x) => (x.key === k ? { ...x, ...patch } : x)));
+  const [scan, setScan] = useState<ScanDraft | null>(null);
+  const fromScan = (d: ScanDraft) => {
+    setScan(d); setSaved(null);
+    if (d.supplier) { setSupplierId(d.supplier.id); setNewSupplier(""); }
+    else if (d.vendor) { setSupplierId("_new"); setNewSupplier(d.vendor.slice(0, 120)); }
+    setInvoice(d.invoice_no || "");
+    if (d.invoice_date && /^\d{4}-\d{2}-\d{2}$/.test(d.invoice_date)) setDate(d.invoice_date);
+    setLines(d.lines.map((l) => {
+      const item = items.find((i) => i.id === l.stock_item_id) || null;
+      return { key: newId(), item, qty: l.qty_m ? String(l.qty_m / 1000) : "", unit: item ? (l.unit || item.unit) : "",
+        amount: l.amount_paise ? paiseToInput(l.amount_paise) : "", gst: String(l.gst_bp / 100), billName: l.bill_name, check: l.check };
+    }));
+  };
+  const pickFor = async (k: string, id: string) => {
+    let i = items.find((x) => x.id === id) || null;
+    if (id === "_new") {
+      // A line that isn't a stock item yet: make one from the name on the bill, counted in what the bill sells it by.
+      const ln = lines.find((x) => x.key === k);
+      const name = (ln?.billName || "").replace(/\s+/g, " ").trim().slice(0, 120);
+      const word = name.toLowerCase();
+      const unit: Unit = /\b(kg|kgs|gm|gms|grm|g)\b/.test(word) ? "g" : /\b(ltr|ltrs|lt|l|ml|litre|liter)\b/.test(word) ? "ml" : "pc";
+      const made = await run(() => api<StockItem>("/inventory/items", { body: { name, kind: "raw", unit } }));
+      if (!made) return;
+      i = made; onChange();
+    }
+    setLines((ls) => ls.map((x) => (x.key === k ? { ...x, item: i, unit: i ? (unitsOf(i).some((u) => u.name === x.unit) ? x.unit : unitsOf(i).reduce((a, b) => (b.factor > a.factor ? b : a)).name) : "" } : x)));
+  };
   const amount = lines.reduce((s, l) => s + (inputToPaise(l.amount || "0") ?? 0), 0);
   const tax = lines.reduce((s, l) => s + Math.floor(((inputToPaise(l.amount || "0") ?? 0) * Number(l.gst || 0) * 100 + 5000) / 10000), 0);
-  const invalid = lines.some((l) => parseQty(l.qty) === null || !parseQty(l.qty) || inputToPaise(l.amount || "0") === null);
+  const invalid = lines.some((l) => !l.item || parseQty(l.qty) === null || !parseQty(l.qty) || inputToPaise(l.amount || "0") === null);
 
   const save = () => run(async () => {
     let sid = supplierId || null;
@@ -241,14 +269,27 @@ function PurchasesTab({ outletId, items, suppliers, onChange }: { outletId: stri
       sid = (await api<Supplier>("/inventory/suppliers", { body: { name: newSupplier.trim() } })).id;
     }
     await api("/inventory/purchases", { body: { id: newId(), outlet_id: outletId, supplier_id: sid, invoice_no: invoice || null, invoice_date: date,
-      lines: lines.map((l) => ({ stock_item_id: l.item.id, qty_m: parseQty(l.qty)!, unit: l.unit, amount_paise: inputToPaise(l.amount || "0") ?? 0, gst_bp: Math.round(Number(l.gst || 0) * 100) })) } });
+      lines: lines.map((l) => ({ stock_item_id: l.item!.id, qty_m: parseQty(l.qty)!, unit: l.unit, amount_paise: inputToPaise(l.amount || "0") ?? 0, gst_bp: Math.round(Number(l.gst || 0) * 100), bill_name: l.billName || null })) } });
     setSaved(`Saved. Stock added for ${lines.length} item${lines.length === 1 ? "" : "s"}.`);
-    setLines([]); setInvoice(""); setNewSupplier(""); onChange(); load();
+    setLines([]); setInvoice(""); setNewSupplier(""); setScan(null); onChange(); load();
   });
 
   return (
     <>
-      <Card title="Enter a supplier's bill">
+      <Card title="Enter a supplier's bill" actions={<ScanBill outletId={outletId} onDraft={fromScan} />}>
+        {scan && (
+          <div className="scan-result">
+            {scan.thumbnail && <img src={scan.thumbnail} alt="The scanned bill" className="scan-thumb" />}
+            <div className="scan-notes">
+              <p><strong>Read from the photo.</strong> Check each line, then save. {scan.lines.filter((l) => !l.stock_item_id).length > 0 && <>Pick a stock item for the lines marked <em>pick one</em>; it's remembered for this supplier's next bill.</>}</p>
+              {scan.duplicate && <p className="banner warn">This bill looks entered already: {scan.duplicate.invoice_date}, {formatPaise(scan.duplicate.total_paise)}.</p>}
+              {scan.total_paise > 0 && Math.abs(scan.total_paise - (amount + tax)) > 100 && lines.every((l) => l.item) &&
+                <p className="banner warn">Bill total {formatPaise(scan.total_paise)}, lines add up to {formatPaise(amount + tax)}. Check quantities and GST.</p>}
+              {(scan.needs_review || scan.low_confidence) && <p className="muted small">The reader wasn't fully sure about this bill. Lines with a ⚠ need a look.</p>}
+              <button className="link" onClick={() => { setScan(null); setLines([]); setInvoice(""); }}>Clear and start again</button>
+            </div>
+          </div>
+        )}
         <div className="grid2">
           <Field label="Supplier">
             <Select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
@@ -268,10 +309,16 @@ function PurchasesTab({ outletId, items, suppliers, onChange }: { outletId: stri
             <tbody>
               {lines.map((l) => (
                 <tr key={l.key}>
-                  <td>{l.item.name}</td>
-                  <td><div className="row nowrap"><input className="input num" inputMode="decimal" value={l.qty} onChange={(e) => set(l.key, { qty: e.target.value })} aria-label={`Quantity of ${l.item.name}`} />
-                    <select className="input" value={l.unit} onChange={(e) => set(l.key, { unit: e.target.value })} aria-label="Unit">{unitsOf(l.item).map((u) => <option key={u.name} value={u.name}>{u.name}</option>)}</select></div></td>
-                  <td><input className="input num" inputMode="decimal" placeholder="₹" value={l.amount} onChange={(e) => set(l.key, { amount: e.target.value })} aria-label={`Amount for ${l.item.name}`} /></td>
+                  <td>{l.item ? l.item.name : (
+                    <select className="input pick-one" value="" onChange={(e) => pickFor(l.key, e.target.value)} aria-label={`Stock item for ${l.billName}`}>
+                      <option value="">Pick one…</option>
+                      <option value="_new">+ New stock item from this line</option>
+                      {items.filter((i) => i.is_active).map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+                    </select>)}
+                    {l.billName && <div className="small muted">{l.check ? "⚠ " : ""}On bill: {l.billName}{l.item && <> · <button className="link small" onClick={() => pickFor(l.key, "")}>change</button></>}</div>}</td>
+                  <td><div className="row nowrap"><input className="input num" inputMode="decimal" value={l.qty} onChange={(e) => set(l.key, { qty: e.target.value })} aria-label={`Quantity of ${l.item?.name || l.billName}`} />
+                    {l.item && <select className="input" value={l.unit} onChange={(e) => set(l.key, { unit: e.target.value })} aria-label="Unit">{unitsOf(l.item).map((u) => <option key={u.name} value={u.name}>{u.name}</option>)}</select>}</div></td>
+                  <td><input className="input num" inputMode="decimal" placeholder="₹" value={l.amount} onChange={(e) => set(l.key, { amount: e.target.value })} aria-label={`Amount for ${l.item?.name || l.billName}`} /></td>
                   <td><select className="input" value={l.gst} onChange={(e) => set(l.key, { gst: e.target.value })} aria-label="GST rate">{["0", "5", "12", "18", "28"].map((g) => <option key={g} value={g}>{g}%</option>)}</select></td>
                   <td><button className="link danger" onClick={() => setLines((x) => x.filter((y) => y.key !== l.key))}>Remove</button></td>
                 </tr>

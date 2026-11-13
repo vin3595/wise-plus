@@ -80,6 +80,7 @@ class PurchaseLineIn(BaseModel):
     unit: str = Field(max_length=30)         # base unit, a standard unit or one of the item's purchase units
     amount_paise: int = Field(ge=0)          # line amount before GST
     gst_bp: int = Field(default=0, ge=0, le=2800)
+    bill_name: str | None = Field(default=None, max_length=120)   # the line as printed, when the bill was scanned
 
 
 class PurchaseIn(BaseModel):
@@ -319,7 +320,8 @@ def create_purchase(body: PurchaseIn, auth: Auth = Depends(require(Perm.inventor
         amount += ln.amount_paise
         tax += t
         lines.append({"stock_item_id": str(it.id), "name": it.name, "qty_m": ln.qty_m, "unit": ln.unit, "factor": factor,
-                      "base_m": base_m, "base_unit": it.unit, "amount_paise": ln.amount_paise, "gst_bp": ln.gst_bp, "tax_paise": t})
+                      "base_m": base_m, "base_unit": it.unit, "amount_paise": ln.amount_paise, "gst_bp": ln.gst_bp, "tax_paise": t,
+                      **({"bill_name": ln.bill_name.strip()} if ln.bill_name and ln.bill_name.strip() else {})})
         items.append((it, base_m, cost_k))
     p = Purchase(id=body.id or uuid.uuid4(), tenant_id=auth.tenant_id, outlet_id=body.outlet_id, supplier_id=body.supplier_id,
                  invoice_no=(body.invoice_no or "").strip() or None, invoice_date=body.invoice_date, business_date=business_date(),
