@@ -8,6 +8,7 @@
 #   wiseplus-cloud signup open|first|closed   who may create a restaurant account
 #   wiseplus-cloud backup            database backup now (runs by itself at 4:40 am, keeps 7)
 #   wiseplus-cloud link              (re)connect the plus address to Wise's HTTPS server
+#   wiseplus-cloud also <host>|none  serve wise-plus at a second address too (e.g. a sslip.io name while DNS isn't set)
 #   wiseplus-cloud remove            stop wise-plus and take its address off Wise's server; keeps data
 #   wiseplus-cloud restart | stop | start
 set -euo pipefail
@@ -38,7 +39,7 @@ wait_up() {
 block() {
   cat <<EOF
 # wiseplus-begin: added by wiseplus-cloud, remove with "sudo wiseplus-cloud remove"
-$(get WISEPLUS_DOMAIN) {
+$(get WISEPLUS_DOMAIN)$(x=$(get WISEPLUS_EXTRA_DOMAINS); [ -n "$x" ] && printf ', %s' "${x//,/, }") {
 	encode gzip
 	request_body {
 		max_size 16MB
@@ -124,6 +125,7 @@ backup() {
 cmd=${1:-help}; shift || true
 case "$cmd" in
   status)
+    [ -n "$(get WISEPLUS_EXTRA_DOMAINS)" ] && say "  Also at: https://$(get WISEPLUS_EXTRA_DOMAINS)"
     say "  Address: https://$(get WISEPLUS_DOMAIN)   (HTTPS: $( [ "$(get WISEPLUS_MODE)" = shared ] && echo "through Wise's Caddy" || echo "own Caddy"))"
     say "  Scan bill: $( [ -n "$(get WISE_GEMINI_API_KEY)" ] && echo on || echo "off (sudo wiseplus-cloud gemini <key>)")"
     if [ "$(get WISEPLUS_MODE)" = shared ]; then
@@ -159,6 +161,14 @@ case "$cmd" in
   backup) backup ;;
   backups) ls -lh "$ROOT"/backups/ ;;
   link) link "${1:-}" ;;
+  also)
+    case "${1:-}" in
+      "") die "give a host name, e.g. plus-1-2-3-4.sslip.io, or 'none'";;
+      none) put WISEPLUS_EXTRA_DOMAINS "";;
+      *) [[ "$1" =~ ^[a-z0-9.-]+$ ]] || die "that isn't a host name"; put WISEPLUS_EXTRA_DOMAINS "$1";;
+    esac
+    link
+    [ -n "$(get WISEPLUS_EXTRA_DOMAINS)" ] && say "  Also at: https://$(get WISEPLUS_EXTRA_DOMAINS)" || true ;;
   remove)
     if [ "$(get WISEPLUS_MODE)" = shared ] && wise_here; then unlink_block; reload_wise_caddy || say "  Check Wise's Caddy: docker logs $WISE_CADDY"; fi
     dc down
