@@ -270,9 +270,7 @@ def test_billing_shifts_concurrency_and_qr(client):
     pay = lambda total, mode="cash": [{"mode": mode, "amount_paise": total}]  # noqa: E731
     prev = client.post("/api/bills/preview", json={"order_id": o1["id"]}, headers=h(asha)).json()
     assert prev["taxable_paise"] == 29800 and prev["cgst_paise"] == 745 and prev["total_paise"] == 31300
-    # Customer number is asked on every bill.
-    r = client.post("/api/bills", headers=h(asha), json={"order_id": o1["id"], "payments": pay(31300)})
-    assert r.status_code == 422
+    # The customer's number is optional: no number counts as "declined" (checked in the capture report test).
     b1 = client.post("/api/bills", headers=h(asha), json={
         "order_id": o1["id"], "customer": {"phone": "9811111111"}, "payments": pay(31300)}).json()
     b2 = client.post("/api/bills", headers=h(bina), json={
@@ -523,8 +521,9 @@ def test_sms_bill_ready_and_ebill(client):
                                                                  "daily_to": ["9829000066"]}).status_code == 200
     client.post("/api/shifts", json={"outlet_id": oid, "opening_cash_paise": 0}, headers=h(tok))
     o = client.post("/api/orders", headers=h(tok), json={"outlet_id": oid, "order_type": "takeaway", "items": [{"variant_id": v}]}).json()
+    total = client.post("/api/bills/preview", headers=h(tok), json={"order_id": o["id"]}).json()["total_paise"]
     bill = client.post("/api/bills", headers=h(tok), json={"order_id": o["id"], "customer": {"phone": "9811122233"},
-                                                         "payments": [{"mode": "cash", "amount_paise": 15600}]}).json()
+                                                         "payments": [{"mode": "cash", "amount_paise": total}]}).json()
     for k in o["kots"]:
         for st in ("preparing", "ready"):
             client.post(f"/api/kds/kots/{k['id']}/status", headers=h(tok), json={"status": st})
@@ -587,7 +586,7 @@ def test_offline_counter_series_and_sync(client):
         "variants": [{"name": "300 ML", "price_paise": 14900}]}).json()
     client.post("/api/users", headers=h(tok), json={"name": "Asha", "role": "cashier", "pin": "7311", "outlet_ids": [oid]})
     asha = client.post("/api/auth/pin", json={"login_id": "offtest", "outlet_id": oid, "pin": "7311"}).json()["token"]
-    me = client.get("/api/auth/me", headers=h(asha)).json()
+    me = client.get("/api/tenant/me", headers=h(asha)).json()["user"]
     client.post("/api/shifts", headers=h(asha), json={"outlet_id": oid, "opening_cash_paise": 0})
 
     dev = str(_uuid.uuid4())
@@ -771,7 +770,7 @@ def test_sold_out_today(client):
 def test_split_bill_and_move_table(client):
     tok, asha, out, v1, v2 = _v1_setup(client, "splitmove")
     oid = out["id"]
-    o = client.post("/api/orders", headers=h(asha), json={"outlet_id": oid, "order_type": "dine_in", "table": "T4",
+    o = client.post("/api/orders", headers=h(asha), json={"outlet_id": oid, "order_type": "dine_in", "table_label": "T4",
                     "items": [{"variant_id": v1, "qty": 3}, {"variant_id": v2, "qty": 1}]}).json()
     lines = {l["item_name"]: l for k in o["kots"] for l in k["lines"]}
     # Split: 1 Oreo + the Mango go on their own bill.
@@ -783,13 +782,13 @@ def test_split_bill_and_move_table(client):
     assert b1["total_paise"] + b2["total_paise"] == b1["total_paise"] + b2["total_paise"]
     assert [l["qty"] for l in b1["lines"]] == [2] and sorted(l["item_name"] for l in b2["lines"]) == ["Mango Shake", "Oreo Shake"]
     # Can't split off everything.
-    o2 = client.post("/api/orders", headers=h(asha), json={"outlet_id": oid, "order_type": "dine_in", "table": "T5", "items": [{"variant_id": v1}]}).json()
+    o2 = client.post("/api/orders", headers=h(asha), json={"outlet_id": oid, "order_type": "dine_in", "table_label": "T5", "items": [{"variant_id": v1}]}).json()
     only = o2["kots"][0]["lines"][0]["id"]
     assert client.post(f"/api/orders/{o2['id']}/split", headers=h(asha), json={"items": [{"order_item_id": only, "qty": 1}]}).status_code == 422
     # Move the whole table T5 -> T7 (free): just a new label. Then T7 -> T8 where T8 already has an order: they join.
     moved = client.post(f"/api/orders/{o2['id']}/move", headers=h(asha), json={"to_table": "T7"}).json()
     assert moved["id"] == o2["id"] and moved["table_label"] == "T7"
-    o3 = client.post("/api/orders", headers=h(asha), json={"outlet_id": oid, "order_type": "dine_in", "table": "T8", "items": [{"variant_id": v2}]}).json()
+    o3 = client.post("/api/orders", headers=h(asha), json={"outlet_id": oid, "order_type": "dine_in", "table_label": "T8", "items": [{"variant_id": v2}]}).json()
     joined = client.post(f"/api/orders/{o2['id']}/move", headers=h(asha), json={"to_table": "T8"}).json()
     assert joined["id"] == o3["id"] and sorted(l["item_name"] for k in joined["kots"] for l in k["lines"]) == ["Mango Shake", "Oreo Shake"]
     assert client.get(f"/api/orders/{o2['id']}", headers=h(tok)).json()["status"] == "completed"
@@ -1114,7 +1113,7 @@ def test_accounts_tally_and_excel(client):
     assert "HDFC Current" in client.get("/api/accounts/tally", headers=h(tok), params={"kind": "sales"}).text
     x = client.get("/api/accounts/excel", headers=h(tok))
     wb = load_workbook(_io.BytesIO(x.content))
-    assert wb.sheetnames == ["Sales register", "GST by rate", "HSN summary", "Day-wise", "Purchase register"]
+    assert wb.sheetnames == ["Sales register", "GST by rate", "HSN summary", "Day-wise", "Purchase register", "Cash expenses & drawings"]
     assert wb["Sales register"].max_row == 3 + 2 + 1    # title, note, header, 2 bills, total
 
 
@@ -1153,7 +1152,7 @@ def test_drawers_keep_cashiers_cash_apart(client):
     # The manager sees both, with their own movements; next day Asha's opening is checked against Drawer 1 only.
     rows = {s["opened_by_name"]: s for s in client.get("/api/shifts", headers=h(tok), params={"outlet_id": oid}).json()}
     assert rows["Asha"]["status"] == "closed" and rows["Asha"]["cash_out_paise"] == 20000
-    assert rows["Bina"]["status"] == "open" and rows["Bina"]["expected_cash_paise"] == 60000 and rows["Bina"]["movements"][0]["reason"] == "Change"
+    assert rows["Bina"]["status"] == "open" and rows["Bina"]["expected_cash_paise"] == 60000 and rows["Bina"]["movements"][0]["reason"] == "Other (Change)"
     a2 = client.post("/api/shifts", headers=h(asha), json={"outlet_id": oid, "opening_cash_paise": 80000}).json()
     assert a2["drawer_name"] == "Drawer 1" and not a2["manager_alerted"]
     drawers = client.get(f"/api/outlets/{oid}/drawers", headers=h(asha)).json()

@@ -406,7 +406,7 @@ def _can_mark_sold_out(auth: Auth) -> None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "You can't mark items sold out")
 
 
-@router.post("/menu/outlets/{outlet_id}/sold-out")
+@router.post("/outlets/{outlet_id}/sold-out")
 def mark_sold_out(outlet_id: uuid.UUID, body: SoldOutIn, auth: Auth = Depends(get_auth), db: Session = Depends(get_db)) -> dict:
     """Sold out for the rest of today: greyed on the counter, gone from the QR menu and kiosk, refused on
     new orders. It comes back by itself the next business day."""
@@ -436,7 +436,7 @@ def mark_sold_out(outlet_id: uuid.UUID, body: SoldOutIn, auth: Auth = Depends(ge
     return {"sold_out": body.sold_out, "items": names}
 
 
-@router.get("/menu/outlets/{outlet_id}/sold-out")
+@router.get("/outlets/{outlet_id}/sold-out")
 def list_sold_out(outlet_id: uuid.UUID, auth: Auth = Depends(get_auth), db: Session = Depends(get_db)) -> list[dict]:
     from ..core.kds import business_date
     _can_mark_sold_out(auth)

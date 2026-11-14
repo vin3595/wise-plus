@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
-from sqlalchemy import Select, and_, case, func, or_, select
+from sqlalchemy import Select, and_, case, func, literal_column, or_, select
 from sqlalchemy.orm import Session
 
 from ..core.permissions import Perm
@@ -482,12 +482,15 @@ def hsn(c: Ctx) -> Table:
         Col("cgst_paise", "CGST", "money", True), Col("sgst_paise", "SGST", "money", True),
         Col("igst_paise", "IGST", "money", True)],
         note="For the HSN table of GSTR-1. Restaurant service is usually SAC 9963; give your CA this sheet.")
+    # One expression, with the default written into the SQL: separate bound "9963"s make Postgres treat the
+    # SELECT and GROUP BY as different columns and refuse the query.
+    code = func.coalesce(BillLine.hsn_sac, literal_column("'9963'"))
     for h, r, q, tx, cg, sg, ig in c.rows(
-        select(func.coalesce(BillLine.hsn_sac, "9963"), BillLine.rate_bp, func.sum(BillLine.qty),
+        select(code, BillLine.rate_bp, func.sum(BillLine.qty),
                func.sum(BillLine.taxable_paise), func.sum(BillLine.cgst_paise), func.sum(BillLine.sgst_paise),
                func.sum(BillLine.igst_paise))
         .join(Bill, Bill.id == BillLine.bill_id).where(c.paid)
-        .group_by(func.coalesce(BillLine.hsn_sac, "9963"), BillLine.rate_bp).order_by(func.coalesce(BillLine.hsn_sac, "9963"))):
+        .group_by(code, BillLine.rate_bp).order_by(code)):
         t.rows.append({"hsn": h, "rate": f"{int(r) / 100:g}%", "qty": int(q),
                        "value_paise": int(tx) + int(cg) + int(sg) + int(ig), "taxable_paise": int(tx),
                        "cgst_paise": int(cg), "sgst_paise": int(sg), "igst_paise": int(ig)})
