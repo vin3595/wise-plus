@@ -1,0 +1,18 @@
+# Only used when Wise is not on this server. Normally Wise's Caddy serves the plus address.
+{
+	email {$WISE_ADMIN_EMAIL}
+}
+
+{$WISEPLUS_DOMAIN} {
+	encode gzip
+	reverse_proxy wiseplus-web:80 {
+		flush_interval -1
+		header_up X-Forwarded-Proto https
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+}

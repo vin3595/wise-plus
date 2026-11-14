@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+# Looks after wise-plus on the AWS server (next to Wise, or on its own).
+#   wiseplus-cloud status            what's running, the address, memory, last backup
+#   wiseplus-cloud logs [service]    recent logs (api, plusweb, db)
+#   wiseplus-cloud login-code        the latest sign-in code (no SMS is set up for the test app)
+#   wiseplus-cloud update            get the newest code from GitHub and restart; backs up first
+#   wiseplus-cloud gemini <key>      switch on Scan bill (Google Gemini API key); "gemini off" to remove
+#   wiseplus-cloud signup open|first|closed   who may create a restaurant account
+#   wiseplus-cloud backup            database backup now (runs by itself at 4:40 am, keeps 7)
+#   wiseplus-cloud link              (re)connect the plus address to Wise's HTTPS server
+#   wiseplus-cloud remove            stop wise-plus and take its address off Wise's server; keeps data
+#   wiseplus-cloud restart | stop | start
+set -euo pipefail
+ROOT=/opt/wiseplus; ENV_FILE=$ROOT/.env; SRC=$ROOT/src
+WISE_CADDYFILE=/opt/wise/src/deploy/aws/Caddyfile
+WISE_CADDY=wise-caddy-1
+say() { printf '%s\n' "$*"; }; die() { printf 'wiseplus-cloud: %s\n' "$*" >&2; exit 1; }
+[ "$(id -u)" -eq 0 ] || die "run it with sudo"
+[ -f "$ENV_FILE" ] || die "wise-plus isn't installed here (no $ENV_FILE). Run deploy/plus/install.sh first."
+get() { grep -E "^$1=" "$ENV_FILE" | tail -1 | cut -d= -f2- || true; }
+put() { if grep -qE "^$1=" "$ENV_FILE"; then sed -i "s|^$1=.*|$1=$2|" "$ENV_FILE"; else echo "$1=$2" >> "$ENV_FILE"; fi; }
+dc() {
+  local prof=(); [ "$(get WISEPLUS_MODE)" = own ] && prof=(--profile caddy)
+  (cd "$SRC/deploy/plus" && docker compose --env-file "$ENV_FILE" "${prof[@]}" "$@")
+}
+wise_here() { docker ps --format '{{.Names}}' | grep -qx "$WISE_CADDY" && [ -f "$WISE_CADDYFILE" ]; }
+wait_up() {
+  for _ in $(seq 1 80); do
+    [ "$(docker inspect -f '{{.State.Health.Status}}' wiseplus-api-1 2>/dev/null)" = healthy ] && { say "  wise-plus is running."; return 0; }
+    sleep 3
+  done
+  say "  wise-plus didn't come up in 4 minutes. Look at: sudo wiseplus-cloud logs api"; return 1
+}
+
+# Wise's Caddy holds ports 80/443 and reads one Caddyfile. Our site goes at the end of it between two
+# marker lines. The file is bind-mounted into Wise's Caddy, so it is only ever appended to or rewritten
+# in place (never replaced), which keeps the mount pointing at the same file.
+block() {
+  cat <<EOF
+# wiseplus-begin: added by wiseplus-cloud, remove with "sudo wiseplus-cloud remove"
+$(get WISEPLUS_DOMAIN) {
+	encode gzip
+	request_body {
+		max_size 16MB
+	}
+	reverse_proxy wiseplus-web:80 {
+		flush_interval -1
+		header_up X-Forwarded-Proto https
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+}
+# wiseplus-end
+EOF
+}
+unlink_block() {
+  [ -f "$WISE_CADDYFILE" ] && grep -q '^# wiseplus-begin' "$WISE_CADDYFILE" || return 0
+  local tmp; tmp=$(mktemp)
+  awk '/^# wiseplus-begin/{skip=1} !skip{print} /^# wiseplus-end/{skip=0}' "$WISE_CADDYFILE" > "$tmp"
+  cat "$tmp" > "$WISE_CADDYFILE"; rm -f "$tmp"
+}
+# Checks a Caddyfile with Wise's own Caddy (its version, its environment) without touching what it serves.
+caddy_ok() {
+  docker exec -i "$WISE_CADDY" sh -c 'cat > /tmp/wiseplus-check.caddy
+    out=$(caddy adapt --config /tmp/wiseplus-check.caddy --adapter caddyfile 2>&1 >/dev/null); rc=$?
+    printf "%s\n" "$out" | grep -v "\"level\":\"warn\"" | grep . >&2
+    exit $rc' < "$1"
+}
+wise_caddy_up() {
+  for _ in $(seq 1 10); do
+    [ "$(docker inspect -f '{{.State.Running}}' "$WISE_CADDY" 2>/dev/null)" = true ] && \
+      docker exec "$WISE_CADDY" wget -qO- http://127.0.0.1:2019/config/ >/dev/null 2>&1 && return 0
+    sleep 2
+  done
+  return 1
+}
+reload_wise_caddy() {
+  docker exec "$WISE_CADDY" caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1 && return 0
+  # A Wise update can swap the Caddyfile for a new copy that the running Caddy can't see. Restart it, but
+  # only with a file that has just passed the check, and make sure it comes back.
+  caddy_ok "$WISE_CADDYFILE" || return 1
+  docker restart "$WISE_CADDY" >/dev/null
+  wise_caddy_up
+}
+link() {
+  [ "$(get WISEPLUS_MODE)" = shared ] || { [ "${1:-}" = quiet ] || say "  wise-plus runs its own HTTPS here; nothing to link."; return 0; }
+  wise_here || { [ "${1:-}" = quiet ] || say "  Wise's Caddy isn't running, so the plus address can't be linked yet."; return 0; }
+  local want; want=$(block)
+  if grep -q '^# wiseplus-begin' "$WISE_CADDYFILE" && [ "$(awk '/^# wiseplus-begin/,/^# wiseplus-end/' "$WISE_CADDYFILE")" = "$want" ]; then
+    # Already there; make sure the running Caddy has it (a Wise update may have restarted it without it).
+    [ "${1:-}" = quiet ] && return 0
+  else
+    # Try the new file first. Wise's site must keep working, so nothing changes unless Caddy accepts it.
+    local before cand; before=$(mktemp); cand=$(mktemp)
+    cat "$WISE_CADDYFILE" > "$before"
+    awk '/^# wiseplus-begin/{skip=1} !skip{print} /^# wiseplus-end/{skip=0}' "$before" > "$cand"
+    printf '\n%s\n' "$want" >> "$cand"
+    if ! caddy_ok "$cand"; then
+      rm -f "$before" "$cand"; die "Wise's Caddy rejected the plus address block; nothing was changed. Wise is untouched."
+    fi
+    cat "$cand" > "$WISE_CADDYFILE"; rm -f "$cand"
+    if ! reload_wise_caddy; then
+      cat "$before" > "$WISE_CADDYFILE"; reload_wise_caddy || docker restart "$WISE_CADDY" >/dev/null; rm -f "$before"
+      die "Wise's Caddy didn't take the change, so it was put back as it was. See: docker logs $WISE_CADDY"
+    fi
+    rm -f "$before"
+  fi
+  reload_wise_caddy && { [ "${1:-}" = quiet ] || say "  https://$(get WISEPLUS_DOMAIN) is served by Wise's Caddy."; }
+}
+backup() {
+  mkdir -p "$ROOT/backups"
+  local out; out="$ROOT/backups/wiseplus-$(date +%Y-%m-%d_%H%M).sql.gz"
+  # As the database superuser inside the container, so row-level security doesn't hide any rows.
+  docker exec wiseplus-db-1 pg_dump -U postgres -d wise --no-owner | gzip -9 > "$out" || { rm -f "$out"; die "backup failed"; }
+  [ -s "$out" ] || die "backup came out empty"
+  ls -1t "$ROOT"/backups/wiseplus-*.sql.gz | tail -n +8 | xargs -r rm -f
+  say "  Backup saved: $out ($(du -h "$out" | cut -f1))"
+}
+
+cmd=${1:-help}; shift || true
+case "$cmd" in
+  status)
+    say "  Address: https://$(get WISEPLUS_DOMAIN)   (HTTPS: $( [ "$(get WISEPLUS_MODE)" = shared ] && echo "through Wise's Caddy" || echo "own Caddy"))"
+    say "  Scan bill: $( [ -n "$(get WISE_GEMINI_API_KEY)" ] && echo on || echo "off (sudo wiseplus-cloud gemini <key>)")"
+    if [ "$(get WISEPLUS_MODE)" = shared ]; then
+      grep -q '^# wiseplus-begin' "$WISE_CADDYFILE" 2>/dev/null && say "  Linked to Wise's Caddy: yes" || say "  Linked to Wise's Caddy: NO (sudo wiseplus-cloud link)"
+    fi
+    dc ps
+    docker stats --no-stream --format '  {{.Name}}: {{.MemUsage}}' | grep -E 'wise' || true
+    free -h | awk '/Mem:/{print "  Server memory: " $7 " free of " $2}'
+    ls -1t "$ROOT"/backups/*.gz 2>/dev/null | head -1 | sed 's/^/  Last backup: /' || say "  No backup yet." ;;
+  logs) dc logs --tail 200 "$@" ;;
+  login-code)
+    code=$(dc logs --since 15m api 2>/dev/null | grep -o 'OTP for .*' | tail -1)
+    [ -n "$code" ] && say "  ${code/OTP for/Code for}" || say "  No sign-in code in the last 15 minutes. Tap \"Send code\" first." ;;
+  start) dc up -d; wait_up; link quiet ;;
+  stop) dc stop ;;
+  restart) dc restart; wait_up ;;
+  start-fresh) dc build && dc up -d && wait_up && link ;;
+  update)
+    [ -d "$SRC/.git" ] || die "$SRC isn't a git checkout; copy the new code there and run: sudo wiseplus-cloud start-fresh"
+    docker ps --format '{{.Names}}' | grep -qx wiseplus-db-1 && backup
+    git -C "$SRC" pull --ff-only
+    install -m 755 "$SRC/deploy/plus/wiseplus-cloud" /usr/local/bin/wiseplus-cloud
+    dc build && dc up -d && wait_up && link quiet
+    say "  Now on: $(git -C "$SRC" log -1 --format='%h %s')" ;;
+  gemini)
+    case "${1:-}" in
+      "") die "give the Gemini API key (from aistudio.google.com), or 'off'";;
+      off) put WISE_GEMINI_API_KEY "";;
+      *) put WISE_GEMINI_API_KEY "$1";;
+    esac
+    dc up -d api; wait_up; say "  Scan bill is $( [ -n "$(get WISE_GEMINI_API_KEY)" ] && echo on || echo off)." ;;
+  signup) case "${1:-}" in open|first|closed) put WISE_SIGNUP_MODE "$1"; dc up -d api; wait_up; say "  Sign-up is now: $1";; *) die "open, first or closed";; esac ;;
+  backup) backup ;;
+  backups) ls -lh "$ROOT"/backups/ ;;
+  link) link "${1:-}" ;;
+  remove)
+    if [ "$(get WISEPLUS_MODE)" = shared ] && wise_here; then unlink_block; reload_wise_caddy || say "  Check Wise's Caddy: docker logs $WISE_CADDY"; fi
+    dc down
+    systemctl disable --now wiseplus-backup.timer wiseplus-link.timer >/dev/null 2>&1 || true
+    say "  wise-plus stopped and unlinked. Its data is still in $ROOT/data; delete that folder to remove it for good." ;;
+  *) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' ;;
+esac

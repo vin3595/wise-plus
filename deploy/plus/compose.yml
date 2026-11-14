@@ -1,0 +1,109 @@
+# wise-plus on the same AWS server as Wise, for side-by-side testing.
+#
+# Its own database, its own data folder (/opt/wiseplus), its own address (plus.easemybill.com).
+# Wise's Caddy already holds ports 80/443, so wise-plus doesn't open any: the web container joins
+# Wise's network as "wiseplus-web" and Wise's Caddy sends the plus address to it.
+# If Wise isn't on this server, the "caddy" profile runs a Caddy of wise-plus's own instead.
+# Managed with the `wiseplus-cloud` command. Settings live in /opt/wiseplus/.env.
+name: wiseplus
+
+x-logs: &logs
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      WISE_OWNER_PASSWORD: ${WISE_OWNER_PASSWORD}
+      WISE_APP_PASSWORD: ${WISE_APP_PASSWORD}
+      TZ: Asia/Kolkata
+    volumes:
+      - /opt/wiseplus/data/postgres:/var/lib/postgresql/data
+      - ../../box/initdb:/docker-entrypoint-initdb.d:ro
+    # Small settings: it shares a 2 GB server with Wise.
+    command: postgres -c shared_buffers=64MB -c max_connections=40 -c work_mem=4MB
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d wise"]
+      interval: 5s
+      retries: 30
+    mem_limit: 300m
+    <<: *logs
+
+  api:
+    image: wiseplus-api:local
+    build: ../../backend
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      WISE_DATABASE_URL: postgresql+psycopg://wise_app:${WISE_APP_PASSWORD}@db:5432/wise?sslmode=disable
+      WISE_MIGRATE_DATABASE_URL: postgresql+psycopg://wise_owner:${WISE_OWNER_PASSWORD}@db:5432/wise?sslmode=disable
+      WISE_JWT_SECRET: ${WISE_JWT_SECRET}
+      WISE_OTP_PROVIDER: ${WISE_OTP_PROVIDER:-box}
+      WISE_SIGNUP_MODE: ${WISE_SIGNUP_MODE:-open}
+      WISE_WORKERS: "1"
+      WISE_FAST2SMS_API_KEY: ${WISE_FAST2SMS_API_KEY:-}
+      WISE_GEMINI_API_KEY: ${WISE_GEMINI_API_KEY:-}
+      WISE_PUBLIC_BASE_URL: https://${WISEPLUS_DOMAIN}
+      WISE_CUSTOMER_URL: https://${WISEPLUS_DOMAIN}
+      WISE_CORS_ORIGINS: https://${WISEPLUS_DOMAIN}
+      WISE_BASE_DOMAIN: ${WISEPLUS_DOMAIN}
+      WISE_UPLOAD_DIR: /app/uploads
+      TZ: Asia/Kolkata
+    volumes:
+      - /opt/wiseplus/data/uploads:/app/uploads
+    networks:
+      default:
+        aliases: [plus-api]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).status == 200 else 1)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 60s
+    mem_limit: 500m
+    <<: *logs
+
+  # Not called "web": Docker names each service on every network it joins, and Wise's Caddy sends Wise's
+  # own traffic to "web". A second "web" on that network would get some of Wise's visitors.
+  plusweb:
+    image: wiseplus-web:local
+    build: ../../frontend
+    restart: unless-stopped
+    depends_on: [api]
+    # Talks to the API as "plus-api", a name that exists only on wise-plus's own network: Wise's
+    # API is also called "api", and this container sits on Wise's network too.
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      default: {}
+      edge:
+        aliases: [wiseplus-web]
+    mem_limit: 64m
+    <<: *logs
+
+  # Only when Wise isn't on this server (wiseplus-cloud decides).
+  caddy:
+    image: caddy:2.8
+    profiles: ["caddy"]
+    restart: unless-stopped
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      WISEPLUS_DOMAIN: ${WISEPLUS_DOMAIN}
+      WISE_ADMIN_EMAIL: ${WISE_ADMIN_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - /opt/wiseplus/data/caddy:/data
+    networks: [edge]
+    depends_on: [plusweb]
+    <<: *logs
+
+networks:
+  # Wise's network when Wise runs here (wise_default), otherwise one of our own.
+  edge:
+    name: ${WISEPLUS_EDGE_NETWORK:-wiseplus_edge}
+    external: ${WISEPLUS_EDGE_EXTERNAL:-false}
