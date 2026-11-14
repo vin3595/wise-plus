@@ -25,10 +25,13 @@ def test_names_match_the_way_bills_print_them():
 
 
 def test_units_and_gst():
-    assert pick_unit(ITEMS[1], "SUGAR 50 KG") == "kg"
-    assert pick_unit(ITEMS[0], "Amul Taaza 1 LTR") == "l"
-    assert pick_unit(ITEMS[2], "Oreo box of 24") == "box of 24"
-    assert pick_unit(ITEMS[3], "Vanilla") == "tub"          # bills count packs
+    assert pick_unit(ITEMS[1], "SUGAR 50 KG", 50) == ("kg", 50)          # the name repeats the quantity
+    assert pick_unit(ITEMS[1], "SUGAR 50 KG BAG", 2) == ("kg", 100)      # two 50 kg bags
+    assert pick_unit(ITEMS[0], "Amul Taaza 1 LTR", 24) == ("l", 24)
+    assert pick_unit(ITEMS[0], "Amul Butter Milk 500ML", 10) == ("l", 5)
+    assert pick_unit(ITEMS[2], "Oreo box of 24", 3) == ("box of 24", 3)
+    assert pick_unit(ITEMS[3], "Vanilla", 2) == ("tub", 2)               # bills count packs
+    assert pick_unit(ITEMS[3], "Super Vanilla Bulk [1*1] 5000ML", 4) == ("tub", 4)   # 5000 ml = one tub
     assert nearest_gst_bp(18) == 1800 and nearest_gst_bp(17.9) == 1800 and nearest_gst_bp(None) == 0 and nearest_gst_bp(4.9) == 500
 
 
@@ -49,6 +52,44 @@ def test_draft_from_a_read_bill():
     # Remembered from this supplier's last bill: the person had saved "Straws" as Oreo (made-up, but it must win)
     d2 = build_draft(bill, ITEMS, sups, {"straws": "oreo"})
     assert d2["lines"][2]["stock_item_id"] == "oreo" and d2["lines"][2]["match"] == 1.0
+
+
+REAL = [  # stock items as set up for the three bills Vineet photographed on 14 Nov 2026
+    {"id": "bc", "name": "Blueberry Cheesecake (B Pack)", "unit": "pc", "purchase_units": [{"name": "box", "factor": 1}]},
+    {"id": "nb", "name": "Nutty Belgian Dark Chocolate (B Pack)", "unit": "pc", "purchase_units": [{"name": "box", "factor": 1}]},
+    {"id": "bomb", "name": "Bomber Candy 65ml", "unit": "pc", "purchase_units": [{"name": "carton of 14", "factor": 14}]},
+    {"id": "van", "name": "Super Vanilla Bulk 5L", "unit": "ml", "purchase_units": [{"name": "tub 5L", "factor": 5000}]},
+]
+
+
+def _with_gst(d):
+    return round(sum(l["amount_paise"] * (10000 + l["gst_bp"]) / 10000 for l in d["lines"]))
+
+
+def test_real_bills_add_up_to_what_was_paid():
+    # Kanha 5043: lines before GST 7,995.97, "Less Discount 5%", GST 5% -> pay 7,996
+    kanha = {"vendor": "KANHA FOOD PRODUCTS", "total": 7996.0, "taxable_amount": 7995.97, "tax": 399.8, "global_discount_percent": 5,
+             "items": [{"name": "B PACK BLUEBERY CHEESECAKE 1X1", "quantity": 2, "unit_price": 1142.86, "total": 2285.72, "tax_rate": 5},
+                       {"name": "B PACK NUTTY BLGN DARK CHOCOLATE 1X1", "quantity": 5, "unit_price": 1142.05, "total": 5710.25, "tax_rate": 5}]}
+    d = build_draft(kanha, REAL, [], {})
+    assert [(l["stock_item_id"], l["unit"], l["qty_m"]) for l in d["lines"]] == [("bc", "box", 2000), ("nb", "box", 5000)]
+    assert _with_gst(d) == 799600 and "5% discount" in d["adjusted"]["why"]
+    # Vadilal TS005693: "Total Value" 1,211.81 includes 5% GST; taxable 1,154.10; pay 1,212
+    bomber = {"vendor": "SHIV GAURI AGENCIES-JODHPUR", "total": 1212.0, "taxable_amount": 1154.1,
+              "items": [{"name": "Bomber Candy [1*14] 65ML", "quantity": 3, "unit_price": 384.7, "total": 1211.81, "tax_rate": 5}]}
+    d = build_draft(bomber, REAL, [], {})
+    l = d["lines"][0]
+    assert (l["unit"], l["qty_m"]) == ("carton of 14", 3000) and abs(l["amount_paise"] - 115410) <= 100 and _with_gst(d) == 121200
+    assert "include GST" in d["adjusted"]["why"]
+    # Vadilal TS005689: 4 tubs of 5 L, total value 1,592.38 incl. GST, pay 1,592
+    van = {"vendor": "Vadilal", "total": 1592.0, "taxable_amount": 1516.56,
+           "items": [{"name": "Super Vanilla Bulk [1*1] 5000ML", "quantity": 4, "unit_price": 379.14, "total": 1592.38, "tax_rate": 5}]}
+    d = build_draft(van, REAL, [], {})
+    l = d["lines"][0]
+    assert (l["stock_item_id"], l["unit"], l["qty_m"]) == ("van", "tub 5L", 4000) and abs(l["amount_paise"] - 151656) <= 100
+    # A bill that already adds up is left alone
+    ok = {"total": 1050.0, "items": [{"name": "Super Vanilla 5000ML", "quantity": 2, "total": 1000, "tax_rate": 5}]}
+    assert build_draft(ok, REAL, [], {})["adjusted"] is None
 
 
 # ---------------------------------------------------------------- endpoint, against Postgres like test_api.py

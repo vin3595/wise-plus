@@ -282,6 +282,7 @@ function PurchasesTab({ outletId, items, suppliers, onChange }: { outletId: stri
             {scan.thumbnail && <img src={scan.thumbnail} alt="The scanned bill" className="scan-thumb" />}
             <div className="scan-notes">
               <p><strong>Read from the photo.</strong> Check each line, then save. {scan.lines.filter((l) => !l.stock_item_id).length > 0 && <>Pick a stock item for the lines marked <em>pick one</em>; it's remembered for this supplier's next bill.</>}</p>
+              {scan.adjusted && <p className="small">{scan.adjusted.why} Bill total {formatPaise(scan.adjusted.to_paise)}.</p>}
               {scan.duplicate && <p className="banner warn">This bill looks entered already: {scan.duplicate.invoice_date}, {formatPaise(scan.duplicate.total_paise)}.</p>}
               {scan.total_paise > 0 && Math.abs(scan.total_paise - (amount + tax)) > 100 && lines.every((l) => l.item) &&
                 <p className="banner warn">Bill total {formatPaise(scan.total_paise)}, lines add up to {formatPaise(amount + tax)}. Check quantities and GST.</p>}

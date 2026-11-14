@@ -11,6 +11,7 @@ export interface ScanDraft {
   total_paise: number; taxable_paise: number | null; tax_paise: number | null;
   lines: { bill_name: string; qty_m: number; unit_price_paise: number; amount_paise: number; gst_bp: number; hsn: string | null;
     stock_item_id: string | null; stock_item_name: string | null; unit: string | null; match: number; check: string | null }[];
+  adjusted: { from_paise: number; to_paise: number; why: string } | null;
   needs_review: boolean; review_reasons: string[]; low_confidence: boolean;
   duplicate?: { id: string; invoice_date: string; total_paise: number };
   thumbnail: string | null;

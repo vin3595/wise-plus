@@ -61,19 +61,46 @@ def unit_from_name(name: str) -> str | None:
     return None
 
 
-def pick_unit(item: dict, bill_name: str) -> str:
-    """The unit the quantity on the bill is most likely in, among the units this stock item can be bought in."""
-    names = [u["name"] for u in (item.get("purchase_units") or [])]
+_PACK = re.compile(r"(\d+(?:\.\d+)?)\s*(kg|kgs|kilo|gm|gms|grm|gram|grams|g|ltrs|ltr|litre|liter|lt|l|ml)\b", re.I)
+
+
+def pack_size(name: str) -> tuple[float, str] | None:
+    """'Super Vanilla Bulk [1*1] 5000ML' -> (5000, 'ml'); 'Amul Butter 500 GM' -> (500, 'g')."""
+    m = None
+    for m in _PACK.finditer(name or ""):
+        pass                              # the last size on the line is the pack ("1x1 5000ML")
+    if not m:
+        return None
+    return float(m.group(1)), _UNIT_WORDS[m.group(2).lower()] if m.group(2).lower() in _UNIT_WORDS else m.group(2).lower()
+
+
+def pick_unit(item: dict, bill_name: str, qty: float | None = None) -> tuple[str, float | None]:
+    """The unit, and the quantity in it, for a bill line of this stock item.
+
+    Bills count packs: '4 x Super Vanilla 5000ML' is 4 tubs, not 4 ml. A pack size on the line is used to find
+    the matching pack (a purchase unit of that size) or to turn packs into kg / litres."""
+    units = item.get("purchase_units") or []
     lower = (bill_name or "").lower()
-    for n in names:                       # a pack size named on the bill ("box of 24")
-        if n and n.lower() in lower:
-            return n
-    guess = unit_from_name(bill_name)
-    if guess and (guess == item["unit"] or STANDARD_UNITS.get(guess, ("", 0))[0] == item["unit"]):
-        return guess
-    if names:                             # bills usually count packs
-        return names[0]
-    return {"g": "kg", "ml": "l", "pc": "pc"}[item["unit"]]
+    for u in units:                       # a pack named on the bill ("box of 24")
+        if u.get("name") and u["name"].lower() in lower:
+            return u["name"], qty
+    ps = pack_size(bill_name)
+    if ps:
+        size, word = ps
+        base_unit, per = STANDARD_UNITS.get(word, ("", 0))
+        if base_unit == item["unit"] and per:
+            base = size * per             # one pack in the item's base unit (g / ml)
+            if qty is not None and abs(qty - size) < 1e-9:
+                # "SUGAR 10 KG" with quantity 10: the name is repeating the quantity, not a pack size.
+                return word if word in STANDARD_UNITS else item["unit"], qty
+            for u in units:
+                if abs(u["factor"] - base) < 0.5:
+                    return u["name"], qty
+            big = {"g": "kg", "ml": "l"}[item["unit"]]
+            return big, (None if qty is None else qty * base / 1000)
+    if units:                             # bills usually count packs
+        return units[0]["name"], qty
+    return {"g": "kg", "ml": "l", "pc": "pc"}[item["unit"]], qty
 
 
 def nearest_gst_bp(rate: float | None) -> int:
@@ -122,19 +149,20 @@ def build_draft(bill: dict, items: list[dict], suppliers: list[dict], remembered
             continue
         it, score = best_stock_item(name, items, remembered)
         qty = ln.get("quantity")
+        unit, unit_qty = pick_unit(it, name, None if qty is None else float(qty)) if it else (None, qty)
         line_total = ln.get("total")
         if line_total is None and qty is not None and ln.get("unit_price") is not None:
             line_total = float(qty) * float(ln["unit_price"])
         lines.append({
             "bill_name": name,
-            "qty": qty, "qty_m": to_qty_m(qty),
+            "qty": unit_qty, "qty_m": to_qty_m(unit_qty),
             "unit_price_paise": to_paise(ln.get("unit_price")),
             "amount_paise": to_paise(line_total),
             "gst_bp": nearest_gst_bp(ln.get("tax_rate")),
             "hsn": ln.get("hsn"),
             "stock_item_id": it["id"] if it else None,
             "stock_item_name": it["name"] if it else None,
-            "unit": pick_unit(it, name) if it else None,
+            "unit": unit,
             "match": round(score, 2),
             "check": ln.get("review_reason"),
         })
@@ -145,6 +173,31 @@ def build_draft(bill: dict, items: list[dict], suppliers: list[dict], remembered
         bp = nearest_gst_bp(tax * 100 / taxable)
         for ln in lines:
             ln["gst_bp"] = bp
+    # Make the lines add up to what the bill says to pay. Line totals are sometimes printed with GST in them
+    # (Vadilal's "Total Value"), and a bill-level discount ("Less: Discount 5%") isn't on any line; either way
+    # the stock should cost what was paid. Only small, explainable gaps are closed; anything else is left
+    # for the person (the screen shows both totals).
+    adjusted = None
+    total = to_paise(bill.get("total"))
+    have = sum(ln["amount_paise"] for ln in lines)
+    with_gst = sum(ln["amount_paise"] * (10000 + ln["gst_bp"]) / 10000 for ln in lines)
+    if lines and total and have and abs(with_gst - total) > max(100, total * 0.005):
+        ratio = total / with_gst
+        if 0.6 <= ratio <= 1.05:
+            if bill.get("global_discount_percent") or bill.get("global_discount_amount"):
+                pct = bill.get("global_discount_percent")
+                why = f"The bill's {pct:g}% discount is spread across the lines." if pct else "The bill's discount is spread across the lines."
+            elif abs(have - total) <= max(100, total * 0.005):
+                why = "Line amounts on this bill include GST; shown here before GST."
+            else:
+                why = "Amounts were adjusted to match the bill total."
+            for ln in lines:
+                ln["amount_paise"] = round(ln["amount_paise"] * ratio)
+            # Rounding: put the last paise on the biggest line so it matches to the paisa where it can.
+            gap = total - round(sum(ln["amount_paise"] * (10000 + ln["gst_bp"]) / 10000 for ln in lines))
+            big = max(lines, key=lambda x: x["amount_paise"])
+            big["amount_paise"] += round(gap * 10000 / (10000 + big["gst_bp"]))
+            adjusted = {"from_paise": round(with_gst), "to_paise": total, "why": why}
     return {
         "vendor": bill.get("vendor"), "gstin": bill.get("gstin"), "vendor_phone": bill.get("vendor_phone"),
         "supplier": {"id": sup["id"], "name": sup["name"], "how": sup["how"]} if sup else None,
@@ -154,6 +207,7 @@ def build_draft(bill: dict, items: list[dict], suppliers: list[dict], remembered
         "taxable_paise": taxable or None,
         "tax_paise": tax or None,
         "lines": lines,
+        "adjusted": adjusted,
         "needs_review": bool(bill.get("needs_review")),
         "review_reasons": list(bill.get("review_reasons") or []),
     }
