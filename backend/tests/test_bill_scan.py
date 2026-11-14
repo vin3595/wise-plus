@@ -75,7 +75,8 @@ def test_real_bills_add_up_to_what_was_paid():
     assert [(l["stock_item_id"], l["unit"], l["qty_m"]) for l in d["lines"]] == [("bc", "box", 2000), ("nb", "box", 5000)]
     assert _with_gst(d) == 799600 and "5% discount" in d["adjusted"]["why"]
     # Vadilal TS005693: "Total Value" 1,211.81 includes 5% GST; taxable 1,154.10; pay 1,212
-    bomber = {"vendor": "SHIV GAURI AGENCIES-JODHPUR", "total": 1212.0, "taxable_amount": 1154.1,
+    # (the reader also invented a 4.75% "discount" for this bill; the label must still say GST)
+    bomber = {"vendor": "SHIV GAURI AGENCIES-JODHPUR", "total": 1212.0, "taxable_amount": 1154.1, "global_discount_percent": 4.75,
               "items": [{"name": "Bomber Candy [1*14] 65ML", "quantity": 3, "unit_price": 384.7, "total": 1211.81, "tax_rate": 5}]}
     d = build_draft(bomber, REAL, [], {})
     l = d["lines"][0]

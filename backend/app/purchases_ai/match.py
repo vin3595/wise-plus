@@ -184,10 +184,16 @@ def build_draft(bill: dict, items: list[dict], suppliers: list[dict], remembered
     if lines and total and have and abs(with_gst - total) > max(100, total * 0.005):
         ratio = total / with_gst
         if 0.6 <= ratio <= 1.05:
-            if bill.get("global_discount_percent") or bill.get("global_discount_amount"):
+            # Which it is: lines equal to the taxable value are before GST, so the gap is a discount (Kanha's 5%
+            # discount happens to cancel its 5% GST, so "lines = total" alone can't tell). Lines equal to the
+            # total, but not the taxable value, already include GST (Vadilal).
+            taxable = to_paise(bill.get("taxable_amount"))
+            near = lambda a, b: abs(a - b) <= max(100, b * 0.005)
+            disc = bill.get("global_discount_percent") or bill.get("global_discount_amount")
+            if disc and (not taxable or near(have, taxable)):
                 pct = bill.get("global_discount_percent")
                 why = f"The bill's {pct:g}% discount is spread across the lines." if pct else "The bill's discount is spread across the lines."
-            elif abs(have - total) <= max(100, total * 0.005):
+            elif near(have, total):
                 why = "Line amounts on this bill include GST; shown here before GST."
             else:
                 why = "Amounts were adjusted to match the bill total."
