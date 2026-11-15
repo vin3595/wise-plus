@@ -16,6 +16,7 @@ BYPASS = "coalesce(current_setting('app.bypass_rls', true), 'off') = 'on'"
 
 
 def upgrade() -> None:
+    import app.models  # noqa: F401
     from app.creditnotes.models import CreditNote
     CreditNote.__table__.create(bind=op.get_bind(), checkfirst=True)
     op.execute("alter table credit_notes enable row level security")

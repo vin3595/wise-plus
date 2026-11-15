@@ -27,6 +27,8 @@ def secure(table: str) -> None:
 
 
 def upgrade() -> None:
+    import app.ledger.models  # noqa: F401  (supplier_entries, which bank lines point to)
+    import app.models  # noqa: F401
     from app.banking.models import BankAccount, BankRule, BankStatement, BankTxn
     bind = op.get_bind()
     for m in (BankAccount, BankStatement, BankRule):
