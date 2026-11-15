@@ -60,18 +60,32 @@ def create_app() -> FastAPI:
     from .tableqr import router as tableqr
     from .banking import router as banks
     from .creditnotes import router as creditnotes
+    from . import exports, tenant_backup
     routes = [(tableqr.router, [Depends(guard("pos"))]), (custfb.router, [Depends(guard("pos"))]), (plans.router, []), (plans.public, []), (stockplus.router, [Depends(guard("stock"))]), (stockplus.alerts, []), (bill_scan.router, [Depends(guard("bills"))]),
               (ledger.router, [Depends(guard("bills"))]), (daily_sheets.router, [Depends(guard("sheets"))]),
               (inventory.router, stock_or_bills), (orders.router, pos), (billing.router, pos), (bill_edits.router, pos), (qr.router, pos),
               (printing.router, pos), (cash.router, pos), (dayclose.router, pos), (payments.router, pos), (loyalty.router, pos),
-              (offline.router, pos), (ads.router, pos), (banks.router, []), (creditnotes.router, [])]
+              (offline.router, pos), (ads.router, pos), (banks.router, []), (creditnotes.router, []), (exports.router, []), (tenant_backup.router, [])]
     routes += [(r, []) for r in (assistant.router, whatsapp.router, public.router, auth.router, tenant.router, users.router, menu.router,
                                  menu_import.router, reports.router, report_tables.router, sms.router, events.router, accounts.router, roles.router)]
     for r, deps in routes:
         app.include_router(r, prefix="/api", dependencies=deps)
 
     Path(s.upload_dir).mkdir(parents=True, exist_ok=True)
-    app.mount("/uploads", StaticFiles(directory=s.upload_dir), name="uploads")
+    # Only logos and screen pictures (/uploads/<tenant id>/<file>) are public. Bill photos, daily sheets, bank
+    # statements and exports live in sub-folders of the same directory and are never served from here.
+    from fastapi import HTTPException as _HTTPException
+    from fastapi.responses import FileResponse as _FileResponse
+    import re as _re
+
+    @app.get("/uploads/{tenant_dir}/{name}", include_in_schema=False)
+    def public_upload(tenant_dir: str, name: str):
+        if not _re.fullmatch(r"[0-9a-f-]{36}", tenant_dir) or not _re.fullmatch(r"[A-Za-z0-9._-]{1,120}", name) or name.startswith("."):
+            raise _HTTPException(404, "Not found")
+        p = Path(s.upload_dir) / tenant_dir / name
+        if not p.is_file():
+            raise _HTTPException(404, "Not found")
+        return _FileResponse(p, headers={"Cache-Control": "public, max-age=86400"})
 
     from .services import events as live
     live.install()  # NOTIFY screens on every committed change

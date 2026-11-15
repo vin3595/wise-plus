@@ -12,6 +12,8 @@
 #   wiseplus-cloud whatsapp          connect WhatsApp (asks for the 4 values from Meta); "whatsapp off" to stop
 #   wiseplus-cloud signup open|first|closed   who may create a restaurant account
 #   wiseplus-cloud backup            database backup now (runs by itself at 4:40 am, keeps 7)
+#   wiseplus-cloud export-tenant <login>          one business's data (zip) into backups/
+#   wiseplus-cloud restore-tenant <login> <zip>   put ONE business back from its backup (others untouched)
 #   wiseplus-cloud link              (re)connect the plus address to Wise's HTTPS server
 #   wiseplus-cloud also <host>|none  serve wise-plus at a second address too (e.g. a sslip.io name while DNS isn't set)
 #   wiseplus-cloud remove            stop wise-plus and take its address off Wise's server; keeps data
@@ -227,6 +229,27 @@ case "$cmd" in
   signup) case "${1:-}" in open|first|closed) put WISE_SIGNUP_MODE "$1"; dc up -d api; wait_up; say "  Sign-up is now: $1";; *) die "open, first or closed";; esac ;;
   backup) backup ;;
   backups) ls -lh "$ROOT"/backups/ ;;
+  export-tenant)
+    [ -n "${1:-}" ] || die "give the business's login id, e.g. shakewallah"
+    out="$ROOT/backups/${1}-$(date +%Y-%m-%d_%H%M).zip"
+    docker exec wiseplus-api-1 python -m app.tenant_backup export "$1" "/tmp/tb.zip" && docker cp wiseplus-api-1:/tmp/tb.zip "$out" \
+      && docker exec wiseplus-api-1 rm -f /tmp/tb.zip && chmod 600 "$out" && say "  Saved: $out" ;;
+  restore-tenant)
+    [ -n "${1:-}" ] && [ -f "${2:-}" ] || die "usage: wiseplus-cloud restore-tenant <login id> <backup.zip>  (a .zip.age is decrypted first)"
+    f="$2"
+    if [[ "$f" == *.age ]]; then
+      key=${WISE_AGE_KEY:-/opt/wise/config/backup.key}
+      [ -f "$key" ] || die "the private backup key isn't at $key (it's also in AWS Parameter Store: /wise/backup-age-key)"
+      age -d -i "$key" -o /tmp/tb-restore.zip "$f" || die "couldn't decrypt"; f=/tmp/tb-restore.zip
+    fi
+    say "  This puts business '$1' back exactly as in the backup. Everything it did since then is lost; other businesses are untouched."
+    read -r -p "  Type the login id again to go ahead: " again; [ "$again" = "$1" ] || die "stopped"
+    backup
+    docker exec wiseplus-api-1 python -m app.tenant_backup export "$1" "/tmp/before-restore.zip" >/dev/null && \
+      docker cp wiseplus-api-1:/tmp/before-restore.zip "$ROOT/backups/$1-before-restore-$(date +%Y-%m-%d_%H%M).zip"
+    docker cp "$f" wiseplus-api-1:/tmp/tb-restore.zip
+    docker exec wiseplus-api-1 python -m app.tenant_backup restore "$1" /tmp/tb-restore.zip && docker exec wiseplus-api-1 rm -f /tmp/tb-restore.zip
+    rm -f /tmp/tb-restore.zip ;;
   link) link "${1:-}" ;;
   also)
     case "${1:-}" in

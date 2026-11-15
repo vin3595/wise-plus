@@ -30,9 +30,16 @@ class Reply:
     """An answer and the taps that follow from it: (command, label). Buttons on WhatsApp, chips in the app."""
     text: str
     options: list[tuple[str, str]] = field(default_factory=list)
+    document: tuple[str, str] | None = None     # wise-plus: (link, file name) sent after the text on WhatsApp
 
 
 HOME = [("dues", "Dues"), ("sales", "Sales today"), ("sheet", "Last daily sheet")]
+
+MENU_TEXT = "What do you need? Or just send a bill, daily sheet or statement."
+MENU = [("sales", "Sales today"), ("summary", "Closing summary"), ("dues", "Supplier dues"), ("bank", "Banks"),
+        ("bank check", "Bank lines to check"), ("expenses", "Expenses"), ("sheet", "Last daily sheet"), ("tally", "CA pack (Tally)"),
+        ("backup", "All my data"), ("how", "What else I can do")]
+HOW = {"how", "more", "commands", "kya kar sakte ho"}
 
 HELP = ("*Ask me:*\n"
         "• *dues* – what you owe every supplier\n"
@@ -43,7 +50,10 @@ HELP = ("*Ask me:*\n"
         "• *sheet* / *sheet 13 nov* – a daily cash sheet\n"
         "• *expenses* – this month's expenses by head\n"
         "• *summary* – closing summary of all outlets (*nightly on* to get it every night)\n"
-        "• Send a photo of a bill or the daily sheet to save it")
+        "• *bank* – bank balances · *bank check* – sort bank lines with a tap\n"
+        "• *tally* – last month's CA pack · *tally oct* / *tally this month*\n"
+        "• *backup* – all your data as a file (owner)\n"
+        "• Send a bill photo, the daily sheet, a supplier's statement or a bank statement (PDF, Excel, photo)")
 
 DUES = {"dues", "due", "outstanding", "balance", "balances", "baki", "baaki", "udhaar", "udhar", "payable", "ledger", "ledgers"}
 LAST = {"last", "lastorder", "order", "kab"}
@@ -271,6 +281,8 @@ def answer_rich(db: Session, text: str, today: date | None = None) -> Reply:
     today = today or business_date()
     words = re.findall(r"[a-z0-9?]+", (text or "").lower())
     if not words or words[0] in HELPS:
+        return Reply(MENU_TEXT, MENU)
+    if words[0] in HOW or " ".join(words) in HOW:
         return Reply(HELP, HOME)
     head, rest = words[0], _rest(words[1:])
     if head == "last" and len(words) > 1 and words[1] in PRICE:      # "last price vanilla"
@@ -303,7 +315,7 @@ def answer_rich(db: Session, text: str, today: date | None = None) -> Reply:
         if head == "show" and datetime.now(ZoneInfo("Asia/Kolkata")).hour < 12:   # last night's message, tapped this morning
             day = today - timedelta(days=1)
         return summary_text(db, day)
-    return Reply("I didn't get that.\n\n" + HELP, HOME)
+    return Reply("I didn't get that. " + MENU_TEXT, MENU)
 
 
 def _unsure(what: str, name: str, maybe: list[str], cmd: str) -> Reply:

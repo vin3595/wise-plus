@@ -236,6 +236,9 @@ def reply_rich(phone: str, text: str) -> Reply | None:
                 else:
                     out = wbanks.handle(db, chosen[3], word)
             if out is None:
+                from . import files as wfiles
+                out = wfiles.handle(db, chosen, word)
+            if out is None:
                 out = answer_rich(db, text or "help")
     if multi:
         out.text += f"\n\n_@{chosen[1]}_"
@@ -250,6 +253,8 @@ def reply_for(phone: str, text: str) -> str | None:
 def send(phone: str, r: Reply) -> None:
     if client.enabled():
         client.send_options(phone, r.text, r.options)
+        if r.document:
+            client.send_document(phone, r.document[0], r.document[1])
 
 
 async def handle_media(phone: str, media_id: str, mime: str, filename: str, caption: str) -> None:

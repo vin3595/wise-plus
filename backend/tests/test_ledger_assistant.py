@@ -87,7 +87,7 @@ def test_dues_payments_and_answers(shop):
     t = ask("price vanilla")
     assert "₹379.14 per tub 5L" in t and "₹350 per tub 5L on 20 Oct" in t and "▲ 8.3%" in t
     assert "Which item?" in ask("price xyzzy pqr") or "No item" in ask("price xyzzy pqr")
-    assert "Ask me" in ask("help") and "didn't get" in ask("weather")
+    assert "What do you need" in ask("help") and "Ask me" in ask("how") and "didn't get" in ask("weather")
     assert "No bills yet" in ask("sales")
 
     # Cancelling the UPI payment puts it back

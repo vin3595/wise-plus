@@ -48,6 +48,21 @@ if [ -n "$recipient" ]; then
        | age -r "$recipient" -o "$tmp/files.tgz.age"; then put "$tmp/files.tgz.age" files.tgz.age
   else problems+=("packing uploaded files failed: $(head -c 200 "$tmp/err")"); fi
 
+  # 3b. On the 1st: each business's own backup (to restore one business alone: wiseplus-cloud restore-tenant)
+  if [ -n "$first" ]; then
+    for login in $(docker exec wiseplus-db-1 psql -tAU postgres -d wise -c "select login_id from tenants where status <> 'suspended'" 2>/dev/null); do
+      if docker exec wiseplus-api-1 python -m app.tenant_backup export "$login" "/tmp/tb-$login.zip" >/dev/null 2>"$tmp/err" \
+         && docker cp "wiseplus-api-1:/tmp/tb-$login.zip" "$tmp/tb.zip" && docker exec wiseplus-api-1 rm -f "/tmp/tb-$login.zip"; then
+        age -r "$recipient" -o "$tmp/tb.zip.age" "$tmp/tb.zip" \
+          && aws s3 cp --only-show-errors --region "$REGION" "$tmp/tb.zip.age" "s3://$BUCKET/monthly/$month/businesses/$login.zip.age" \
+          && done_list+=("business:$login") || problems+=("upload of $login's backup failed")
+        rm -f "$tmp/tb.zip" "$tmp/tb.zip.age"
+      else
+        problems+=("backup of business $login failed: $(head -c 200 "$tmp/err")")
+      fi
+    done
+  fi
+
   # 4. Ease My Bill (MongoDB Atlas), once it runs here and Atlas lets this server in
   if [ -s /opt/emb/.env ] && grep -q '^MONGO_URL=' /opt/emb/.env; then
     if timeout 900 docker run --rm --env-file /opt/emb/.env --network host mongo:7 sh -c \

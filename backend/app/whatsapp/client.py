@@ -67,7 +67,7 @@ def get_media(media_id: str) -> tuple[bytes, str]:
     return r.content, info.get("mime_type") or r.headers.get("content-type", "application/octet-stream")
 
 
-def send_options(to: str, body: str, options: list[tuple[str, str]], button: str = "Choose") -> dict:
+def send_options(to: str, body: str, options: list[tuple[str, str]], button: str = "Menu") -> dict:
     """Text with tappable choices: up to 3 as buttons, up to 10 as a list. options = (command, label).
     A tap comes back as that command, as if typed. Only inside the 24-hour window (replies to the person)."""
     options = options[:10]

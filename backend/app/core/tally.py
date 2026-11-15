@@ -17,11 +17,19 @@ DEFAULT_LEDGERS = {
     "complimentary": "Complimentary Food", "sales": "Sales @{rate}%", "cgst": "Output CGST", "sgst": "Output SGST",
     "igst": "Output IGST", "round_off": "Round Off", "purchase": "Purchase @{rate}%", "in_cgst": "Input CGST",
     "in_sgst": "Input SGST", "cash_purchase": "Cash",
+    # wise-plus: banks, payments, returns and the rest of the books
+    "bank": "Bank", "drawings": "Drawings", "capital": "Capital Account", "salary": "Salary", "rent": "Rent",
+    "bank_charges": "Bank Charges", "tax_paid": "GST / Taxes Paid", "loan": "Loan Account", "suspense": "Suspense",
+    "aggregator": "Zomato / Swiggy", "interest": "Bank Interest", "purchase_return": "Purchase Returns", "refund_in": "Refunds Received",
+    "aggregator_charges": "Aggregator Commission",
 }
 PARENTS = {"cash": "Cash-in-Hand", "upi": "Bank Accounts", "card": "Bank Accounts", "due": "Sundry Debtors",
            "complimentary": "Indirect Expenses", "sales": "Sales Accounts", "cgst": "Duties & Taxes", "sgst": "Duties & Taxes",
            "igst": "Duties & Taxes", "round_off": "Indirect Expenses", "purchase": "Purchase Accounts", "in_cgst": "Duties & Taxes",
-           "in_sgst": "Duties & Taxes"}
+           "in_sgst": "Duties & Taxes", "bank": "Bank Accounts", "drawings": "Capital Account", "capital": "Capital Account",
+           "salary": "Indirect Expenses", "rent": "Indirect Expenses", "bank_charges": "Indirect Expenses", "tax_paid": "Duties & Taxes",
+           "loan": "Loans (Liability)", "suspense": "Suspense A/c", "aggregator": "Sundry Debtors", "interest": "Indirect Incomes",
+           "purchase_return": "Purchase Accounts", "refund_in": "Indirect Incomes", "aggregator_charges": "Indirect Expenses"}
 DUTY_HEAD = {"cgst": "Central Tax", "sgst": "State Tax", "igst": "Integrated Tax", "in_cgst": "Central Tax", "in_sgst": "State Tax"}
 
 
@@ -37,7 +45,7 @@ def amt(paise: int) -> str:
 
 @dataclass
 class Voucher:
-    kind: str                      # Sales | Purchase
+    kind: str                      # Sales | Purchase | Credit Note | Debit Note | Payment | Receipt | Contra | Journal
     day: date
     number: str
     narration: str

@@ -9,6 +9,10 @@ const LABELS: [string, string][] = [
   ["cash", "Cash received"], ["upi", "UPI received"], ["card", "Card received"], ["due", "Credit (due) bills"], ["complimentary", "Complimentary bills"],
   ["sales", "Sales (one per GST rate, {rate} = 5, 12…)"], ["cgst", "Output CGST"], ["sgst", "Output SGST"], ["igst", "Output IGST"], ["round_off", "Round off"],
   ["purchase", "Purchases (per GST rate)"], ["in_cgst", "Input CGST"], ["in_sgst", "Input SGST"],
+  ["bank", "Bank (when no account is set)"], ["drawings", "Owner's drawings"], ["capital", "Capital account"], ["salary", "Salary"], ["rent", "Rent"],
+  ["bank_charges", "Bank charges"], ["tax_paid", "GST / taxes paid"], ["loan", "Loan / EMI"], ["aggregator", "Zomato / Swiggy"],
+  ["aggregator_charges", "Aggregator commission"], ["interest", "Bank interest"], ["purchase_return", "Purchase returns"],
+  ["refund_in", "Refunds received"], ["suspense", "Anything unclear (suspense)"],
 ];
 const iso = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 function month(offset: number): [string, string] {
@@ -21,13 +25,15 @@ export default function Accounts() {
   const { can } = useSession();
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [outletId, setOutletId] = useState("");
+  const [gstin, setGstin] = useState("");
   const [[d1, d2], setRange] = useState<[string, string]>(month(-1));
   const [acc, setAcc] = useState<Acc | null>(null);
   const [edit, setEdit] = useState(false);
   const [saved, setSaved] = useState(false);
   const { busy, error, run } = useAction();
   useEffect(() => { api<Outlet[]>("/tenant/outlets").then(setOutlets); api<Acc>("/tenant/accounts").then(setAcc); }, []);
-  const q = `date_from=${d1}&date_to=${d2}${outletId ? `&outlet_id=${outletId}` : ""}`;
+  const q = `date_from=${d1}&date_to=${d2}${outletId ? `&outlet_id=${outletId}` : ""}${gstin ? `&gstin=${gstin}` : ""}`;
+  const firms = [...new Set(outlets.map((o) => (o as Outlet & { gstin?: string | null }).gstin).filter((g): g is string => !!g))];
   const get = (path: string, name: string) => run(() => download(path, name));
   return (
     <div className="stack">
@@ -41,12 +47,19 @@ export default function Accounts() {
           </div>
           <Input type="date" value={d1} onChange={(e) => setRange([e.target.value, d2])} aria-label="From" />
           <Input type="date" value={d2} onChange={(e) => setRange([d1, e.target.value])} aria-label="To" />
-          {outlets.length > 1 && <Select value={outletId} onChange={(e) => setOutletId(e.target.value)} aria-label="Outlet"><option value="">All outlets</option>{outlets.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</Select>}
+          {outlets.length > 1 && <Select value={outletId} onChange={(e) => { setOutletId(e.target.value); setGstin(""); }} aria-label="Outlet"><option value="">All outlets</option>{outlets.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</Select>}
+          {firms.length > 1 && <Select value={gstin} onChange={(e) => { setGstin(e.target.value); setOutletId(""); }} aria-label="Firm"><option value="">All firms</option>{firms.map((g) => <option key={g} value={g}>GSTIN {g}</option>)}</Select>}
         </div>
+      </Card>
+      <Card title="Everything for the CA">
+        <p className="muted">One ZIP for the period: the Tally ledgers and every voucher (sales, purchases, credit and debit notes, supplier payments, cash drawer, bank),
+          the Excel workbook with the GST summary, and the photos / PDFs of the purchase bills.</p>
+        <Button disabled={busy} onClick={() => get(`/accounts/pack?${q}`, `accounts-pack-${d1}-to-${d2}.zip`)}>Download the CA pack</Button>
+        <p className="muted small">Bank lines still “to check” (Money › Banks) are left out and listed in the README. On WhatsApp, send <strong>tally</strong> to get it there.</p>
       </Card>
       <Tabs id="accounts">
         <Tab label="Excel"><Card title="Excel for the accountant">
-          <p className="muted">One workbook: every bill (sales register), GST by rate, HSN summary, day-wise money by payment mode, and the purchase register. Ready for GSTR-1 and GSTR-3B.</p>
+          <p className="muted">One workbook: every bill (sales register), GST by rate, HSN summary, day-wise money by payment mode, the purchase register, cash, credit notes, supplier payments, bank lines and a GST summary. Ready for GSTR-1 and GSTR-3B.</p>
           <Button disabled={busy} onClick={() => get(`/accounts/excel?${q}`, `wise-accounts-${d1}-to-${d2}.xlsx`)}>Download Excel</Button>
         </Card></Tab>
         <Tab label="Tally"><Card title="Tally Prime">
@@ -58,6 +71,11 @@ export default function Accounts() {
             <Button variant="ghost" disabled={busy} onClick={() => get(`/accounts/tally?kind=masters&${q}`, "wise-tally-ledgers.xml")}>Ledgers (once)</Button>
             <Button disabled={busy} onClick={() => get(`/accounts/tally?kind=sales&${q}`, `wise-tally-sales-${d1}-to-${d2}.xml`)}>Sales vouchers</Button>
             <Button disabled={busy} onClick={() => get(`/accounts/tally?kind=purchases&${q}`, `wise-tally-purchases-${d1}-to-${d2}.xml`)}>Purchase vouchers</Button>
+            <Button disabled={busy} onClick={() => get(`/accounts/tally?kind=all&${q}`, `wise-tally-all-${d1}-to-${d2}.xml`)}>Everything (one file)</Button>
+          </div>
+          <div className="row wrap">
+            {[["credit_notes", "Credit notes"], ["suppliers", "Supplier payments & notes"], ["cash", "Cash drawer"], ["bank", "Bank"]].map(([k, l]) => (
+              <Button key={k} variant="ghost" disabled={busy} onClick={() => get(`/accounts/tally?kind=${k}&${q}`, `wise-tally-${k}-${d1}-to-${d2}.xml`)}>{l}</Button>))}
           </div>
           <p className="muted small">B2B bills (with the customer's GSTIN) are inside the day's sales voucher; their details for GSTR-1 are in the Excel and in Reports &gt; B2B bills.</p>
         </Card></Tab>

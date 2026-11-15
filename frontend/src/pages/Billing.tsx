@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "../api";
+import { api, download } from "../api";
 import { formatPaise } from "../money";
 import { useSession } from "../session";
 import { Button, Card, ErrorText, useAction } from "../ui";
@@ -144,6 +144,23 @@ export default function Billing() {
           <p className="muted small">Extra scans never expire and are used after the month's {b.scans.per_month}.</p>
         </Card>
       )}
+      <YourData />
     </div>
+  );
+}
+
+/** The owner can take all of the business's data any time: Excel to read, a restore file, and the bill photos. */
+function YourData() {
+  const { me } = useSession();
+  const { busy, error, run } = useAction();
+  if (me?.user.role !== "owner") return null;
+  return (
+    <Card title="Your data">
+      <p className="muted">Everything this business has in Ease My Bill: bills, menu, customers, stock, purchases, suppliers, dues, bank lines,
+        credit notes, and the bill photos and statements. Excel to read, plus a full restore file.</p>
+      <Button variant="ghost" disabled={busy} onClick={() => run(() => download("/tenant/backup", "backup.zip"))}>{busy ? "Packing…" : "Download all my data"}</Button>
+      <p className="muted small">A copy is also kept safely off the server every month. On WhatsApp, send <strong>backup</strong>.</p>
+      <ErrorText error={error} />
+    </Card>
   );
 }

@@ -92,6 +92,17 @@ def _supplier_bills(db: Session, outlets: list[uuid.UUID], d1: date, d2: date) -
                                                        Purchase.status == "posted").order_by(Purchase.invoice_date))]
 
 
+def _firm_outlets(db: Session, auth: Auth, outlet_id: uuid.UUID | None, gstin: str | None) -> tuple[list[uuid.UUID], bool]:
+    """wise-plus: outlets in this export, and whether it's the whole business (banks and supplier payments all go in)."""
+    outlets = _outlets(db, auth, outlet_id, allow_training=False)
+    if gstin:
+        g = gstin.strip().upper()
+        outlets = [o.id for o in db.scalars(select(Outlet).where(Outlet.id.in_(outlets))) if (o.gstin or "").upper() == g]
+        if not outlets:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "No outlet has that GSTIN")
+    return outlets, (outlet_id is None and not gstin)
+
+
 def _attach(content: bytes, name: str, mime: str) -> Response:
     return Response(content, media_type=mime, headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
@@ -99,10 +110,11 @@ def _attach(content: bytes, name: str, mime: str) -> Response:
 # ------------------------------------------------------------------ Tally
 
 @router.get("/accounts/tally")
-def tally_file(kind: str = Query(pattern=r"^(masters|sales|purchases)$"), outlet_id: uuid.UUID | None = None,
-               date_from: date | None = None, date_to: date | None = None,
+def tally_file(kind: str = Query(pattern=r"^(masters|sales|purchases|credit_notes|suppliers|cash|bank|all)$"), outlet_id: uuid.UUID | None = None,
+               date_from: date | None = None, date_to: date | None = None, gstin: str | None = None,
                auth: Auth = Depends(require(Perm.reports_view)), db: Session = Depends(get_db)) -> Response:
-    outlets = _outlets(db, auth, outlet_id, allow_training=False)
+    from .. import books
+    outlets, whole = _firm_outlets(db, auth, outlet_id, gstin)
     d1, d2 = _range(date_from, date_to)
     s = get_accounts(auth, db)
     ledgers, company = s["ledgers"], s["company_name"]
@@ -116,6 +128,7 @@ def tally_file(kind: str = Query(pattern=r"^(masters|sales|purchases)$"), outlet
             names.append((tally.ledger_name(ledgers, key), tally.PARENTS[key], tally.DUTY_HEAD.get(key)))
         names += [(tally.ledger_name(ledgers, "sales", r), "Sales Accounts", None) for r in rates]
         names += [(tally.ledger_name(ledgers, "purchase", r), "Purchase Accounts", None) for r in prates]
+        names += books.extra_masters(db, ledgers, books.scope(db, outlets, whole))
         sups = [(x.name, x.gstin) for x in db.scalars(select(Supplier).where(Supplier.is_active.is_(True)))]
         xml = tally.envelope(company, tally.ledger_masters(names, sups), report="All Masters")
         return _attach(xml.encode(), "wise-tally-ledgers.xml", "application/xml")
@@ -124,6 +137,11 @@ def tally_file(kind: str = Query(pattern=r"^(masters|sales|purchases)$"), outlet
         if not vouchers:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "No bills in these dates")
         return _attach(tally.envelope(company, vouchers).encode(), f"wise-tally-sales-{span}.xml", "application/xml")
+    if kind != "purchases":
+        vs = vouchers_for(db, kind, outlets, whole, d1, d2, ledgers)[0]
+        if not vs:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Nothing of that kind in these dates")
+        return _attach(tally.envelope(company, [v.xml() for v in vs]).encode(), f"wise-tally-{kind.replace('_', '-')}-{span}.xml", "application/xml")
     bills = _supplier_bills(db, outlets, d1, d2)
     if not bills:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No purchases entered in these dates")
@@ -133,16 +151,75 @@ def tally_file(kind: str = Query(pattern=r"^(masters|sales|purchases)$"), outlet
     return _attach(tally.envelope(company, vouchers).encode(), f"wise-tally-purchases-{span}.xml", "application/xml")
 
 
+def _purchase_vouchers(db: Session, outlets, d1: date, d2: date, ledgers: dict) -> list:
+    return [tally.purchase_voucher(tally.SupplierBill(p.invoice_date, p.invoice_no or f"P-{str(p.id)[:8]}", sup.name if sup else None,
+                                                      [(ln["gst_bp"], ln["amount_paise"], ln["tax_paise"]) for ln in p.lines]), ledgers)
+            for p, sup in _supplier_bills(db, outlets, d1, d2)]
+
+
+def vouchers_for(db: Session, kind: str, outlets, whole: bool, d1: date, d2: date, ledgers: dict) -> tuple[list, dict]:
+    """wise-plus: vouchers of one kind, or all of them ('all'), and what was left out (bank lines still to check…)."""
+    from .. import books
+    accts = books.scope(db, outlets, whole)
+    skipped: dict = {}
+    out: list = []
+    if kind in ("sales", "all"):
+        out += [tally.sales_voucher(d, ledgers) for d in _day_sales(db, outlets, d1, d2)]
+    if kind in ("purchases", "all"):
+        out += _purchase_vouchers(db, outlets, d1, d2, ledgers)
+    if kind in ("credit_notes", "all"):
+        out += books.credit_note_vouchers(db, outlets, d1, d2, ledgers, accts)
+    if kind in ("suppliers", "all"):
+        out += books.supplier_vouchers(db, d1, d2, ledgers, accts, whole)
+    if kind in ("cash", "all"):
+        out += books.cash_vouchers(db, outlets, d1, d2, ledgers, accts)
+    if kind in ("bank", "all"):
+        vs, skipped = books.bank_vouchers(db, d1, d2, ledgers, accts)
+        out += vs
+    out.sort(key=lambda v: v.day)
+    return out, skipped
+
+
+@router.get("/accounts/pack")
+def ca_pack(date_from: date | None = None, date_to: date | None = None, outlet_id: uuid.UUID | None = None, gstin: str | None = None,
+            auth: Auth = Depends(require(Perm.reports_view)), db: Session = Depends(get_db)) -> Response:
+    """wise-plus: everything the CA needs for a period in one ZIP."""
+    from .. import books
+    outlets, whole = _firm_outlets(db, auth, outlet_id, gstin)
+    d1, d2 = _range(date_from, date_to)
+    s = get_accounts(auth, db)
+    vs, skipped = vouchers_for(db, "all", outlets, whole, d1, d2, s["ledgers"])
+    masters = tally_file("masters", outlet_id, d1, d2, gstin, auth, db).body
+    xlsx = excel_file(outlet_id, d1, d2, gstin, auth, db).body
+    disk = books.bill_files(db, outlets, d1, d2)
+    tenant = db.get(Tenant, auth.tenant_id)
+    counts = defaultdict(int)
+    for v in vs:
+        counts[v.kind] += 1
+    readme = [f"{tenant.name}: accounts for {d1:%d %b %Y} to {d2:%d %b %Y}" + (f" (GSTIN {gstin.upper()})" if gstin else ""), "",
+              "1. In Tally: Import > Masters > 1-tally-ledgers.xml (creates any ledger that's missing; safe to repeat).",
+              "2. Then Import > Transactions > 2-tally-vouchers.xml.", "3. accounts.xlsx: registers, credit notes, bank lines and the GST summary.",
+              f"4. purchase-bills/: {len(disk)} supplier bill photo(s) / PDF(s).", "", "Vouchers: " + (", ".join(f"{k} {n}" for k, n in sorted(counts.items())) or "none")]
+    if skipped.get("to_check"):
+        readme.append(f"NOT included: {skipped['to_check']} bank line(s) still 'To check' in Money > Banks. Sort them and export again.")
+    if not whole:
+        readme.append("Only this firm's outlets, and bank lines / supplier payments of the bank accounts set to take money for them.")
+    files = {"README.txt": "\r\n".join(readme).encode(), "1-tally-ledgers.xml": masters,
+             "2-tally-vouchers.xml": tally.envelope(s["company_name"], [v.xml() for v in vs]).encode(), "accounts.xlsx": xlsx}
+    span = f"{d1}" + ("" if d1 == d2 else f"-to-{d2}")
+    return _attach(books.zip_pack(files, disk), f"accounts-pack-{span}.zip", "application/zip")
+
+
 # ------------------------------------------------------------------ Excel
 
 @router.get("/accounts/excel")
-def excel_file(outlet_id: uuid.UUID | None = None, date_from: date | None = None, date_to: date | None = None,
+def excel_file(outlet_id: uuid.UUID | None = None, date_from: date | None = None, date_to: date | None = None, gstin: str | None = None,
                auth: Auth = Depends(require(Perm.reports_view)), db: Session = Depends(get_db)) -> Response:
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
 
-    outlets = _outlets(db, auth, outlet_id, allow_training=False)
+    outlets, whole = _firm_outlets(db, auth, outlet_id, gstin)
     d1, d2 = _range(date_from, date_to)
     tenant = db.get(Tenant, auth.tenant_id)
     onames = {o.id: o.name for o in db.scalars(select(Outlet).where(Outlet.id.in_(outlets)))}
@@ -235,6 +312,8 @@ def excel_file(outlet_id: uuid.UUID | None = None, date_from: date | None = None
                                        ("Category / given to", 20, False), ("Note", 24, False), ("Cash out", 12, True), ("Cash in", 12, True)], crow,
           "Cash taken out of / put into the drawers. Post expenses to their expense ledgers, drawings given to the owner to the "
           "Drawings (capital) account, and bank deposits as a contra entry to the bank.")
+    from .. import books   # wise-plus: credit notes, supplier payments & notes, bank lines, GST summary
+    books.extra_sheets(db, sheet, outlets, d1, d2, books.scope(db, outlets, whole), whole)
     del wb["Sheet"]
     buf = io.BytesIO()
     wb.save(buf)
