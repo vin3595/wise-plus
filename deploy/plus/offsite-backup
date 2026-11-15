@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Nightly copy of everything that matters to S3, encrypted, so losing this server loses nothing.
+#   Wise database (its own encrypted dump), wise-plus database, uploaded files (bill photos, sheets,
+#   logos) of both, Ease My Bill's database (when reachable), plus a disk-space check.
+# Encrypted with the same age key as Wise's backups; the private key is kept outside the server in
+# AWS Systems Manager > Parameter Store > /wise/backup-age-key. The server can only ADD files to the
+# bucket (no reading or deleting), so even a broken-into server can't wipe the backups.
+# Daily copies are kept 35 days, the 1st of each month 13 months. Problems are emailed (SNS topic).
+set -uo pipefail
+BUCKET=${WISE_BACKUP_BUCKET:-wise-backups-537440977415}
+TOPIC=${WISE_ALERT_TOPIC:-arn:aws:sns:ap-south-1:537440977415:wise-alerts}
+REGION=ap-south-1
+KEYFILE=/opt/wise/config/backup.key
+STATE=/var/lib/wise-offsite; mkdir -p "$STATE"
+day=$(date +%F); month=$(date +%Y-%m); first=$([ "$(date +%d)" = 01 ] && echo yes || true)
+tmp=$(mktemp -d /var/tmp/offsite.XXXXXX); trap 'rm -rf "$tmp"' EXIT
+problems=(); done_list=()
+
+recipient=$(grep -o 'age1[0-9a-z]*' "$KEYFILE" 2>/dev/null | head -1)
+[ -n "$recipient" ] || { problems+=("no backup key at $KEYFILE"); }
+
+put() {   # put FILE NAME
+  local f=$1 name=$2 size
+  size=$(stat -c %s "$f" 2>/dev/null || echo 0)
+  if [ "$size" -lt 100 ]; then problems+=("$name is empty"); return; fi
+  if aws s3 cp --only-show-errors --region "$REGION" "$f" "s3://$BUCKET/daily/$day/$name"; then
+    [ -n "$first" ] && aws s3 cp --only-show-errors --region "$REGION" "$f" "s3://$BUCKET/monthly/$month/$name"
+    done_list+=("$name $(numfmt --to=iec "$size")")
+  else
+    problems+=("upload of $name failed")
+  fi
+}
+
+if [ -n "$recipient" ]; then
+  # 1. Wise: its own nightly dump (04:20), already encrypted
+  w=$(ls -1t /opt/wise/backups/wise-*.sql.gz.age 2>/dev/null | head -1)
+  if [ -n "$w" ] && [ $(( $(date +%s) - $(stat -c %Y "$w") )) -lt 93600 ]; then put "$w" wise.sql.gz.age
+  else problems+=("Wise's nightly dump is missing or older than a day"); fi
+
+  # 2. wise-plus database
+  if docker exec wiseplus-db-1 pg_dump -U postgres -d wise -Fc > "$tmp/wiseplus.dump" 2> "$tmp/err" && [ -s "$tmp/wiseplus.dump" ]; then
+    age -r "$recipient" -o "$tmp/wiseplus.dump.age" "$tmp/wiseplus.dump" && put "$tmp/wiseplus.dump.age" wiseplus.dump.age
+  else problems+=("wise-plus database dump failed: $(head -c 200 "$tmp/err")"); fi
+  rm -f "$tmp/wiseplus.dump"
+
+  # 3. Uploaded files (bill photos, daily sheets, logos)
+  if tar -C / -czf - opt/wiseplus/data/uploads opt/wise/data/uploads $( [ -d /opt/emb/data ] && echo opt/emb/data ) 2> "$tmp/err" \
+       | age -r "$recipient" -o "$tmp/files.tgz.age"; then put "$tmp/files.tgz.age" files.tgz.age
+  else problems+=("packing uploaded files failed: $(head -c 200 "$tmp/err")"); fi
+
+  # 4. Ease My Bill (MongoDB Atlas), once it runs here and Atlas lets this server in
+  if [ -s /opt/emb/.env ] && grep -q '^MONGO_URL=' /opt/emb/.env; then
+    if timeout 900 docker run --rm --env-file /opt/emb/.env --network host mongo:7 sh -c \
+         'mongodump --quiet --uri="$(echo $MONGO_URL | tr -d \")" --db="$(echo $DB_NAME | tr -d \")" --archive --gzip' > "$tmp/emb.archive" 2> "$tmp/err" \
+       && [ -s "$tmp/emb.archive" ]; then
+      age -r "$recipient" -o "$tmp/emb.archive.age" "$tmp/emb.archive" && put "$tmp/emb.archive.age" easemybill-mongo.archive.age
+    else
+      [ -f "$STATE/emb-expected" ] && problems+=("Ease My Bill database backup failed: $(tail -c 200 "$tmp/err")")
+    fi
+    rm -f "$tmp/emb.archive"
+  fi
+fi
+
+# 5. Disk space
+used=$(df --output=pcent / | tail -1 | tr -dc 0-9)
+[ "${used:-0}" -ge 85 ] && problems+=("disk is ${used}% full")
+
+if [ ${#problems[@]} -gt 0 ]; then
+  msg="Backup on $(hostname) $(date '+%d %b %Y %H:%M'):"$'\n'"$(printf -- '- %s\n' "${problems[@]}")"$'\n'"Saved: ${done_list[*]:-nothing}"
+  aws sns publish --region "$REGION" --topic-arn "$TOPIC" --subject "Backup problem on the Wise server" --message "$msg" >/dev/null || true
+  echo "$msg" >&2
+  exit 1
+fi
+date -Is > "$STATE/last-ok"
+echo "Off-server backup done: ${done_list[*]}"

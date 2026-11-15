@@ -118,12 +118,21 @@ link() {
   reload_wise_caddy && { [ "${1:-}" = quiet ] || say "  https://$(get WISEPLUS_DOMAIN) is served by Wise's Caddy."; }
 }
 backup() {
-  mkdir -p "$ROOT/backups"
-  local out; out="$ROOT/backups/wiseplus-$(date +%Y-%m-%d_%H%M).sql.gz"
+  mkdir -p "$ROOT/backups"; chmod 700 "$ROOT/backups"
+  local out key; out="$ROOT/backups/wiseplus-$(date +%Y-%m-%d_%H%M).sql.gz"
+  # Encrypted with Wise's backup key when it's on this server (its private half is also kept in
+  # AWS Parameter Store /wise/backup-age-key), so a copied backup file is unreadable on its own.
+  key=$(grep -o 'age1[0-9a-z]*' /opt/wise/config/backup.key 2>/dev/null | head -1 || true)
+  [ -n "$key" ] && out="$out.age"
   # As the database superuser inside the container, so row-level security doesn't hide any rows.
-  docker exec wiseplus-db-1 pg_dump -U postgres -d wise --no-owner | gzip -9 > "$out" || { rm -f "$out"; die "backup failed"; }
+  if [ -n "$key" ]; then
+    docker exec wiseplus-db-1 pg_dump -U postgres -d wise --no-owner | gzip -9 | age -r "$key" > "$out" || { rm -f "$out"; die "backup failed"; }
+  else
+    docker exec wiseplus-db-1 pg_dump -U postgres -d wise --no-owner | gzip -9 > "$out" || { rm -f "$out"; die "backup failed"; }
+  fi
   [ -s "$out" ] || die "backup came out empty"
-  ls -1t "$ROOT"/backups/wiseplus-*.sql.gz | tail -n +8 | xargs -r rm -f
+  chmod 600 "$out"
+  ls -1t "$ROOT"/backups/wiseplus-*.sql.gz* | tail -n +8 | xargs -r rm -f
   say "  Backup saved: $out ($(du -h "$out" | cut -f1))"
 }
 
