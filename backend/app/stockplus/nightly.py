@@ -90,6 +90,10 @@ def outlet_lines(db: Session, o: Outlet, day: date) -> tuple[list[str], dict]:
         out.append(f"   Low stock ({len(low)}): " + ", ".join(low[:8]) + ("…" if len(low) > 8 else ""))
     if order:
         out.append("   Order for tomorrow: " + ", ".join(order[:10]))
+    from ..custwa.router import outlet_line as fb_line
+    fbl = fb_line(db, o.id, day)
+    if fbl:
+        out.append(fbl)
     waiting = db.scalar(select(func.count()).select_from(StockTransfer).where(StockTransfer.to_outlet_id == o.id, StockTransfer.status == "sent")) or 0
     if waiting:
         out.append(f"   {waiting} transfer{'s' if waiting > 1 else ''} not received yet")

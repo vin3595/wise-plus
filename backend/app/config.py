@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     wa_verify_token: str = ""       # what Meta sends back once when the webhook is set up
     wa_graph_version: str = "v23.0"
     wa_nightly_template: str = ""
+    wa_bill_template: str = ""       # customers' bill with feedback buttons (4 body values, 3 quick replies)
     wa_otp_template: str = "login_code"   # authentication template for sign-up / sign-in codes (WISE_OTP_PROVIDER=whatsapp)   # approved template for the nightly summary outside the 24-hour window
     nightly_at: str = "23:30"       # India time; "" turns the nightly WhatsApp summary off
 

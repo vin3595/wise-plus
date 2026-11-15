@@ -64,4 +64,6 @@ class WaState(Base):
     phone10: Mapped[str] = mapped_column(String(10), primary_key=True)
     choice: Mapped[str | None] = mapped_column(String(30))
     held: Mapped[list | None] = mapped_column(JSONB(none_as_null=True))   # [[time, media_id, mime, filename, caption]]
+    # a customer who just said the visit wasn't good: their next message is what went wrong
+    feedback: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True))   # {feedback_id, tenant_id, at}
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

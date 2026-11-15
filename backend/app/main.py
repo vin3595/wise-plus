@@ -56,7 +56,8 @@ def create_app() -> FastAPI:
     # wise-plus: each service's endpoints answer only for businesses that switched it on (app/modules.py)
     pos, stock_or_bills = [Depends(guard("pos"))], [Depends(guard("stock", "bills"))]
     from .billing import router as plans   # wise-plus subscriptions (not routers.billing, the POS bills)
-    routes = [(plans.router, []), (plans.public, []), (stockplus.router, [Depends(guard("stock"))]), (stockplus.alerts, []), (bill_scan.router, [Depends(guard("bills"))]),
+    from .custwa import router as custfb
+    routes = [(custfb.router, [Depends(guard("pos"))]), (plans.router, []), (plans.public, []), (stockplus.router, [Depends(guard("stock"))]), (stockplus.alerts, []), (bill_scan.router, [Depends(guard("bills"))]),
               (ledger.router, [Depends(guard("bills"))]), (daily_sheets.router, [Depends(guard("sheets"))]),
               (inventory.router, stock_or_bills), (orders.router, pos), (billing.router, pos), (bill_edits.router, pos), (qr.router, pos),
               (printing.router, pos), (cash.router, pos), (dayclose.router, pos), (payments.router, pos), (loyalty.router, pos),
@@ -107,6 +108,8 @@ def create_app() -> FastAPI:
         import asyncio
         from .stockplus.nightly import scheduler
         app.state.nightly = asyncio.create_task(scheduler())
+        from .custwa.service import sender
+        app.state.custwa = asyncio.create_task(sender())   # wise-plus: customers' WhatsApp bills
 
     return app
 

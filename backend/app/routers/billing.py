@@ -165,6 +165,8 @@ def issue_bill(db: Session, auth: Auth, order: Order, body: BillCreate) -> Bill:
     )
     save_bill(db, bill, rows, calc, [(p.mode, p.amount_paise, p.reference) for p in body.payments])
     sms.on_bill_created(db, bill)
+    from ..custwa.service import queue_bill   # wise-plus: the bill on WhatsApp, with feedback buttons
+    queue_bill(db, bill)
     alerts.on_bill_created(db, bill, modes)
     audit.record(db, auth.tenant_id, auth.user_id, "create", "bill", bill.id,
                  after={"invoice_no": inv, "total_paise": calc.total_paise, "modes": modes,

@@ -133,7 +133,8 @@ async def receive(request: Request, background: BackgroundTasks) -> dict:
                     _seen.popitem(last=False)
                 inter = m.get("interactive") or {}
                 tap = inter.get("button_reply") or inter.get("list_reply") or {}
-                text = tap.get("id") or (m.get("text") or {}).get("body") or (m.get("button") or {}).get("text") or ""
+                btn = m.get("button") or {}       # a quick reply under a template carries our payload
+                text = tap.get("id") or (m.get("text") or {}).get("body") or btn.get("payload") or btn.get("text") or ""
                 media = m.get("image") or m.get("document")
                 if m.get("from") and media and media.get("id"):
                     background.add_task(handle_media, m["from"], media["id"], media.get("mime_type") or "",
@@ -293,6 +294,10 @@ def _release_held(phone: str, text: str) -> bool:
 
 def handle(phone: str, text: str) -> None:
     try:
+        from ..custwa.service import handle_customer   # wise-plus: customers rating a visit
+        if (text or "").startswith("fb:") or not _who(client.last10(phone)):
+            if handle_customer(phone, text):
+                return
         if _release_held(phone, text):
             return
         out = reply_rich(phone, text)

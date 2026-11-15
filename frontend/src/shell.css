@@ -245,3 +245,10 @@ details.spot summary { cursor: pointer; }
 .kept-src { display: inline-flex; gap: 0.3rem; align-items: center; }
 .kept-full { width: 100%; max-width: 900px; border-radius: 12px; border: 1px solid var(--line); display: block; }
 .kept-pdf { width: 100%; height: 80vh; border: 1px solid var(--line); border-radius: 12px; }
+/* Feedback */
+.fb-list { list-style: none; padding: 0; margin: 0; }
+.fb-list li { display: grid; grid-template-columns: 2rem 1fr; gap: 0.6rem; padding: 0.6rem 0; border-top: 1px solid var(--line); }
+.fb-list li:first-child { border-top: 0; }
+.fb-list li.bad { background: color-mix(in srgb, #dc2626 5%, transparent); }
+.fb-list p { margin: 0.2rem 0 0; }
+.fb-face { font-size: 1.4rem; }

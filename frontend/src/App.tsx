@@ -36,6 +36,7 @@ import Accounts from "./pages/Accounts";
 import Access from "./pages/Access";
 import Cash from "./pages/Cash";
 import Dues from "./pages/Dues";
+import Feedback from "./pages/Feedback";
 import BillKeeper from "./pages/BillKeeper";
 import Billing from "./pages/Billing";
 import TrialBanner from "./components/TrialBanner";
@@ -69,7 +70,7 @@ function Shell({ children }: { children: ReactNode }) {
     { label: "Supplier dues", section: "Money", pages: [["/dues", "Supplier dues", has("bills") && can("reports.view")]] },
     { label: "Reports", section: "Money", pages: [["/reports", "Reports", can("reports.view")], ["/accounts", "Accounts and Tally", can("reports.view")]] },
     { label: has("stock") ? "Stock" : "Purchases", section: "Stock and customers", pages: [["/stock", has("stock") ? "Stock" : "Purchases", (has("stock") || has("bills")) && can("stock.count")]] },
-    { label: "Customers", section: "Stock and customers", pages: [["/customers", "Customers", pos && can("loyalty.manage")]] },
+    { label: "Customers", section: "Stock and customers", pages: [["/customers", "Customers", pos && can("loyalty.manage")], ["/feedback", "Feedback", pos && can("reports.view")]] },
     { label: "Getting started", section: "Setup", pages: [["/start", "Getting started", can("tenant.settings")]] },
     { label: "Menu", section: "Setup", pages: [["/menu", "Items", (pos || has("stock")) && can("menu.manage")], ["/outlet-menu", "Outlet prices", pos && can("menu.override")],
       ["/tax", "Tax", pos && can("menu.manage")], ["/kitchen", "Kitchen and printers", pos && (can("menu.manage") || can("outlets.manage"))]] },
@@ -258,6 +259,7 @@ export default function App() {
         <Route path="/sheets" element={<Sheets />} />
         <Route path="/services" element={<Services />} />
         <Route path="/bill-keeper" element={<BillKeeper />} />
+        <Route path="/feedback" element={<Feedback />} />
         <Route path="/billing" element={<Billing />} />
         <Route path="/menu" element={<MenuEditor />} />
         <Route path="/menu/import" element={<MenuImport />} />

@@ -107,6 +107,9 @@ class Outlet(Base, Timestamps):
     qr_ordering: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     qr_auto_accept: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     kiosk_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)  # /kiosk/<qr_key>
+    # wise-plus: send the bill on WhatsApp (with feedback buttons), and where happy customers can review us
+    wa_bills: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    google_review_url: Mapped[str | None] = mapped_column(String(300))
     table_labels: Mapped[list | None] = mapped_column(JSONB)  # ["T1", "T2", ...]
     stock_check_frequency_days: Mapped[int] = mapped_column(Integer, default=7, nullable=False)
     # Secret part of the customer order-ready screen URL (/display/<key>); no login on the TV.
