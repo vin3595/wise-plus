@@ -27,6 +27,7 @@ class SupplierEntry(Base):
     amount_paise: Mapped[int] = mapped_column(BigInteger, nullable=False)    # opening: what we owed then (negative = they owed us)
     mode: Mapped[str | None] = mapped_column(String(6))                      # payments: cash | upi | bank | cheque | card | other
     reference: Mapped[str | None] = mapped_column(String(60))                # UTR, cheque no., debit note no.
+    bank_account_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("bank_accounts.id"))  # paid from
     note: Mapped[str | None] = mapped_column(String(200))
     status: Mapped[str] = mapped_column(String(9), default="posted", nullable=False)   # posted | cancelled
     created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)

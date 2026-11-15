@@ -26,6 +26,7 @@ class EntryIn(BaseModel):
     mode: str | None = Field(default=None, pattern=r"^(cash|upi|bank|cheque|card|other)$")
     reference: str | None = Field(default=None, max_length=60)
     note: str | None = Field(default=None, max_length=200)
+    bank_account_id: uuid.UUID | None = None
 
 
 @router.get("/suppliers")
@@ -52,7 +53,8 @@ def add_entry(body: EntryIn, db: Session = Depends(get_db), auth: Auth = Depends
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Say how it was paid")
     e = SupplierEntry(tenant_id=auth.tenant_id, supplier_id=body.supplier_id, entry_date=body.entry_date, kind=body.kind,
                       amount_paise=body.amount_paise, mode=body.mode if body.kind == "payment" else None,
-                      reference=(body.reference or "").strip() or None, note=(body.note or "").strip() or None, created_by=auth.user_id)
+                      reference=(body.reference or "").strip() or None, note=(body.note or "").strip() or None, created_by=auth.user_id,
+                      bank_account_id=body.bank_account_id if body.kind == "payment" else None)
     db.add(e)
     db.flush()
     audit.record(db, auth.tenant_id, auth.user_id, "create", "supplier_entry", e.id,

@@ -295,10 +295,14 @@ def apply(db: Session, tenant_id, user_id, supplier: Supplier, payments: list[di
                for e in existing + made):
             continue
         ref = (p.get("ref") or "")[:60] or None
+        digits = re.sub(r"\D", "", p.get("bank") or "")
+        from ..banking.models import BankAccount
+        bank = next((a for a in db.scalars(select(BankAccount).where(BankAccount.is_active.is_(True)))
+                     if a.last4 and digits.endswith(a.last4)), None) if len(digits) >= 4 else None
         e = SupplierEntry(tenant_id=tenant_id, supplier_id=supplier.id, entry_date=p["date"], kind=kind, amount_paise=p["amount_paise"],
                           mode=(p.get("mode") or "bank") if kind == "payment" else None,
                           reference=ref, note=(("From statement · " + (p.get("bank") or p.get("particulars") or "")).strip(" ·"))[:200],
-                          created_by=user_id)
+                          created_by=user_id, bank_account_id=bank.id if (bank and kind == "payment") else None)
         db.add(e)
         made.append(e)
     db.flush()
@@ -309,7 +313,7 @@ def apply(db: Session, tenant_id, user_id, supplier: Supplier, payments: list[di
 
 def looks_like_statement(data: bytes, content_type: str, name: str, caption: str = "") -> bool:
     """Free check before asking the AI: a typed PDF from Tally/Busy/Marg says so in words."""
-    if re.search(r"\b(statement|ledger|khata|account copy)\b", f"{caption} {name}", re.I):
+    if re.search(r"\b(ledger|khata|account copy)\b", f"{caption} {name}", re.I):
         return True
     if not (content_type == "application/pdf" or data[:4] == b"%PDF"):
         return False

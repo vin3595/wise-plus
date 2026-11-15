@@ -58,11 +58,12 @@ def create_app() -> FastAPI:
     from .billing import router as plans   # wise-plus subscriptions (not routers.billing, the POS bills)
     from .custwa import router as custfb
     from .tableqr import router as tableqr
+    from .banking import router as banks
     routes = [(tableqr.router, [Depends(guard("pos"))]), (custfb.router, [Depends(guard("pos"))]), (plans.router, []), (plans.public, []), (stockplus.router, [Depends(guard("stock"))]), (stockplus.alerts, []), (bill_scan.router, [Depends(guard("bills"))]),
               (ledger.router, [Depends(guard("bills"))]), (daily_sheets.router, [Depends(guard("sheets"))]),
               (inventory.router, stock_or_bills), (orders.router, pos), (billing.router, pos), (bill_edits.router, pos), (qr.router, pos),
               (printing.router, pos), (cash.router, pos), (dayclose.router, pos), (payments.router, pos), (loyalty.router, pos),
-              (offline.router, pos), (ads.router, pos)]
+              (offline.router, pos), (ads.router, pos), (banks.router, [])]
     routes += [(r, []) for r in (assistant.router, whatsapp.router, public.router, auth.router, tenant.router, users.router, menu.router,
                                  menu_import.router, reports.router, report_tables.router, sms.router, events.router, accounts.router, roles.router)]
     for r, deps in routes:

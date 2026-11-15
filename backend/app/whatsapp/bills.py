@@ -102,21 +102,33 @@ def _counted(tenant_id) -> None:
 
 async def _read_sent_bill(chosen: tuple, phone10: str, media_id: str, mime: str, filename: str, caption: str = "") -> Reply:
     tenant_id, login_id, role, user_id = chosen
+    data, ct = await run_in_threadpool(client.get_media, media_id)
+    ct = (mime or ct or "").split(";")[0].lower()
+    from ..banking.parse import looks_like_bank_statement
+    # A bank statement from net banking (Excel / CSV) is read without the AI, so it works even with bill scanning off.
+    if not re.search(r"\bsheet\b", caption or "", re.I) and await run_in_threadpool(looks_like_bank_statement, data, ct, filename or "", caption or ""):
+        if Perm.banks not in effective(uuid.UUID(tenant_id), Role(role)):
+            return Reply("Bank statements are for the owner. Ask them to allow it under Staff › Who can do what.")
+        return await _read_bank(tenant_id, user_id, data, ct, filename or "statement")
     if not enabled():
         return Reply("Bill scanning isn't switched on for this restaurant yet.")
     stop = await run_in_threadpool(_allowance, tenant_id)
     if stop:
         return Reply(stop)
-    data, ct = await run_in_threadpool(client.get_media, media_id)
-    ct = (mime or ct or "").split(";")[0].lower()
     try:
         from ..ledger import statement as stm
         if re.search(r"\bsheet\b", caption or "", re.I):
             kind = {"type": "LEDGER_PAGE"}
         elif await run_in_threadpool(stm.looks_like_statement, data, ct, filename or "", caption or ""):
             kind = {"type": "SUPPLIER_STATEMENT"}
+        elif (filename or "").lower().endswith((".xlsx", ".xls", ".csv")):
+            return Reply("Couldn't find bank transactions in that file. Send the statement as downloaded from net banking.")
         else:
             kind = await classify(data, ct, filename or "bill")
+        if kind.get("type") == "BANK_STATEMENT":
+            if Perm.banks not in effective(uuid.UUID(tenant_id), Role(role)):
+                return Reply("Bank statements are for the owner. Ask them to allow it under Staff › Who can do what.")
+            return await _read_bank(tenant_id, user_id, data, ct, filename or "statement")
         if kind.get("type") == "SUPPLIER_STATEMENT":
             # A supplier's ledger: which of their bills are in the POS, and their payments into supplier dues.
             if Perm.inventory_manage not in effective(uuid.UUID(tenant_id), Role(role)):
@@ -157,6 +169,19 @@ async def _read_sent_bill(chosen: tuple, phone10: str, media_id: str, mime: str,
                              [(f"discard {sid}", "Discard")])
             return Reply(summary(d) + "\n\nAdd it to stock and supplier dues?", [(f"save {sid}", "Save"), (f"discard {sid}", "Discard")])
     return await run_in_threadpool(store)
+
+
+async def _read_bank(tenant_id: str, user_id: str, data: bytes, ct: str, filename: str) -> Reply:
+    from ..banking import parse, service as bsvc
+    from ..banking.router import run_import
+    try:
+        st = await parse.read_statement(data, ct, filename)
+    except parse.BankParseError as e:
+        return Reply(str(e))
+    if data[:4] == b"%PDF" or ct.startswith("image/"):      # the AI read it: counts like a scan
+        await run_in_threadpool(_counted, tenant_id)
+    res = await run_in_threadpool(run_import, uuid.UUID(tenant_id), uuid.UUID(user_id), data, st, filename)
+    return Reply(bsvc.summary_text(res), [("bank check", f"Check {res['to_check']}")] if res["to_check"] else [("bank", "Balances")])
 
 
 async def _read_statement(tenant_id: str, user_id: str, data: bytes, ct: str, filename: str) -> Reply:

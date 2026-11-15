@@ -319,3 +319,25 @@ td .warn, p.warn { color: #92400e; font-weight: 600; display: inline-flex; gap: 
 .check-list { list-style: none; padding: 0; margin: 0.5rem 0 0.9rem; display: grid; gap: 0.5rem; }
 .check-list label { display: flex; gap: 0.5rem; align-items: center; cursor: pointer; }
 .check-list input[type="checkbox"] { width: 1.1rem; height: 1.1rem; }
+
+/* Money › Banks */
+.bank-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: 0.6rem; }
+.bank-card { display: grid; gap: 0.2rem; text-align: left; padding: 0.8rem 0.9rem; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--card, #fff); font: inherit; color: inherit; cursor: pointer; }
+.bank-card.on { border-color: var(--primary, #138996); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary, #138996) 25%, transparent); }
+.bank-card strong { font-size: 1.25rem; }
+.bank-name { font-weight: 600; }
+.bank-lines { list-style: none; padding: 0; margin: 0; display: grid; }
+.bank-line { padding: 0.6rem 0; border-bottom: 1px solid var(--line); display: grid; gap: 0.35rem; }
+.bank-line:last-child { border-bottom: 0; }
+.bank-line-top { display: grid; grid-template-columns: 4rem 1fr auto; gap: 0.6rem; align-items: baseline; }
+.bank-narr { overflow-wrap: anywhere; font-size: 0.92rem; }
+.bank-line .in { color: var(--mint); }
+.bank-line .out { color: inherit; }
+.bank-pick { align-items: center; gap: 0.4rem; }
+.bank-pick select, .bank-pick input { max-width: 14rem; }
+ul.plain { list-style: none; padding: 0; margin: 0.3rem 0; display: grid; gap: 0.2rem; }
+.plain-fieldset { border: 0; padding: 0; margin: 0.6rem 0; }
+label.check { display: inline-flex; gap: 0.35rem; align-items: center; margin-right: 0.8rem; }
+.ok-ico { color: var(--mint); vertical-align: -3px; }
+@media (max-width: 560px) { .bank-line-top { grid-template-columns: 1fr auto; } .bank-line-top .small { grid-column: 1 / -1; } }

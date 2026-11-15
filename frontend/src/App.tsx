@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import InstallApp from "./components/InstallApp";
 import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { BarChart3, ChefHat, ChevronDown, ClipboardList, LayoutDashboard, LogOut, Menu, NotebookPen, Archive, BellRing, Package, PanelLeftClose, PanelLeftOpen, Receipt,
-  Rocket, Settings as SettingsIcon, SlidersHorizontal, Store, Truck, UserCog, Users as UsersIcon, UtensilsCrossed, Wallet, X, type LucideIcon } from "lucide-react";
+  Landmark, Rocket, Settings as SettingsIcon, SlidersHorizontal, Store, Truck, UserCog, Users as UsersIcon, UtensilsCrossed, Wallet, X, type LucideIcon } from "lucide-react";
 import { useSession } from "./session";
 import Setup from "./pages/Setup";
 import Login from "./pages/Login";
@@ -36,6 +36,7 @@ import Accounts from "./pages/Accounts";
 import Access from "./pages/Access";
 import Cash from "./pages/Cash";
 import Dues from "./pages/Dues";
+import Banks from "./pages/Banks";
 import Floor from "./pages/Floor";
 import TableService from "./pages/TableService";
 import TableAlerts from "./components/TableAlerts";
@@ -51,7 +52,7 @@ import { EmbMark, PoweredBy } from "./components/Brand";
 
 const ICONS: Record<string, LucideIcon> = {
   "Home": LayoutDashboard, "Orders": ClipboardList, "Kitchen display": ChefHat, "Bills": Receipt,
-  "Cash": Wallet, "Supplier dues": Truck, "Daily sheets": NotebookPen, "Bill keeper": Archive, "Table requests": BellRing, "Reports": BarChart3, "Stock": Package, "Purchases": Package, "Customers": UsersIcon, "Getting started": Rocket,
+  "Cash": Wallet, "Supplier dues": Truck, "Banks": Landmark, "Daily sheets": NotebookPen, "Bill keeper": Archive, "Table requests": BellRing, "Reports": BarChart3, "Stock": Package, "Purchases": Package, "Customers": UsersIcon, "Getting started": Rocket,
   "Menu": UtensilsCrossed, "Outlets and screens": Store, "Staff": UserCog, "Settings": SettingsIcon,
 };
 
@@ -73,6 +74,7 @@ function Shell({ children }: { children: ReactNode }) {
     { label: "Daily sheets", section: "Money", pages: [["/sheets", "Daily sheets", has("sheets") && can("reports.view")]] },
     { label: "Bill keeper", section: "Money", pages: [["/bill-keeper", "Bill keeper", has("bills") && can("inventory.manage")]] },
     { label: "Supplier dues", section: "Money", pages: [["/dues", "Supplier dues", has("bills") && can("reports.view")]] },
+    { label: "Banks", section: "Money", pages: [["/banks", "Banks", can("banks.manage")]] },
     { label: "Reports", section: "Money", pages: [["/reports", "Reports", can("reports.view")], ["/accounts", "Accounts and Tally", can("reports.view")]] },
     { label: has("stock") ? "Stock" : "Purchases", section: "Stock and customers", pages: [["/stock", has("stock") ? "Stock" : "Purchases", (has("stock") || has("bills")) && can("stock.count")]] },
     { label: "Customers", section: "Stock and customers", pages: [["/customers", "Customers", pos && can("loyalty.manage")], ["/feedback", "Feedback", pos && can("reports.view")]] },
@@ -264,6 +266,7 @@ export default function App() {
         <Route path="/cash" element={<Cash />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/dues" element={<Dues />} />
+        <Route path="/banks" element={<Banks />} />
         <Route path="/sheets" element={<Sheets />} />
         <Route path="/services" element={<Services />} />
         <Route path="/bill-keeper" element={<BillKeeper />} />

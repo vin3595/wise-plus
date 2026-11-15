@@ -33,6 +33,7 @@ class Perm(str, Enum):
     approve = "approve"                      # approve discounts over the limit, cancellations, item corrections
     cash_expected = "cash.expected"          # see what a drawer should hold, and every cashier's shift
     ads_manage = "ads.manage"                # pictures and videos on the customer screen
+    banks = "banks.manage"                   # wise-plus: bank accounts, bank statements, accounts exports (owner unless given)
 
 
 ALL = set(Perm)

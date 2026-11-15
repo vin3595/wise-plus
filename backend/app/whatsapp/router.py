@@ -226,7 +226,17 @@ def reply_rich(phone: str, text: str) -> Reply | None:
                         else "Nightly summary stopped. Send *nightly on* to start it again.",
                         [("summary", "Today so far")] if on else [("nightly on", "Start again")])
         else:
-            out = answer_rich(db, text or "help")
+            out = None
+            from . import banks as wbanks
+            if word in wbanks.WORDS | wbanks.CHECK or word.startswith("bk "):
+                from ..core.permissions import Perm, Role
+                from ..services.role_perms import effective
+                if Perm.banks not in effective(uuid.UUID(chosen[0]), Role(chosen[2])):
+                    out = Reply("Bank accounts are for the owner. Ask them to allow it under Staff › Who can do what.")
+                else:
+                    out = wbanks.handle(db, chosen[3], word)
+            if out is None:
+                out = answer_rich(db, text or "help")
     if multi:
         out.text += f"\n\n_@{chosen[1]}_"
     return out
