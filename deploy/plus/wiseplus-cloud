@@ -5,6 +5,7 @@
 #   wiseplus-cloud login-code        the latest sign-in code (no SMS is set up for the test app)
 #   wiseplus-cloud update            get the newest code from GitHub and restart; backs up first
 #   wiseplus-cloud gemini <key>      switch on Scan bill (Google Gemini API key); "gemini off" to remove
+#   wiseplus-cloud whatsapp          connect WhatsApp (asks for the 4 values from Meta); "whatsapp off" to stop
 #   wiseplus-cloud signup open|first|closed   who may create a restaurant account
 #   wiseplus-cloud backup            database backup now (runs by itself at 4:40 am, keeps 7)
 #   wiseplus-cloud link              (re)connect the plus address to Wise's HTTPS server
@@ -128,6 +129,7 @@ case "$cmd" in
     [ -n "$(get WISEPLUS_EXTRA_DOMAINS)" ] && say "  Also at: https://$(get WISEPLUS_EXTRA_DOMAINS)"
     say "  Address: https://$(get WISEPLUS_DOMAIN)   (HTTPS: $( [ "$(get WISEPLUS_MODE)" = shared ] && echo "through Wise's Caddy" || echo "own Caddy"))"
     say "  Scan bill: $( [ -n "$(get WISE_GEMINI_API_KEY)" ] && echo on || echo "off (sudo wiseplus-cloud gemini <key>)")"
+    say "  WhatsApp: $( [ -n "$(get WISE_WA_TOKEN)" ] && echo "on (number ID $(get WISE_WA_PHONE_NUMBER_ID))" || echo "off (sudo wiseplus-cloud whatsapp)")"
     if [ "$(get WISEPLUS_MODE)" = shared ]; then
       grep -q '^# wiseplus-begin' "$WISE_CADDYFILE" 2>/dev/null && say "  Linked to Wise's Caddy: yes" || say "  Linked to Wise's Caddy: NO (sudo wiseplus-cloud link)"
     fi
@@ -157,6 +159,26 @@ case "$cmd" in
       *) put WISE_GEMINI_API_KEY "$1";;
     esac
     dc up -d api; wait_up; say "  Scan bill is $( [ -n "$(get WISE_GEMINI_API_KEY)" ] && echo on || echo off)." ;;
+  whatsapp)
+    if [ "${1:-}" = off ]; then
+      for k in WISE_WA_TOKEN WISE_WA_PHONE_NUMBER_ID WISE_WA_BUSINESS_ID WISE_WA_APP_SECRET; do put "$k" ""; done
+      dc up -d api; wait_up; say "  WhatsApp is off."; exit 0
+    fi
+    # Values can come as arguments (token phone_id business_id app_secret) or be typed in.
+    tok=${1:-}; pid=${2:-}; bid=${3:-}; sec=${4:-}
+    [ -n "$tok" ] || read -r -p "Permanent access token: " tok
+    [ -n "$pid" ] || read -r -p "Phone number ID: " pid
+    [ -n "$bid" ] || read -r -p "WhatsApp Business Account ID: " bid
+    [ -n "$sec" ] || read -r -p "App secret: " sec
+    [[ "$pid" =~ ^[0-9]+$ && "$bid" =~ ^[0-9]+$ ]] || die "the two IDs are numbers only"
+    [ -n "$tok" ] && [ -n "$sec" ] || die "token and app secret are both needed"
+    put WISE_WA_TOKEN "$tok"; put WISE_WA_PHONE_NUMBER_ID "$pid"; put WISE_WA_BUSINESS_ID "$bid"; put WISE_WA_APP_SECRET "$sec"
+    [ -n "$(get WISE_WA_VERIFY_TOKEN)" ] || put WISE_WA_VERIFY_TOKEN "$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 24)"
+    dc up -d api; wait_up
+    say "  WhatsApp settings saved. In Meta (WhatsApp > Configuration > Webhook):"
+    say "    Callback URL: https://$(get WISEPLUS_DOMAIN)/api/whatsapp/webhook"
+    say "    Verify token: $(get WISE_WA_VERIFY_TOKEN)"
+    say "    Then subscribe to: messages" ;;
   signup) case "${1:-}" in open|first|closed) put WISE_SIGNUP_MODE "$1"; dc up -d api; wait_up; say "  Sign-up is now: $1";; *) die "open, first or closed";; esac ;;
   backup) backup ;;
   backups) ls -lh "$ROOT"/backups/ ;;

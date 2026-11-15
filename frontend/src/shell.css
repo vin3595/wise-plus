@@ -144,3 +144,34 @@ select.pick-one { border-color: var(--amber); min-width: 11rem; }
   table.purchase-lines td:nth-child(5) { grid-column: 1 / -1; }
   table.purchase-lines select.pick-one { width: 100%; }
 }
+
+/* Home > Ask */
+.ask-box { display: flex; flex-direction: column; gap: 0.6rem; }
+.ask-row { display: flex; gap: 0.5rem; align-items: center; }
+.ask-row .input { flex: 1; min-width: 0; }
+.ask-icon { color: var(--brand); flex: none; }
+.ask-chips { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.chip { border: 1px solid var(--line-2); background: var(--card); color: var(--ink-2); border-radius: 999px; padding: 0.25rem 0.75rem; font: inherit; font-size: 0.85rem; cursor: pointer; }
+.chip:hover { border-color: var(--brand); color: var(--ink); }
+.ask-answer { background: var(--wash); border: 1px solid color-mix(in srgb, var(--brand) 20%, var(--line)); border-radius: var(--r-l, 12px); padding: 0.75rem 0.9rem; }
+.ask-answer p { margin: 0.1rem 0; line-height: 1.45; }
+/* Money > Supplier dues */
+.due-big { font-family: var(--font-num); font-size: 2rem; font-weight: 600; margin: 0 0 0.75rem; letter-spacing: -0.02em; }
+.due-big .muted { font-size: 1rem; font-weight: 400; }
+.entry-form { border: 1px solid var(--line); border-radius: var(--r-l, 12px); padding: 0.9rem; margin: 0.75rem 0; background: var(--card-2); }
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: 0.6rem 0.9rem; }
+tr.clickable { cursor: pointer; }
+td.num.paid { color: var(--mint); }
+@media (max-width: 759px) { .stack > .card table.table td, .stack > .card table.table th { padding-left: 0.4rem; padding-right: 0.4rem; } }
+@media (max-width: 759px) {
+  table.table.ledger, table.table.ledger tbody { display: block; overflow: visible; }
+  table.ledger thead { display: none; }
+  table.ledger tr { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "what amt" "date bal"; gap: 0.1rem 0.75rem;
+    padding: 0.65rem 0; border-bottom: 1px solid var(--line); }
+  table.table.ledger td { border: 0; padding: 0; }
+  table.ledger td:nth-child(1) { grid-area: date; font-size: 0.8rem; color: var(--ink-3); }
+  table.ledger td:nth-child(2) { grid-area: what; }
+  table.ledger td:nth-child(3) { grid-area: amt; font-weight: 600; }
+  table.ledger td:nth-child(4) { grid-area: bal; font-size: 0.8rem; color: var(--ink-3); }
+  table.ledger td:nth-child(4)::before { content: "Balance "; }
+}

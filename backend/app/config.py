@@ -23,6 +23,13 @@ class Settings(BaseSettings):
     msg91_auth_key: str = ""
     msg91_template_id: str = ""
     fast2sms_api_key: str = ""
+    # WhatsApp Cloud API (Meta), wise-plus. Empty token = WhatsApp off.
+    wa_token: str = ""              # permanent (system user) access token
+    wa_phone_number_id: str = ""    # the business number's ID in Meta
+    wa_business_id: str = ""        # WhatsApp Business Account ID (for templates)
+    wa_app_secret: str = ""         # checks that webhook calls really come from Meta
+    wa_verify_token: str = ""       # what Meta sends back once when the webhook is set up
+    wa_graph_version: str = "v23.0"
 
     pin_max_failures: int = 5
     pin_lock_minutes: int = 10

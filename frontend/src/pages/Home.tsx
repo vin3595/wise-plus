@@ -1,3 +1,4 @@
+import { AskBox } from "../components/AskBox";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
@@ -52,6 +53,7 @@ export default function Home() {
         <div className="banner info">Free trial: {trialDays} day{trialDays === 1 ? "" : "s"} left.</div>
       )}
       {me.tenant.status === "read_only" && <div className="banner warn">Subscription expired. The app is read-only.</div>}
+      {can("reports.view") && <AskBox />}
       {can("reports.view") && <TodayCard />}
       {can("approve") && <OwnerAlerts quietWhenEmpty={false} />}
       <CashAlerts onHome />

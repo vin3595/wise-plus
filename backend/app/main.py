@@ -13,6 +13,9 @@ from sqlalchemy.exc import IntegrityError
 from .config import get_settings
 from .db import system_session
 from .purchases_ai import router as bill_scan  # wise-plus: Ease My Bill bill scanning
+from .ledger import router as ledger  # wise-plus: supplier dues
+from .assistant import router as assistant  # wise-plus: owner keyword answers
+from .whatsapp import router as whatsapp  # wise-plus: WhatsApp Cloud API
 from .routers import accounts, ads, roles, events, cash, dayclose, inventory, loyalty, offline, payments, sms, report_tables, bill_edits, auth, billing, menu, menu_import, orders, printing, public, qr, reports, tenant, users
 
 logging.basicConfig(level=logging.INFO)
@@ -45,7 +48,7 @@ def create_app() -> FastAPI:
             detail = "A value is out of the allowed range"
         return JSONResponse({"detail": detail}, status_code=status.HTTP_409_CONFLICT)
 
-    for r in (bill_scan.router, public.router, auth.router, tenant.router, users.router, menu.router, menu_import.router,
+    for r in (bill_scan.router, ledger.router, assistant.router, whatsapp.router, public.router, auth.router, tenant.router, users.router, menu.router, menu_import.router,
               orders.router, billing.router, bill_edits.router, qr.router, reports.router, report_tables.router, printing.router, sms.router, cash.router, events.router, offline.router, inventory.router, dayclose.router, payments.router, loyalty.router, accounts.router, roles.router, ads.router):
         app.include_router(r, prefix="/api")
 
