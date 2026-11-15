@@ -1113,7 +1113,8 @@ def test_accounts_tally_and_excel(client):
     assert "HDFC Current" in client.get("/api/accounts/tally", headers=h(tok), params={"kind": "sales"}).text
     x = client.get("/api/accounts/excel", headers=h(tok))
     wb = load_workbook(_io.BytesIO(x.content))
-    assert wb.sheetnames == ["Sales register", "GST by rate", "HSN summary", "Day-wise", "Purchase register", "Cash expenses & drawings"]
+    assert wb.sheetnames == ["Sales register", "GST by rate", "HSN summary", "Day-wise", "Purchase register", "Cash expenses & drawings",
+                             "Credit notes", "Supplier payments & notes", "Bank lines", "GST summary"]   # wise-plus adds the last four
     assert wb["Sales register"].max_row == 3 + 2 + 1    # title, note, header, 2 bills, total
 
 
