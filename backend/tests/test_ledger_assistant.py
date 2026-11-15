@@ -299,11 +299,13 @@ def test_daily_sheet(shop, monkeypatch, tmp_path):
 
     c, h, tok = shop["c"], shop["h"], shop["tok"]
     s = get_settings()
-    for k, v in {"wa_app_secret": "shh", "wa_token": "t", "wa_phone_number_id": "123", "upload_dir": str(tmp_path)}.items():
+    for k, v in {"wa_app_secret": "shh", "wa_token": "t", "wa_phone_number_id": "123", "upload_dir": str(tmp_path), "house_tenants": shop["login"]}.items():
         monkeypatch.setattr(s, k, v)
     sent, opts = [], []
     monkeypatch.setattr(wa, "send_options", lambda to, body, options, button="Choose": (sent.append(body), opts.append(options)))
     monkeypatch.setattr(wa, "get_media", lambda mid: (b"\xff\xd8sheet", "image/jpeg"))
+    from app import modules as mods
+    mods._cache.clear()
     monkeypatch.setattr(ex, "EMERGENT_LLM_KEY", "k")
     monkeypatch.setattr(dx, "EMERGENT_LLM_KEY", "k")
     monkeypatch.setattr(ex, "get_first_page_png", lambda d, ct, n: b"png")

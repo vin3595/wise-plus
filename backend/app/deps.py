@@ -60,8 +60,11 @@ def get_db(request: Request, auth: Auth = Depends(get_auth)) -> Iterator[Session
         tenant = db.get(Tenant, auth.tenant_id)
         if tenant is None or tenant.status == "suspended":
             raise HTTPException(status.HTTP_403_FORBIDDEN, "This restaurant's account is suspended")
-        if tenant.status == "read_only" and request.method in WRITE_METHODS:
-            raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, "Subscription expired: the app is read-only")
+        if request.method in WRITE_METHODS and not request.url.path.startswith(("/api/billing", "/api/auth")):
+            from .billing.service import locked   # wise-plus: trial over and nothing paid
+            if tenant.status == "read_only" or locked(db, tenant):
+                raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, "Your free trial has ended, so the app is read-only. "
+                                    "Choose a plan in Settings › Billing to carry on; nothing you entered is lost.")
         yield db
 
 

@@ -41,6 +41,10 @@ def _check(auth: Auth, outlet_id: uuid.UUID) -> None:
         tenant = db.get(Tenant, auth.tenant_id)
         if tenant is None or tenant.status in ("suspended", "read_only"):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "This restaurant's account can't add purchases right now")
+        from ..billing.service import locked, scan_or_402   # wise-plus: trial over / scans used up
+        if locked(db, tenant):
+            raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, "Your free trial has ended. Choose a plan in Settings › Billing.")
+        scan_or_402(db, tenant)
         if db.get(Outlet, outlet_id) is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Outlet not found")
         ensure_outlet_access(db, auth, outlet_id)
@@ -49,6 +53,12 @@ def _check(auth: Auth, outlet_id: uuid.UUID) -> None:
 def _draft(auth: Auth, bill: dict) -> dict:
     with tenant_session(auth.tenant_id) as db:
         return tenant_draft(db, bill)
+
+
+def _count(auth: Auth) -> None:
+    from ..billing.service import count_scan
+    with tenant_session(auth.tenant_id) as db:
+        count_scan(db, db.get(Tenant, auth.tenant_id))
 
 
 @router.post("")
@@ -68,6 +78,7 @@ async def scan_bill(outlet_id: uuid.UUID = Form(...), file: UploadFile = File(..
         bill, thumb, kind = await read_bill(data, ct, name)
     except ScanError as e:
         raise HTTPException(e.status, str(e)) from e
+    await run_in_threadpool(_count, auth)
     draft = await run_in_threadpool(_draft, auth, bill)
     draft["thumbnail"] = thumb
     draft["low_confidence"] = bool(kind.get("should_warn"))

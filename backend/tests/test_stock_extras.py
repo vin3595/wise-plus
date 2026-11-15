@@ -180,11 +180,11 @@ def test_sign_up_for_only_some_services(client):
     r = client.post("/api/shifts", headers=h(tok), json={"outlet_id": oid, "opening_cash_paise": 0})
     assert r.status_code == 403 and "Settings › Services" in r.json()["detail"]
     assert client.get("/api/daily-sheets", headers=h(tok)).status_code == 403
-    # Switch POS and daily sheets on: works straight away
+    # Switch POS on: works straight away. The daily cash sheet is only for the house accounts.
     assert client.put("/api/tenant/modules", headers=h(tok), json={"modules": []}).status_code == 422
-    assert client.put("/api/tenant/modules", headers=h(tok), json={"modules": ["pos", "sheets", "stock", "bills"]}).json()["on"] == ["pos", "stock", "bills", "sheets"]
-    assert client.get("/api/daily-sheets", headers=h(tok)).status_code == 200
-    assert client.get("/api/tenant/modules", headers=h(tok)).json()["on"] == ["pos", "stock", "bills", "sheets"]
-    # Older businesses have everything
+    assert client.put("/api/tenant/modules", headers=h(tok), json={"modules": ["pos", "sheets", "stock", "bills"]}).json()["on"] == ["pos", "stock", "bills"]
+    assert client.get("/api/daily-sheets", headers=h(tok)).status_code == 403
+    assert [m["key"] for m in client.get("/api/tenant/modules", headers=h(tok)).json()["all"]] == ["pos", "stock", "bills"]
+    # Older businesses have everything offered to them
     t = signup(client, "old" + uuid.uuid4().hex[:6], "94" + str(uuid.uuid4().int)[:8])
-    assert client.get("/api/tenant/me", headers=h(t["token"])).json()["modules"] == ["pos", "stock", "bills", "sheets"]
+    assert client.get("/api/tenant/me", headers=h(t["token"])).json()["modules"] == ["pos", "stock", "bills"]

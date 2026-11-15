@@ -24,6 +24,7 @@ MODULES = {
     "sheets": "Daily cash sheet",
 }
 ALL = list(MODULES)
+PRIVATE = {"sheets"}       # only for your own businesses (WISE_HOUSE_TENANTS); never offered to others
 _cache: dict[str, tuple[float, list[str]]] = {}
 
 
@@ -35,8 +36,9 @@ def enabled(tenant_id: uuid.UUID | str) -> list[str]:
     from .db import system_session
     from .models import Tenant
     with system_session() as db:
-        mods = db.scalar(select(Tenant.modules).where(Tenant.id == uuid.UUID(key)))
-    out = [m for m in (mods if mods is not None else ALL) if m in MODULES]
+        row = db.execute(select(Tenant.modules, Tenant.login_id).where(Tenant.id == uuid.UUID(key))).first()
+    mods, login = (row[0], row[1]) if row else (None, None)
+    out = [m for m in (mods if mods is not None else ALL) if m in MODULES and (m not in PRIVATE or _house(login))]
     _cache[key] = (time.monotonic() + 30, out)
     return out
 
@@ -45,8 +47,17 @@ def forget(tenant_id: uuid.UUID | str) -> None:
     _cache.pop(str(tenant_id), None)
 
 
-def clean(mods: list[str]) -> list[str]:
-    out = [m for m in ALL if m in set(mods)]
+def _house(login: str | None) -> bool:
+    from .billing.service import house
+    return house(login)
+
+
+def offered(login: str | None) -> list[str]:
+    return [m for m in ALL if m not in PRIVATE or _house(login)]
+
+
+def clean(mods: list[str], login: str | None = None) -> list[str]:
+    out = [m for m in offered(login) if m in set(mods)]
     if not out:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Pick at least one service")
     return out

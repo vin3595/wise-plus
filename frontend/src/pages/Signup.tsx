@@ -9,7 +9,7 @@ import { ServicePicker } from "./Services";
 export default function Signup() {
   const { signedIn } = useSession();
   const [form, setForm] = useState({ restaurant_name: "", login_id: "", owner_name: "", email: "", phone: "" });
-  const [modules, setModules] = useState<string[]>(["pos", "stock", "bills", "sheets"]);
+  const [modules, setModules] = useState<string[]>(["pos", "stock", "bills"]);
   const [idStatus, setIdStatus] = useState<{ available: boolean; reason: string | null } | null>(null);
   const [sent, setSent] = useState<{ sent_to: string; dev_otp: string | null } | null>(null);
   const [otp, setOtp] = useState("");
@@ -56,7 +56,8 @@ export default function Signup() {
         e.preventDefault();
         run(async () => setSent(await api("/auth/signup/start", { body: { ...form, modules } })));
       }}>
-        <ServicePicker value={modules} onChange={(v) => v.length && setModules(v)} />
+        <ServicePicker value={modules} onChange={(v) => v.length && setModules(v)} prices />
+        <p className="small muted">All three: ₹999/month. Yearly: pay 10 months (all three: 9). Founding members, first 50 only: everything for ₹4,999 for the first year.</p>
         <Field label="Business name"><Input value={form.restaurant_name} onChange={(e) => {
           // Keep suggesting a login ID from the name until the owner edits it themselves.
           const name = e.target.value;

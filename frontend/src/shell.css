@@ -219,3 +219,17 @@ details.spot summary { cursor: pointer; }
 .service.on { border-color: var(--primary, #138996); background: color-mix(in srgb, var(--primary, #138996) 7%, var(--card, #fff)); }
 .service.on .tick { background: var(--primary, #138996); border-color: var(--primary, #138996); color: #fff; }
 .service:disabled { opacity: 0.6; cursor: progress; }
+/* Billing */
+.trial-banner { background: color-mix(in srgb, var(--amber, #d97706) 14%, var(--card, #fff)); border: 1px solid color-mix(in srgb, var(--amber, #d97706) 40%, transparent);
+  border-radius: 10px; padding: 0.55rem 0.8rem; margin-bottom: 0.8rem; font-size: 0.92rem; }
+.trial-banner.locked { background: color-mix(in srgb, #dc2626 10%, var(--card, #fff)); border-color: color-mix(in srgb, #dc2626 35%, transparent); }
+.trial-banner a { font-weight: 700; margin-left: 0.3rem; }
+.founding .big { font-size: 1.6rem; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-bottom: 0.6rem; }
+.seg button { border: 0; background: transparent; padding: 0.45rem 0.8rem; font: inherit; cursor: pointer; color: inherit; }
+.seg button.on { background: var(--primary, #138996); color: #fff; }
+.plan-list { display: grid; gap: 0.35rem; margin-bottom: 0.6rem; }
+.plan-row { display: flex; gap: 0.6rem; align-items: center; border: 1px solid var(--line); border-radius: 10px; padding: 0.5rem 0.7rem; cursor: pointer; }
+.plan-row.on { border-color: var(--primary, #138996); }
+.plan-total { margin: 0.4rem 0 0.8rem; }
+.svc-price { font-style: normal; font-weight: 600; font-size: 0.8rem; color: var(--primary, #138996); margin-left: 0.45rem; }

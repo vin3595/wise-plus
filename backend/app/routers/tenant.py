@@ -47,9 +47,10 @@ class ModulesIn(BaseModel):
 
 
 @router.get("/modules")
-def list_modules(auth: Auth = Depends(get_auth)) -> dict:
+def list_modules(auth: Auth = Depends(get_auth), db: Session = Depends(get_db)) -> dict:
     """wise-plus: every service, and which are on for this business."""
-    return {"all": [{"key": k, "name": v} for k, v in modules.MODULES.items()], "on": modules.enabled(auth.tenant_id)}
+    login = db.scalar(select(Tenant.login_id).where(Tenant.id == auth.tenant_id))
+    return {"all": [{"key": k, "name": modules.MODULES[k]} for k in modules.offered(login)], "on": modules.enabled(auth.tenant_id)}
 
 
 @router.put("/modules")
@@ -57,7 +58,14 @@ def set_modules(body: ModulesIn, auth: Auth = Depends(require(Perm.tenant_settin
     """wise-plus: switch services on or off; works straight away. Nothing is deleted when a service is off."""
     tenant = db.get(Tenant, auth.tenant_id)
     before = {"modules": tenant.modules}
-    tenant.modules = modules.clean(body.modules)
+    new = modules.clean(body.modules, tenant.login_id)
+    from ..billing.router import paid_modules
+    paid = paid_modules(db, tenant)
+    extra = [m for m in new if paid is not None and m not in paid and m not in modules.PRIVATE]
+    if extra:
+        raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED,
+                            f"{', '.join(modules.MODULES[m] for m in extra)} isn't in your plan. Add it in Settings › Billing.")
+    tenant.modules = new
     if "pos" not in tenant.modules:
         from ..services.first_outlet import first_outlet
         first_outlet(db, tenant)

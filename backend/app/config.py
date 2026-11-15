@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     public_base_url: str = "http://localhost:8000"
     cors_origins: str = "http://localhost:5173"
     trial_days: int = 14
+    # wise-plus billing (Razorpay, your own account: subscriptions for wise-plus itself)
+    billing_rz_key_id: str = ""
+    billing_rz_key_secret: str = ""
+    billing_rz_webhook_secret: str = ""
+    house_tenants: str = ""          # login ids of your own businesses: never billed, Daily cash sheet
     # Address customers' phones use for QR menus and the order-ready screen (the Wise Box's public
     # Cloudflare address). Empty = the address the staff opened Wise from.
     customer_url: str = ""

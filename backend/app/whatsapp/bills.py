@@ -78,10 +78,35 @@ async def read_sent_bill(chosen: tuple, phone10: str, media_id: str, mime: str, 
         return await _read_sent_bill(chosen, phone10, media_id, mime, filename, caption)
 
 
+def _allowance(tenant_id) -> str | None:
+    """wise-plus billing: trial over, or this month's scans used up."""
+    from ..billing.service import ScanLimit, check_scan, locked
+    from ..models import Tenant
+    with tenant_session(tenant_id) as db:
+        t = db.get(Tenant, tenant_id)
+        if locked(db, t):
+            return "Your free trial has ended. Choose a plan in the app (Settings › Billing) to keep sending bills."
+        try:
+            check_scan(db, t)
+        except ScanLimit as e:
+            return str(e)
+    return None
+
+
+def _counted(tenant_id) -> None:
+    from ..billing.service import count_scan
+    from ..models import Tenant
+    with tenant_session(tenant_id) as db:
+        count_scan(db, db.get(Tenant, tenant_id))
+
+
 async def _read_sent_bill(chosen: tuple, phone10: str, media_id: str, mime: str, filename: str, caption: str = "") -> Reply:
     tenant_id, login_id, role, user_id = chosen
     if not enabled():
         return Reply("Bill scanning isn't switched on for this restaurant yet.")
+    stop = await run_in_threadpool(_allowance, tenant_id)
+    if stop:
+        return Reply(stop)
     data, ct = await run_in_threadpool(client.get_media, media_id)
     ct = (mime or ct or "").split(";")[0].lower()
     try:
@@ -95,6 +120,7 @@ async def _read_sent_bill(chosen: tuple, phone10: str, media_id: str, mime: str,
         bill, thumb, kind = await read_bill(data, ct, filename or "bill", kind=kind)
     except ScanError as e:
         return Reply(str(e))
+    await run_in_threadpool(_counted, tenant_id)
 
     def store() -> Reply:
         with tenant_session(tenant_id) as db:

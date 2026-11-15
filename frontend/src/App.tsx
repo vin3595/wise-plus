@@ -36,6 +36,8 @@ import Accounts from "./pages/Accounts";
 import Access from "./pages/Access";
 import Cash from "./pages/Cash";
 import Dues from "./pages/Dues";
+import Billing from "./pages/Billing";
+import TrialBanner from "./components/TrialBanner";
 import Services from "./pages/Services";
 import Sheets from "./pages/Sheets";
 import Reports from "./pages/Reports";
@@ -72,7 +74,7 @@ function Shell({ children }: { children: ReactNode }) {
     { label: "Outlets and screens", section: "Setup", pages: [["/outlets", "Outlets", can("outlets.manage")], ["/screens", "Screens", pos && can("outlets.manage")],
       ["/screen-ads", "Screen ads", pos && can("ads.manage")]] },
     { label: "Staff", section: "Setup", pages: [["/users", "Staff", can("users.manage")], ["/access", "Who can do what", can("users.manage")]] },
-    { label: "Settings", section: "Setup", pages: [["/services", "Services", can("tenant.settings")], ["/payments", "Payments", pos && can("tenant.settings")], ["/sms", "SMS", pos && can("tenant.settings")],
+    { label: "Settings", section: "Setup", pages: [["/services", "Services", can("tenant.settings")], ["/billing", "Billing", can("tenant.settings")], ["/payments", "Payments", pos && can("tenant.settings")], ["/sms", "SMS", pos && can("tenant.settings")],
       ["/branding", "Branding", can("tenant.settings")]] },
   ];
   const path = loc.pathname;
@@ -178,7 +180,7 @@ function Shell({ children }: { children: ReactNode }) {
               {current.pages.map(([to, label]) => <Link key={to} to={to} className={onPage(to) ? "on" : ""} aria-current={onPage(to) ? "page" : undefined}>{label}</Link>)}
             </nav>
           )}
-          <main className="main" key={current?.label || path}>{children}</main>
+          <main className="main" key={current?.label || path}><TrialBanner />{children}</main>
           {branding?.show_powered_by !== false && <footer className="powered">Powered by Wise</footer>}
         </div>
       </div>
@@ -253,6 +255,7 @@ export default function App() {
         <Route path="/dues" element={<Dues />} />
         <Route path="/sheets" element={<Sheets />} />
         <Route path="/services" element={<Services />} />
+        <Route path="/billing" element={<Billing />} />
         <Route path="/menu" element={<MenuEditor />} />
         <Route path="/menu/import" element={<MenuImport />} />
         <Route path="/outlet-menu" element={<OutletMenu />} />

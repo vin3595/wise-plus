@@ -82,7 +82,7 @@ def signup_verify(body: SignupVerify) -> TokenOut:
                 login_id=body.login_id, name=body.restaurant_name, owner_email=body.email,
                 owner_phone=body.phone, app_name=body.restaurant_name,
                 trial_ends_at=datetime.now(timezone.utc) + timedelta(days=s.trial_days),
-                modules=clean_modules(body.modules) if body.modules is not None else None,
+                modules=clean_modules(body.modules, body.login_id) if body.modules is not None else None,
             )
             db.add(tenant)
             db.flush()
