@@ -183,18 +183,21 @@ def test_whatsapp_bill_photo(shop, monkeypatch, tmp_path):
     assert "Nothing waiting" not in wr.reply_for("91" + shop["phone"], "save") and "No bill waiting" in wr.reply_for("91" + shop["phone"], "save")
     before = c.get(f"/api/ledger/suppliers/{shop['vad']['id']}", headers=h(tok)).json()["balance_paise"]
     post({"type": "image", "image": {"id": "m1", "mime_type": "image/jpeg"}})
-    assert "Shiv Gauri Agencies (Vadilal)" in sent[-1] and "2 tub 5L" in sent[-1] and opts[-1] == [("save", "Save"), ("discard", "Discard")], sent[-1]
+    assert "Shiv Gauri Agencies (Vadilal)" in sent[-1] and "2 tub 5L" in sent[-1] and [l for _, l in opts[-1]] == ["Save", "Discard"], sent[-1]
+    save_cmd = opts[-1][0][0]
+    assert save_cmd.startswith("save ")
     assert len(c.get("/api/inventory/purchases/scan/pending", headers=h(tok)).json()) == 1
-    post({"type": "interactive", "interactive": {"type": "button_reply", "button_reply": {"id": "save", "title": "Save"}}})   # tapped
+    post({"type": "interactive", "interactive": {"type": "button_reply", "button_reply": {"id": save_cmd, "title": "Save"}}})   # tapped
     assert sent[-1].startswith("✅ Saved") and opts[-1][1] == ("dues", "All dues") and "₹796" in sent[-1], sent[-1]
     after = c.get(f"/api/ledger/suppliers/{shop['vad']['id']}", headers=h(tok)).json()["balance_paise"]
     assert abs((after - before) - 79600) <= 2          # GST rounds per line
     assert c.get("/api/inventory/purchases/scan/pending", headers=h(tok)).json() == []
     assert "No bill waiting" in wr.reply_for("91" + shop["phone"], "save")                 # saved only once
+    assert "already saved" in wr.reply_for("91" + shop["phone"], save_cmd)                 # tapping Save twice
 
     # Same bill again: flagged, can't save from WhatsApp, waits in the app
     post({"type": "document", "document": {"id": "m2", "mime_type": "image/jpeg", "filename": "b.jpg"}})
-    assert "entered already" in sent[-1] and opts[-1] == [("discard", "Discard")]
+    assert "entered already" in sent[-1] and [l for _, l in opts[-1]] == ["Discard"]
     assert "Can't save it from here" in wr.reply_for("91" + shop["phone"], "save")
     assert "Discarded" in wr.reply_for("91" + shop["phone"], "discard")
 
@@ -218,8 +221,9 @@ def test_whatsapp_bill_photo(shop, monkeypatch, tmp_path):
                             {"name": "VEEBA TANDOORI MAYONNAISE 1 KG", "quantity": 6, "unit_price": 214.29, "total": 1285.74, "tax_rate": 5},
                             {"name": "VEEBA SCHEZWAN DIP AND STIR FRY SAUCE 1KG", "quantity": 3, "unit_price": 171.43, "total": 514.29, "tax_rate": 5}]})
     post({"type": "image", "image": {"id": "m5", "mime_type": "image/jpeg"}})
-    assert opts[-1] == [("add", "Add & save"), ("discard", "Discard")] and "CHARU MARKETING" in sent[-1], sent[-1]
-    post({"type": "text", "text": {"body": "Add"}})
+    assert [l for _, l in opts[-1]] == ["Add & save", "Discard"] and "CHARU MARKETING" in sent[-1], sent[-1]
+    add_cmd = opts[-1][0][0]
+    post({"type": "text", "text": {"body": add_cmd}})
     assert "Added supplier Charu Marketing" in sent[-1] and "Veeba Pizza Pasta Sauce" in sent[-1] and "✅ Saved" in sent[-1], sent[-1]
     items = {i["name"]: i for i in c.get("/api/inventory/items", headers=h(tok)).json()}
     cheese = items["Veeba Professional White Cheese Dressing (1kg)"]
@@ -232,7 +236,19 @@ def test_whatsapp_bill_photo(shop, monkeypatch, tmp_path):
     # Their next bill matches by itself and saves with one word
     reads.append({**reads[-1], "invoice_number": "CM/26-27/18200"})
     post({"type": "image", "image": {"id": "m6", "mime_type": "image/jpeg"}})
-    assert opts[-1][0] == ("save", "Save"), sent[-1]
+    first_save = opts[-1][0][0]
+    assert first_save.startswith("save "), sent[-1]
+    # A second bill arrives before the first is saved: each button saves its own bill; typed "save" asks which
+    reads.append({**reads[-1], "invoice_number": "CM/26-27/18201", "total": 1050.0,
+                  "items": [{"name": "VEEBA PIZZA PASTA SAUCE", "quantity": 5, "unit_price": 200, "total": 1000, "tax_rate": 5}]})
+    post({"type": "image", "image": {"id": "m7", "mime_type": "image/jpeg"}})
+    second_save = opts[-1][0][0]
+    r = wr.reply_rich("91" + shop["phone"], "save")
+    assert "2 bills are waiting" in r.text and {o[0] for o in r.options} == {first_save, second_save}
+    post({"type": "interactive", "interactive": {"type": "button_reply", "button_reply": {"id": first_save, "title": "Save"}}})
+    assert "₹5,130" in sent[-1], sent[-1]                                                    # the first bill, not the latest
+    post({"type": "interactive", "interactive": {"type": "button_reply", "button_reply": {"id": second_save, "title": "Save"}}})
+    assert "₹1,050" in sent[-1], sent[-1]
 
     # A cashier's phone is ignored, photo or not
     c.post("/api/users", headers=h(tok), json={"name": "Ravi", "role": "cashier", "pin": "7322", "phone": "9000000099", "outlet_ids": [shop["out"]["id"]]})

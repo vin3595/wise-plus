@@ -12,6 +12,7 @@ import hmac
 import json
 import logging
 import re
+import uuid
 from collections import OrderedDict
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
@@ -123,10 +124,15 @@ def reply_rich(phone: str, text: str) -> Reply | None:
     if chosen is None:
         return early
     word = (text or "").strip().lower().strip(".!")
+    # A button under one bill: "save <bill id>".
+    m = re.fullmatch(r"(save|add|discard) ([0-9a-f-]{36})", word)
+    bill_id = None
+    if m:
+        word, bill_id = m.group(1), uuid.UUID(m.group(2))
     with tenant_session(chosen[0]) as db:
         if word in SAVE | DISCARD | ADD:
             from . import bills
-            out = bills.save_or_discard(db, chosen, client.last10(phone), word not in DISCARD, add_new=word in ADD)
+            out = bills.save_or_discard(db, chosen, client.last10(phone), word not in DISCARD, add_new=word in ADD, bill_id=bill_id)
         else:
             out = answer_rich(db, text or "help")
     if multi:

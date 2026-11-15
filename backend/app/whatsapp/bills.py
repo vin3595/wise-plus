@@ -60,7 +60,25 @@ def summary(d: dict) -> str:
     return "\n".join(lines)
 
 
+_reading = None
+
+
+def _gate():
+    """At most 3 bills read at once; the rest wait their turn (a batch of photos would otherwise all hit
+    Gemini in the same second and run into its per-minute limit)."""
+    global _reading
+    import asyncio
+    if _reading is None:
+        _reading = asyncio.Semaphore(3)
+    return _reading
+
+
 async def read_sent_bill(chosen: tuple, phone10: str, media_id: str, mime: str, filename: str, caption: str = "") -> Reply:
+    async with _gate():
+        return await _read_sent_bill(chosen, phone10, media_id, mime, filename, caption)
+
+
+async def _read_sent_bill(chosen: tuple, phone10: str, media_id: str, mime: str, filename: str, caption: str = "") -> Reply:
     tenant_id, login_id, role, user_id = chosen
     if Perm.inventory_manage not in effective(uuid.UUID(tenant_id), Role(role)):
         return Reply("Your account can't add purchases. Ask the owner to allow it under Staff › Who can do what.")
@@ -91,11 +109,11 @@ async def read_sent_bill(chosen: tuple, phone10: str, media_id: str, mime: str, 
             if why and _addable(d):
                 return Reply(summary(d) + "\n\n🆕 New in Wise: " + "; ".join(why) + "."
                              + f"\nAdd them and save the bill, or finish it in the app: {_link()}",
-                             [("add", "Add & save"), ("discard", "Discard")])
+                             [(f"add {sid}", "Add & save"), (f"discard {sid}", "Discard")])
             if why:
                 return Reply(summary(d) + "\n\n⚠️ Needs a look: " + "; ".join(why) + f".\nFinish it in the app under Stock › Purchases: {_link()}",
-                             [("discard", "Discard")])
-            return Reply(summary(d) + "\n\nAdd it to stock and supplier dues?", [("save", "Save"), ("discard", "Discard")])
+                             [(f"discard {sid}", "Discard")])
+            return Reply(summary(d) + "\n\nAdd it to stock and supplier dues?", [(f"save {sid}", "Save"), (f"discard {sid}", "Discard")])
     return await run_in_threadpool(store)
 
 
@@ -155,14 +173,31 @@ def add_new(db: Session, d: dict, auth: Auth) -> list[str]:
     return made
 
 
-def save_or_discard(db: Session, chosen: tuple, phone10: str, save: bool, add_new_items: bool = False, **kw) -> Reply:
+def save_or_discard(db: Session, chosen: tuple, phone10: str, save: bool, add_new_items: bool = False,
+                    bill_id: uuid.UUID | None = None, **kw) -> Reply:
+    """bill_id: from a button under that bill's message. Typed 'save' with several bills waiting asks which."""
     add_new_items = add_new_items or kw.get("add_new", False)
     tenant_id, login_id, role, user_id = chosen
     since = datetime.now(timezone.utc) - timedelta(days=2)
-    b = db.scalar(select(ScannedBill).where(ScannedBill.status == "pending", ScannedBill.sender == phone10, ScannedBill.created_at >= since)
-                  .order_by(ScannedBill.created_at.desc()).limit(1))
-    if b is None:
-        return Reply("No bill waiting from you. Send a photo or PDF of a supplier's bill.")
+    if bill_id is not None:
+        b = db.get(ScannedBill, bill_id)
+        if b is None:
+            return Reply("That bill isn't here any more.")
+        if b.status != "pending":
+            return Reply("That bill was already " + ("saved." if b.status == "saved" else "discarded."))
+    else:
+        waiting = db.scalars(select(ScannedBill).where(ScannedBill.status == "pending", ScannedBill.sender == phone10,
+                                                       ScannedBill.created_at >= since).order_by(ScannedBill.created_at.desc())).all()
+        if not waiting:
+            return Reply("No bill waiting from you. Send a photo or PDF of a supplier's bill.")
+        if len(waiting) > 1:
+            verb = "add" if add_new_items else "save" if save else "discard"
+            def label(x: ScannedBill) -> str:
+                dd = x.draft or {}
+                return f"{((dd.get('supplier') or {}).get('name') or dd.get('vendor') or 'Bill')[:12]} {rs(dd.get('total_paise') or 0)}"
+            return Reply(f"{len(waiting)} bills are waiting. Which one? (Or use the buttons under each bill.)",
+                         [(f"{verb} {x.id}", label(x)) for x in waiting[:10]])
+        b = waiting[0]
     if not save:
         b.status = "discarded"
         return Reply("Discarded. It won't be added.")
