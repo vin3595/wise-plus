@@ -233,3 +233,15 @@ details.spot summary { cursor: pointer; }
 .plan-row.on { border-color: var(--primary, #138996); }
 .plan-total { margin: 0.4rem 0 0.8rem; }
 .svc-price { font-style: normal; font-weight: 600; font-size: 0.8rem; color: var(--primary, #138996); margin-left: 0.45rem; }
+/* Bill keeper */
+.kept-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.7rem; }
+.kept-card { display: grid; grid-template-columns: 4.5rem 1fr; gap: 0.7rem; text-align: left; padding: 0.6rem; border: 1px solid var(--line);
+  border-radius: 12px; background: var(--card, #fff); color: inherit; font: inherit; cursor: pointer; }
+.kept-card:hover { border-color: var(--primary, #138996); }
+.kept-thumb { width: 4.5rem; height: 6rem; border-radius: 8px; overflow: hidden; background: var(--bg); display: grid; place-items: center; color: var(--ink-2); }
+.kept-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.kept-info { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.kept-info strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kept-src { display: inline-flex; gap: 0.3rem; align-items: center; }
+.kept-full { width: 100%; max-width: 900px; border-radius: 12px; border: 1px solid var(--line); display: block; }
+.kept-pdf { width: 100%; height: 80vh; border: 1px solid var(--line); border-radius: 12px; }

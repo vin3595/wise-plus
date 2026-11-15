@@ -147,6 +147,18 @@ def test_scan_endpoint_drafts_and_remembers(monkeypatch):
     assert p.status_code == 201, p.text
     assert p.json()["lines"][0]["bill_name"] == "SARAS GOLD MILK 1 LTR" and p.json()["total_paise"] == 63000
 
+    # Bill keeper: the photo is kept and linked to the purchase once the screen marks it done
+    assert d["scan_id"]
+    assert c.post(f"/api/inventory/purchases/scan/pending/{d['scan_id']}/done", headers=h(tok), json={"purchase_id": p.json()["id"]}).status_code == 200
+    kept = c.get("/api/inventory/purchases/scan/kept", headers=h(tok), params={"q": "saras"}).json()
+    assert kept[0]["id"] == d["scan_id"] and kept[0]["purchase_id"] == p.json()["id"] and kept[0]["has_file"] and kept[0]["invoice_no"] == "SD-77"
+    assert c.get("/api/inventory/purchases/scan/kept", headers=h(tok), params={"month": "2026-11"}).json()
+    assert c.get("/api/inventory/purchases/scan/kept", headers=h(tok), params={"q": "kanha"}).json() == []
+    f = c.get(f"/api/inventory/purchases/scan/kept/{d['scan_id']}/file", headers=h(tok))
+    assert f.status_code == 200 and f.content == b"jpegbytes" and "Saras" in f.headers["content-disposition"]
+    assert c.get(f"/api/inventory/purchases/scan/for-purchase/{p.json()['id']}", headers=h(tok)).json()["id"] == d["scan_id"]
+    assert c.get("/api/inventory/purchases/scan/pending", headers=h(tok)).json() == []   # app scans don't wait in the WhatsApp list
+
     # Same bill again: flagged as already entered
     d = c.post("/api/inventory/purchases/scan", headers=h(tok), data={"outlet_id": out["id"]}, files={"file": ("b.jpg", b"jpegbytes", "image/jpeg")}).json()
     assert d["duplicate"]["total_paise"] == 63000

@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import InstallApp from "./components/InstallApp";
 import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { BarChart3, ChefHat, ChevronDown, ClipboardList, LayoutDashboard, LogOut, Menu, NotebookPen, Package, PanelLeftClose, PanelLeftOpen, Receipt,
+import { BarChart3, ChefHat, ChevronDown, ClipboardList, LayoutDashboard, LogOut, Menu, NotebookPen, Archive, Package, PanelLeftClose, PanelLeftOpen, Receipt,
   Rocket, Settings as SettingsIcon, SlidersHorizontal, Store, Truck, UserCog, Users as UsersIcon, UtensilsCrossed, Wallet, X, type LucideIcon } from "lucide-react";
 import { useSession } from "./session";
 import Setup from "./pages/Setup";
@@ -36,6 +36,7 @@ import Accounts from "./pages/Accounts";
 import Access from "./pages/Access";
 import Cash from "./pages/Cash";
 import Dues from "./pages/Dues";
+import BillKeeper from "./pages/BillKeeper";
 import Billing from "./pages/Billing";
 import TrialBanner from "./components/TrialBanner";
 import Services from "./pages/Services";
@@ -45,7 +46,7 @@ import GettingStarted from "./pages/GettingStarted";
 
 const ICONS: Record<string, LucideIcon> = {
   "Home": LayoutDashboard, "Orders": ClipboardList, "Kitchen display": ChefHat, "Bills": Receipt,
-  "Cash": Wallet, "Supplier dues": Truck, "Daily sheets": NotebookPen, "Reports": BarChart3, "Stock": Package, "Purchases": Package, "Customers": UsersIcon, "Getting started": Rocket,
+  "Cash": Wallet, "Supplier dues": Truck, "Daily sheets": NotebookPen, "Bill keeper": Archive, "Reports": BarChart3, "Stock": Package, "Purchases": Package, "Customers": UsersIcon, "Getting started": Rocket,
   "Menu": UtensilsCrossed, "Outlets and screens": Store, "Staff": UserCog, "Settings": SettingsIcon,
 };
 
@@ -64,6 +65,7 @@ function Shell({ children }: { children: ReactNode }) {
     { label: "Bills", section: "Counter", pages: [["/bills", "Bills", pos && can("billing")]] },
     { label: "Cash", section: "Money", pages: [["/cash", "Cash", pos && can("cash.expected")], ["/day-close", "Day close", pos && can("day.close")]] },
     { label: "Daily sheets", section: "Money", pages: [["/sheets", "Daily sheets", has("sheets") && can("reports.view")]] },
+    { label: "Bill keeper", section: "Money", pages: [["/bill-keeper", "Bill keeper", has("bills") && can("inventory.manage")]] },
     { label: "Supplier dues", section: "Money", pages: [["/dues", "Supplier dues", has("bills") && can("reports.view")]] },
     { label: "Reports", section: "Money", pages: [["/reports", "Reports", can("reports.view")], ["/accounts", "Accounts and Tally", can("reports.view")]] },
     { label: has("stock") ? "Stock" : "Purchases", section: "Stock and customers", pages: [["/stock", has("stock") ? "Stock" : "Purchases", (has("stock") || has("bills")) && can("stock.count")]] },
@@ -255,6 +257,7 @@ export default function App() {
         <Route path="/dues" element={<Dues />} />
         <Route path="/sheets" element={<Sheets />} />
         <Route path="/services" element={<Services />} />
+        <Route path="/bill-keeper" element={<BillKeeper />} />
         <Route path="/billing" element={<Billing />} />
         <Route path="/menu" element={<MenuEditor />} />
         <Route path="/menu/import" element={<MenuImport />} />

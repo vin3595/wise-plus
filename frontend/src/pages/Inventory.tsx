@@ -337,7 +337,7 @@ function PurchasesTab({ outletId, items, suppliers, onChange }: { outletId: stri
               </li>))}
           </ul>
         </Card>)}
-      <Card title="Enter a supplier's bill" actions={<ScanBill outletId={outletId} onDraft={fromScan} />}>
+      <Card title="Enter a supplier's bill" actions={<ScanBill outletId={outletId} onDraft={(d) => { fromScan(d); setPendingId(d.scan_id || null); }} />}>
         {scan && (
           <div className="scan-result">
             {scan.thumbnail && <img src={scan.thumbnail} alt="The scanned bill" className="scan-thumb" />}

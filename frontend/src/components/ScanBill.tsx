@@ -5,6 +5,7 @@ import { buzz } from "../haptics";
 
 /** What POST /inventory/purchases/scan returns: a purchase to check, not yet saved. */
 export interface ScanDraft {
+  scan_id?: string;          // the kept original (bill keeper), linked to the purchase once saved
   vendor: string | null; gstin: string | null;
   supplier: { id: string; name: string; how: "gstin" | "name" } | null;
   invoice_no: string | null; invoice_date: string | null;

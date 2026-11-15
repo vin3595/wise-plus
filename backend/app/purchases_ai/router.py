@@ -7,6 +7,7 @@ Bills sent on WhatsApp wait here (scanned_bills) until saved there or in the app
 The AI call takes several seconds, so it runs with no database connection held open."""
 from __future__ import annotations
 
+import os
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -15,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from ..config import get_settings
 from ..core.permissions import Perm
 from ..db import tenant_session
 from ..deps import Auth, ensure_outlet_access, get_db, require
@@ -82,7 +84,31 @@ async def scan_bill(outlet_id: uuid.UUID = Form(...), file: UploadFile = File(..
     draft = await run_in_threadpool(_draft, auth, bill)
     draft["thumbnail"] = thumb
     draft["low_confidence"] = bool(kind.get("should_warn"))
+    # Bill keeper: the original photo/PDF is kept and linked to the purchase once it's saved.
+    draft["scan_id"] = await run_in_threadpool(_keep, auth, outlet_id, data, ct, name, draft, bill)
     return draft
+
+
+EXT = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/heic": "heic", "application/pdf": "pdf"}
+
+
+def keep_file(tenant_id, sid: uuid.UUID, data: bytes, ct: str, name: str = "") -> str:
+    folder = os.path.join(get_settings().upload_dir, "scans", str(tenant_id))
+    os.makedirs(folder, exist_ok=True)
+    ext = EXT.get(ct) or (name.rsplit(".", 1)[-1].lower() if "." in (name or "") else "bin")
+    path = os.path.join(folder, f"{sid}.{ext}")
+    with open(path, "wb") as f:
+        f.write(data)
+    return path
+
+
+def _keep(auth: Auth, outlet_id: uuid.UUID, data: bytes, ct: str, name: str, draft: dict, bill: dict) -> str:
+    sid = uuid.uuid4()
+    path = keep_file(auth.tenant_id, sid, data, ct, name)
+    with tenant_session(auth.tenant_id) as db:
+        db.add(ScannedBill(id=sid, tenant_id=auth.tenant_id, outlet_id=outlet_id, source="app", user_id=auth.user_id,
+                           file_path=path, draft={**draft, "_bill": bill}))
+    return str(sid)
 
 
 # ---------------------------------------------------------------- bills sent on WhatsApp, waiting for a check
@@ -100,7 +126,8 @@ def _pending_out(b: ScannedBill, full: bool) -> dict:
 
 @router.get("/pending")
 def pending(db: Session = Depends(get_db), auth: Auth = Depends(require(Perm.inventory_manage))) -> list[dict]:
-    rows = db.scalars(select(ScannedBill).where(ScannedBill.status == "pending").order_by(ScannedBill.created_at.desc()).limit(50))
+    rows = db.scalars(select(ScannedBill).where(ScannedBill.status == "pending", ScannedBill.source != "app")
+                      .order_by(ScannedBill.created_at.desc()).limit(50))
     return [_pending_out(b, False) for b in rows]
 
 
@@ -130,3 +157,52 @@ def pending_done(bill_id: uuid.UUID, body: DoneIn, db: Session = Depends(get_db)
     b.status = "discarded" if body.discard else "saved"
     b.purchase_id = body.purchase_id
     return {"ok": True}
+
+
+# ---------------------------------------------------------------- bill keeper: every scanned bill, with its original
+
+@router.get("/kept")
+def kept(q: str | None = None, month: str | None = None, db: Session = Depends(get_db),
+         auth: Auth = Depends(require(Perm.inventory_manage))) -> list[dict]:
+    """Every bill read from a photo (app or WhatsApp), newest first; q matches supplier or invoice number,
+    month is YYYY-MM (bill date, or the day it was scanned when the bill has no date)."""
+    rows = db.scalars(select(ScannedBill).where(ScannedBill.status != "discarded").order_by(ScannedBill.created_at.desc()).limit(1000))
+    out = []
+    needle = (q or "").strip().lower()
+    for b in rows:
+        d = b.draft or {}
+        vendor = (d.get("supplier") or {}).get("name") or d.get("vendor") or ""
+        day = d.get("invoice_date") or b.created_at.date().isoformat()
+        if needle and needle not in vendor.lower() and needle not in (d.get("invoice_no") or "").lower():
+            continue
+        if month and not str(day).startswith(month):
+            continue
+        out.append({"id": str(b.id), "source": b.source, "status": b.status, "scanned_at": b.created_at.isoformat(),
+                    "vendor": vendor, "invoice_no": d.get("invoice_no"), "invoice_date": d.get("invoice_date"),
+                    "total_paise": d.get("total_paise") or 0, "purchase_id": str(b.purchase_id) if b.purchase_id else None,
+                    "thumbnail": d.get("thumbnail"), "has_file": bool(b.file_path and os.path.exists(b.file_path)),
+                    "is_pdf": bool(b.file_path and b.file_path.endswith(".pdf"))})
+    return out[:300]
+
+
+@router.get("/kept/{bill_id}/file")
+def kept_file(bill_id: uuid.UUID, db: Session = Depends(get_db), auth: Auth = Depends(require(Perm.inventory_manage))):
+    from fastapi.responses import FileResponse
+    b = db.get(ScannedBill, bill_id)
+    if b is None or not b.file_path or not os.path.exists(b.file_path):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "The original isn't kept for this bill")
+    ext = b.file_path.rsplit(".", 1)[-1]
+    media = {v: k for k, v in EXT.items()}.get(ext, "application/octet-stream")
+    d = b.draft or {}
+    name = "-".join(x for x in [((d.get("supplier") or {}).get("name") or d.get("vendor") or "bill").replace("/", "-"),
+                                (d.get("invoice_no") or "").replace("/", "-")] if x)
+    return FileResponse(b.file_path, media_type=media, filename=f"{name}.{ext}")
+
+
+@router.get("/for-purchase/{purchase_id}")
+def for_purchase(purchase_id: uuid.UUID, db: Session = Depends(get_db), auth: Auth = Depends(require(Perm.inventory_manage))) -> dict:
+    """The kept bill behind a purchase, if it came from a photo."""
+    b = db.scalar(select(ScannedBill).where(ScannedBill.purchase_id == purchase_id))
+    if b is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No photo kept for this purchase")
+    return {"id": str(b.id), "has_file": bool(b.file_path and os.path.exists(b.file_path))}
