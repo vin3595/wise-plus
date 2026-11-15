@@ -57,6 +57,8 @@ $(get WISEPLUS_DOMAIN)$(x=$(get WISEPLUS_EXTRA_DOMAINS); [ -n "$x" ] && printf '
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options nosniff
 		Referrer-Policy strict-origin-when-cross-origin
+		X-Frame-Options SAMEORIGIN
+		Permissions-Policy "camera=(self), microphone=(), geolocation=()"
 		-Server
 	}
 }

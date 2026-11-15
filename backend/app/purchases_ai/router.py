@@ -95,7 +95,9 @@ EXT = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/hei
 def keep_file(tenant_id, sid: uuid.UUID, data: bytes, ct: str, name: str = "") -> str:
     folder = os.path.join(get_settings().upload_dir, "scans", str(tenant_id))
     os.makedirs(folder, exist_ok=True)
-    ext = EXT.get(ct) or (name.rsplit(".", 1)[-1].lower() if "." in (name or "") else "bin")
+    # Only known extensions: the uploaded file name is never trusted (it could carry "../" and escape the folder).
+    guess = (name or "").rsplit(".", 1)[-1].lower() if "." in (name or "") else ""
+    ext = EXT.get(ct) or (guess if guess in set(EXT.values()) | {"jpeg"} else "bin")
     path = os.path.join(folder, f"{sid}.{ext}")
     with open(path, "wb") as f:
         f.write(data)
