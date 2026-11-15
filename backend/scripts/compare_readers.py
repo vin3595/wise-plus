@@ -39,9 +39,14 @@ async def bill(path: str, model: str) -> dict:
     items = b.get("items") or []
     s = round(sum(float(i.get("total") or 0) for i in items), 2)
     tot = b.get("total") or 0
+    tax = sum(float(b.get(k) or 0) for k in ("cgst_amount", "sgst_amount", "igst_amount")) or float(b.get("tax") or 0)
+    disc = float(b.get("global_discount_amount") or 0)
+    # The lines match if they equal the bill total, or the total before GST (lines are often pre-tax), after any discount.
+    near = lambda x: bool(x) and abs(s - x) <= max(2, 0.01 * x)  # noqa: E731
+    ok = near(tot) or near(tot - tax) or near(tot - tax + disc) or near(float(b.get("subtotal") or 0)) or near(float(b.get("taxable_amount") or 0))
     return {"model": model, "secs": round(time.monotonic() - t, 1), "rs": round(rs, 3), "tokens": f"{tin}/{tout}",
-            "vendor": b.get("vendor"), "invoice": b.get("invoice_number"), "date": b.get("bill_date"), "total": tot,
-            "lines": len(items), "lines_sum": s, "adds_up": bool(tot) and abs(s - tot) <= max(2, 0.02 * tot),
+            "vendor": b.get("vendor"), "invoice": b.get("invoice_number"), "date": b.get("bill_date"), "total": tot, "gst": round(tax, 2),
+            "lines": len(items), "lines_sum": s, "adds_up": ok,
             "items": [(i.get("name"), i.get("quantity"), i.get("unit_price"), i.get("total")) for i in items]}
 
 
