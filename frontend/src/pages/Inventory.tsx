@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, newId } from "../api";
 import { formatPaise, inputToPaise, paiseToInput } from "../money";
+import ReturnGoods from "../components/ReturnGoods";
 import { ScanBill, type ScanDraft } from "../components/ScanBill";
 import { useSession } from "../session";
 import { ProfitTab, SpotTab, TransfersTab, TrendsTab } from "./StockExtras";
@@ -17,7 +18,7 @@ export interface StockItem {
 }
 interface Supplier { id: string; name: string; phone: string | null; gstin: string | null; is_active: boolean }
 interface Level { id: string; name: string; kind: string; unit: Unit; category: string | null; qty_m?: number; min_level_m?: number; low?: boolean; negative?: boolean; cost_k?: number; value_paise?: number; counted_at: string | null }
-interface PurchaseRow { id: string; supplier: string | null; invoice_no: string | null; invoice_date: string; amount_paise: number; tax_paise: number; total_paise: number; lines: { name: string; qty_m: number; unit: string }[]; status: string }
+interface PurchaseRow { id: string; supplier: string | null; invoice_no: string | null; invoice_date: string; amount_paise: number; tax_paise: number; total_paise: number; lines: { stock_item_id?: string; name: string; qty_m: number; unit: string }[]; status: string }
 interface CostRow { variant_id: string; item: string; variant: string; price_paise: number; net_price_paise: number; cost_paise: number | null; margin_bp: number | null; food_cost_bp: number | null; has_recipe: boolean; missing_cost: string[] }
 interface ReorderGroup { supplier_id: string | null; supplier: string; phone: string | null; lines: { stock_item_id: string; name: string; unit: Unit; on_hand_m: number; min_level_m: number; order_m: number; in_purchase_unit: { unit: string; qty: number } | null; daily?: { usual_m: number; basis: string } | null }[] }
 
@@ -247,6 +248,7 @@ interface PLine { key: string; item: StockItem | null; qty: string; unit: string
 
 function PurchasesTab({ outletId, items, suppliers, onChange }: { outletId: string; items: StockItem[]; suppliers: Supplier[]; onChange: () => void }) {
   const [list, setList] = useState<PurchaseRow[]>([]);
+  const [returning, setReturning] = useState<PurchaseRow | null>(null);
   const [supplierId, setSupplierId] = useState("");
   const [newSupplier, setNewSupplier] = useState("");
   const [invoice, setInvoice] = useState("");
@@ -402,12 +404,15 @@ function PurchasesTab({ outletId, items, suppliers, onChange }: { outletId: stri
                 <td>{p.invoice_date}</td><td>{p.supplier || "–"}</td><td>{p.invoice_no || "–"}</td>
                 <td className="small">{p.lines.map((l) => `${l.name} ${String(Number((l.qty_m / 1000).toFixed(3)))} ${l.unit}`).join(", ")}</td>
                 <td className="num">{formatPaise(p.total_paise)}</td>
-                <td>{p.status === "cancelled" ? "Cancelled" : <button className="link danger" onClick={() => { if (confirm("Cancel this purchase? Its stock will be taken back out.")) api(`/inventory/purchases/${p.id}/cancel`, { method: "POST" }).then(() => { load(); onChange(); }); }}>Cancel</button>}</td>
+                <td>{p.status === "cancelled" ? "Cancelled" : <>
+                  {p.supplier && <button className="link" onClick={() => setReturning(p)}>Return goods</button>}{" "}
+                  <button className="link danger" onClick={() => { if (confirm("Cancel this purchase? Its stock will be taken back out.")) api(`/inventory/purchases/${p.id}/cancel`, { method: "POST" }).then(() => { load(); onChange(); }); }}>Cancel</button></>}</td>
               </tr>
             ))}
             {list.length === 0 && <tr><td colSpan={6} className="muted">No purchases yet.</td></tr>}
           </tbody>
         </table>
+        {returning && <ReturnGoods purchase={returning} onClose={() => setReturning(null)} onDone={() => { load(); onChange(); }} />}
       </Card>
     </>
   );

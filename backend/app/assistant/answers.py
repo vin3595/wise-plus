@@ -114,7 +114,7 @@ def dues_all(db: Session, today: date) -> Reply:
 def dues_one(db: Session, sup: Supplier, today: date) -> Reply:
     st = statement(db, sup.id, limit=5)
     lines = [f"*{sup.name}: {rs(st['balance_paise'])} due*"]
-    names = {"bill": "Bill", "payment": "Paid", "debit_note": "Debit note", "cash_drawer": "Cash", "opening": "Opening"}
+    names = {"bill": "Bill", "payment": "Paid", "debit_note": "Debit note", "credit_note": "Credit note", "cash_drawer": "Cash", "opening": "Opening"}
     for e in reversed(st["entries"]):
         amt = e["debit_paise"] or e["credit_paise"]
         sign = "+" if e["debit_paise"] else "−"

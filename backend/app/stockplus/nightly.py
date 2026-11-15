@@ -90,6 +90,10 @@ def outlet_lines(db: Session, o: Outlet, day: date) -> tuple[list[str], dict]:
         out.append(f"   Low stock ({len(low)}): " + ", ".join(low[:8]) + ("…" if len(low) > 8 else ""))
     if order:
         out.append("   Order for tomorrow: " + ", ".join(order[:10]))
+    from ..creditnotes.router import day_refunds
+    ref = day_refunds(db, day, o.id)
+    if ref:
+        out.append(f"   Refunds (credit notes): {rs(ref)}")
     from ..tableqr.router import day_line
     tql = day_line(db, o.id, day)
     if tql:

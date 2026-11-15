@@ -49,7 +49,7 @@ def balances(db: Session, include_zero: bool = False) -> list[Balance]:
         opening = ent.get((s.id, "opening"), (0, None))[0]
         billed, last_bill = bills.get(s.id, (0, None))
         pay, last_pay = ent.get((s.id, "payment"), (0, None))
-        dn = ent.get((s.id, "debit_note"), (0, None))[0]
+        dn = ent.get((s.id, "debit_note"), (0, None))[0] + ent.get((s.id, "credit_note"), (0, None))[0]
         cash_paid, cash_last = cash.get(s.name.strip().lower(), (0, None))
         paid = pay + dn + cash_paid
         last_paid = max([d for d in (last_pay, cash_last) if d], default=None)
@@ -79,7 +79,7 @@ def statement(db: Session, supplier_id: uuid.UUID, limit: int = 200) -> dict:
                                                        func.lower(func.trim(CashMovement.paid_to)) == s.name.strip().lower())):
             rows.append({"date": m.created_at.date(), "kind": "cash_drawer", "ref": None, "debit_paise": 0, "credit_paise": m.amount_paise,
                          "id": str(m.id), "mode": "cash", "note": m.note or m.reason})
-    order = {"opening": 0, "bill": 1, "payment": 2, "debit_note": 2, "cash_drawer": 2}
+    order = {"opening": 0, "bill": 1, "payment": 2, "debit_note": 2, "credit_note": 2, "cash_drawer": 2}
     rows.sort(key=lambda r: (r["date"], order[r["kind"]]))
     bal = 0
     for r in rows:

@@ -224,7 +224,7 @@ def compare(db: Session, supplier: Supplier, st: dict) -> dict:
     # Payments and notes we already have: dues-ledger entries and cash paid from a drawer to this supplier.
     ours = [{"date": e.entry_date, "amount_paise": e.amount_paise, "kind": e.kind, "id": str(e.id)}
             for e in db.scalars(select(SupplierEntry).where(SupplierEntry.supplier_id == supplier.id, SupplierEntry.status == "posted",
-                                                           SupplierEntry.kind.in_(("payment", "debit_note"))))]
+                                                           SupplierEntry.kind.in_(("payment", "debit_note", "credit_note"))))]
     from sqlalchemy import func
     ours += [{"date": m.created_at.date(), "amount_paise": m.amount_paise, "kind": "payment", "id": str(m.id)}
              for m in db.scalars(select(CashMovement).where(CashMovement.kind == "out", CashMovement.purpose == "supplier",
@@ -234,8 +234,8 @@ def compare(db: Session, supplier: Supplier, st: dict) -> dict:
     for r in st["rows"]:
         if r["type"] not in ("payment", "credit_note"):
             continue
-        want = "payment" if r["type"] == "payment" else "debit_note"
-        hit = next((o for o in ours if o["id"] not in taken and o["kind"] == want and abs(o["amount_paise"] - r["amount_paise"]) <= PAISA_SLACK
+        want = "payment" if r["type"] == "payment" else "credit_note"
+        hit = next((o for o in ours if o["id"] not in taken and (o["kind"] == want or {o["kind"], want} == {"debit_note", "credit_note"}) and abs(o["amount_paise"] - r["amount_paise"]) <= PAISA_SLACK
                     and abs((o["date"] - r["date"]).days) <= PAY_DAYS), None)
         if hit:
             taken.add(hit["id"])

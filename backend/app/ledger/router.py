@@ -20,7 +20,7 @@ router = APIRouter(prefix="/ledger", tags=["supplier ledger"])
 
 class EntryIn(BaseModel):
     supplier_id: uuid.UUID
-    kind: str = Field(pattern=r"^(opening|payment|debit_note)$")
+    kind: str = Field(pattern=r"^(opening|payment|debit_note|credit_note)$")
     entry_date: date
     amount_paise: int = Field(ge=-10_000_000_000, le=10_000_000_000)
     mode: str | None = Field(default=None, pattern=r"^(cash|upi|bank|cheque|card|other)$")
@@ -125,7 +125,7 @@ async def check_statement(file: UploadFile = File(...), supplier_id: uuid.UUID |
 class StmtPayment(BaseModel):
     date: date
     amount_paise: int = Field(gt=0, le=10_000_000_000)
-    kind: str = Field(default="payment", pattern=r"^(payment|debit_note)$")
+    kind: str = Field(default="payment", pattern=r"^(payment|debit_note|credit_note)$")
     mode: str | None = Field(default="bank", pattern=r"^(cash|upi|bank|cheque|card|other)$")
     ref: str | None = Field(default=None, max_length=60)
     bank: str | None = Field(default=None, max_length=120)

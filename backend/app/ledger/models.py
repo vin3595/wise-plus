@@ -13,7 +13,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from ..models import Base, pk, tenant_fk
 
-KINDS = ("opening", "payment", "debit_note")
+KINDS = ("opening", "payment", "debit_note", "credit_note")   # credit_note: sent by the supplier; both lower what we owe
 MODES = ("cash", "upi", "bank", "cheque", "card", "other")
 
 
@@ -23,7 +23,7 @@ class SupplierEntry(Base):
     tenant_id: Mapped[uuid.UUID] = tenant_fk()
     supplier_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("suppliers.id"), nullable=False)
     entry_date: Mapped[date] = mapped_column(Date, nullable=False)
-    kind: Mapped[str] = mapped_column(String(10), nullable=False)            # opening | payment | debit_note
+    kind: Mapped[str] = mapped_column(String(11), nullable=False)            # opening | payment | debit_note | credit_note
     amount_paise: Mapped[int] = mapped_column(BigInteger, nullable=False)    # opening: what we owed then (negative = they owed us)
     mode: Mapped[str | None] = mapped_column(String(6))                      # payments: cash | upi | bank | cheque | card | other
     reference: Mapped[str | None] = mapped_column(String(60))                # UTR, cheque no., debit note no.
@@ -33,7 +33,7 @@ class SupplierEntry(Base):
     created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     __table_args__ = (
-        CheckConstraint("kind in ('opening','payment','debit_note')", name="ck_supplier_entry_kind"),
+        CheckConstraint("kind in ('opening','payment','debit_note','credit_note')", name="ck_supplier_entry_kind"),
         CheckConstraint("kind = 'opening' or amount_paise > 0", name="ck_supplier_entry_amount"),
         Index("ix_supplier_entries_supplier", "supplier_id", "entry_date"),
     )

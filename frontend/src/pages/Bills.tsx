@@ -5,6 +5,7 @@ import { useSession } from "../session";
 import type { Bill, BillRevision, Outlet } from "../types";
 import { Card, ErrorText, Input, Select } from "../ui";
 import ApprovalDialog from "../components/ApprovalDialog";
+import CreditNoteDialog from "../components/CreditNoteDialog";
 import BillCorrections from "../components/BillCorrections";
 import { PrintBill } from "../components/Receipt";
 
@@ -23,6 +24,7 @@ export default function Bills() {
   const [error, setError] = useState<string | null>(null);
   const [printing, setPrinting] = useState<Bill | null>(null);
   const [cancelling, setCancelling] = useState<Bill | null>(null);
+  const [crediting, setCrediting] = useState<Bill | null>(null);
   const [picked, setPicked] = useState<string[]>([]);
   const [fixing, setFixing] = useState<Bill[] | null>(null);
   const [history, setHistory] = useState<{ bill: Bill; revs: BillRevision[] } | null>(null);
@@ -113,6 +115,7 @@ export default function Bills() {
                   <button className="link" onClick={() => setPrinting(b)}>Reprint</button>
                   {b.status === "paid" && <button className="link" onClick={() => { setSmsFor(b); setSmsTo(b.customer_phone || ""); setSmsNote(null); }}>SMS bill</button>}
                   {b.status === "paid" && !b.locked && <button className="link" onClick={() => setFixing([b])}>Correct</button>}
+                  {b.status === "paid" && <button className="link" onClick={() => setCrediting(b)}>Give back</button>}
                   {b.status === "paid" && <button className="link danger" onClick={() => setCancelling(b)}>Cancel</button>}
                 </td>
               </tr>
@@ -158,6 +161,8 @@ export default function Bills() {
         <ApprovalDialog title={`Cancel bill ${cancelling.invoice_no} (${formatPaise(cancelling.total_paise)})?`} onClose={() => setCancelling(null)}
           onSubmit={async (reason, pin) => { await api(`/bills/${cancelling.id}/cancel`, { body: { reason, manager_pin: pin } }); load(); }} />
       )}
+      {crediting && <CreditNoteDialog billId={crediting.id} invoiceNo={crediting.invoice_no} isManager={isManager}
+        onClose={() => setCrediting(null)} onDone={load} />}
       {fixing && <BillCorrections bills={fixing} outletId={outletId} isManager={isManager} onClose={() => setFixing(null)} onSaved={load} />}
       {history && (
         <div className="modal-back" onClick={() => setHistory(null)}>

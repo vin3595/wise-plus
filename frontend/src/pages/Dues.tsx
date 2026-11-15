@@ -7,10 +7,10 @@ import { StatementUpload, StatementView, type StatementResult } from "../compone
 
 interface Bal { supplier_id: string; name: string; opening_paise: number; bills_paise: number; paid_paise: number; balance_paise: number;
   last_bill_date: string | null; last_payment_date: string | null }
-interface Entry { id: string; date: string; kind: "opening" | "bill" | "payment" | "debit_note" | "cash_drawer"; ref: string | null;
+interface Entry { id: string; date: string; kind: "opening" | "bill" | "payment" | "debit_note" | "credit_note" | "cash_drawer"; ref: string | null;
   debit_paise: number; credit_paise: number; balance_paise: number; mode?: string | null; note?: string | null }
 
-const KIND: Record<Entry["kind"], string> = { opening: "Opening balance", bill: "Bill", payment: "Paid", debit_note: "Debit note", cash_drawer: "Cash from drawer" };
+const KIND: Record<Entry["kind"], string> = { opening: "Opening balance", bill: "Bill", payment: "Paid", debit_note: "Debit note", credit_note: "Their credit note", cash_drawer: "Cash from drawer" };
 const today = () => new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
 const day = (d: string | null) => d ? new Date(d + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "—";
 
@@ -68,7 +68,7 @@ export default function Dues() {
 
 function Statement({ bal, canPay, onBack, onChange }: { bal: Bal; canPay: boolean; onBack: () => void; onChange: () => void }) {
   const [st, setSt] = useState<{ balance_paise: number; entries: Entry[] } | null>(null);
-  const [form, setForm] = useState<null | "payment" | "opening" | "debit_note">(null);
+  const [form, setForm] = useState<null | "payment" | "opening" | "debit_note" | "credit_note">(null);
   const { run, error } = useAction();
   const load = useCallback(() => api<{ balance_paise: number; entries: Entry[] }>(`/ledger/suppliers/${bal.supplier_id}`).then(setSt), [bal.supplier_id]);
   useEffect(() => { load(); }, [load]);
@@ -83,6 +83,7 @@ function Statement({ bal, canPay, onBack, onChange }: { bal: Bal; canPay: boolea
           <Button onClick={() => setForm("payment")}>Record payment</Button>
           <Button variant="ghost" onClick={() => setForm("opening")}>Opening balance</Button>
           <Button variant="ghost" onClick={() => setForm("debit_note")}>Debit note</Button>
+          <Button variant="ghost" onClick={() => setForm("credit_note")}>Their credit note</Button>
         </div>)}
       {form && <EntryForm kind={form} supplierId={bal.supplier_id} onDone={() => { setForm(null); load(); onChange(); }} onCancel={() => setForm(null)} />}
       <ErrorText error={error} />
@@ -94,7 +95,7 @@ function Statement({ bal, canPay, onBack, onChange }: { bal: Bal; canPay: boolea
               <tr key={e.kind + e.id}>
                 <td>{day(e.date)}</td>
                 <td>{KIND[e.kind]}{e.mode ? ` · ${e.mode.toUpperCase()}` : ""}{e.ref ? ` · ${e.ref}` : ""}{e.note ? <div className="small muted">{e.note}</div> : null}
-                  {canPay && ["payment", "debit_note", "opening"].includes(e.kind) && <div><button className="link small" onClick={() => cancel(e)}>Cancel this</button></div>}</td>
+                  {canPay && ["payment", "debit_note", "credit_note", "opening"].includes(e.kind) && <div><button className="link small" onClick={() => cancel(e)}>Cancel this</button></div>}</td>
                 <td className={`num ${e.credit_paise ? "paid" : ""}`}>{e.credit_paise ? `−${formatPaise(e.credit_paise)}` : `+${formatPaise(e.debit_paise)}`}</td>
                 <td className="num">{formatPaise(e.balance_paise)}</td>
               </tr>))}
@@ -104,7 +105,7 @@ function Statement({ bal, canPay, onBack, onChange }: { bal: Bal; canPay: boolea
   );
 }
 
-function EntryForm({ kind, supplierId, onDone, onCancel }: { kind: "payment" | "opening" | "debit_note"; supplierId: string; onDone: () => void; onCancel: () => void }) {
+function EntryForm({ kind, supplierId, onDone, onCancel }: { kind: "payment" | "opening" | "debit_note" | "credit_note"; supplierId: string; onDone: () => void; onCancel: () => void }) {
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(today());
   const [mode, setMode] = useState("upi");
@@ -133,7 +134,7 @@ function EntryForm({ kind, supplierId, onDone, onCancel }: { kind: "payment" | "
               <option value="cheque">Cheque</option><option value="card">Card</option><option value="other">Other</option>
             </Select>
           </Field>)}
-        {kind !== "opening" && <Field label={kind === "payment" ? "UTR / cheque no. (optional)" : "Debit note no. (optional)"}><Input value={ref} onChange={(e) => setRef(e.target.value)} /></Field>}
+        {kind !== "opening" && <Field label={kind === "payment" ? "UTR / cheque no. (optional)" : kind === "credit_note" ? "Their credit note no. (optional)" : "Debit note no. (optional)"}><Input value={ref} onChange={(e) => setRef(e.target.value)} /></Field>}
         <Field label="Note (optional)"><Input value={note} onChange={(e) => setNote(e.target.value)} /></Field>
       </div>
       <ErrorText error={error} />
