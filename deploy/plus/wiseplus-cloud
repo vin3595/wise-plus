@@ -5,6 +5,8 @@
 #   wiseplus-cloud login-code        the latest sign-in code (no SMS is set up for the test app)
 #   wiseplus-cloud update            get the newest code from GitHub and restart; backs up first
 #   wiseplus-cloud gemini <key>      switch on Scan bill (Google Gemini API key); "gemini off" to remove
+#   wiseplus-cloud anthropic         Claude for reading bills (asks for the API key, not shown); "anthropic off" to remove
+#   wiseplus-cloud compare           read the photos in /opt/wiseplus/compare with Gemini, Haiku and Sonnet side by side
 #   wiseplus-cloud razorpay          take payments for wise-plus plans (asks for Key ID, Key Secret, webhook secret)
 #   wiseplus-cloud house <ids>       your own businesses (login ids, comma between): never billed, Daily cash sheet
 #   wiseplus-cloud whatsapp          connect WhatsApp (asks for the 4 values from Meta); "whatsapp off" to stop
@@ -181,6 +183,20 @@ case "$cmd" in
     say "    Callback URL: https://$(get WISEPLUS_DOMAIN)/api/whatsapp/webhook"
     say "    Verify token: $(get WISE_WA_VERIFY_TOKEN)"
     say "    Then subscribe to: messages" ;;
+  anthropic)
+    if [ "${1:-}" = off ]; then put WISE_ANTHROPIC_API_KEY ""; dc up -d api; wait_up; say "  Claude is off."; exit 0; fi
+    key=${1:-}; [ -n "$key" ] || { read -r -s -p "Anthropic API key (sk-ant-..., not shown): " key; echo; }
+    [[ "$key" =~ ^sk-ant- ]] || die "that doesn't look like an Anthropic key (it starts with sk-ant-)"
+    put WISE_ANTHROPIC_API_KEY "$key"; dc up -d api; wait_up; say "  Claude is ready. Try: sudo wiseplus-cloud compare" ;;
+  compare)
+    mkdir -p "$ROOT/compare"
+    shopt -s nullglob; bills=(); sheets=()
+    for f in "$ROOT"/compare/*.{jpg,jpeg,png,webp,pdf}; do
+      docker cp "$f" "wiseplus-api-1:/tmp/$(basename "$f")"
+      case "$(basename "$f")" in sheet*) sheets+=(--sheet "/tmp/$(basename "$f")");; *) bills+=("/tmp/$(basename "$f")");; esac
+    done
+    [ ${#bills[@]} -gt 0 ] || [ ${#sheets[@]} -gt 0 ] || die "put bill photos in $ROOT/compare first (name daily sheets sheet-*.jpg)"
+    docker exec wiseplus-api-1 python -m scripts.compare_readers "${bills[@]}" "${sheets[@]}" ${1:+--models "$1"} ;;
   razorpay)
     if [ "${1:-}" = off ]; then
       for k in WISE_BILLING_RZ_KEY_ID WISE_BILLING_RZ_KEY_SECRET WISE_BILLING_RZ_WEBHOOK_SECRET; do put "$k" ""; done

@@ -30,6 +30,7 @@ call sites read identically):
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
 import os
@@ -73,18 +74,31 @@ _MODEL_ALIASES = {
     "gemini-2.5-flash-lite": DEFAULT_MODEL,
     "gemini-2.0-flash-lite": DEFAULT_MODEL,
     "gemini-flash-lite":     DEFAULT_MODEL,
-    # Legacy Claude / GPT identifiers get mapped here so any historical
-    # `_provider_for(...)` router still lands on Gemini during the swap.
-    "claude-sonnet-5":       DEFAULT_MODEL,
-    "claude-sonnet-4":       DEFAULT_MODEL,
     "gpt-4o":                DEFAULT_MODEL,
 }
+
+# wise-plus: Claude models (Anthropic API) can read bills too, when WISE_ANTHROPIC_API_KEY is set.
+ANTHROPIC_API_KEY = os.environ.get("WISE_ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_API_KEY") or ""
+CLAUDE_MODELS = {"claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"}
+# USD per million tokens (input, output); used for the cost log and the reader comparison
+PRICES = {"gemini-3.5-flash-lite": (0.30, 2.50), "claude-haiku-5-5": (0.10, 0.50),
+          "claude-sonnet-5-5": (2.00, 10.00), "claude-opus-5-5": (4.00, 20.00)}
+# Every model call adds {model, in, out, usd} here; the comparison script reads it.
+USAGE: list[dict] = []
+
+
+def _note_usage(model: str, tin: int, tout: int) -> None:
+    pin, pout = PRICES.get(model, (0.0, 0.0))
+    USAGE.append({"model": model, "in": tin, "out": tout, "usd": tin * pin / 1e6 + tout * pout / 1e6})
 
 
 def _resolve_model(model_id: str | None) -> str:
     if not model_id:
         return DEFAULT_MODEL
-    return _MODEL_ALIASES.get(model_id.strip().lower(), model_id)
+    m = model_id.strip().lower()
+    if m.startswith("claude-") and m not in CLAUDE_MODELS:
+        return DEFAULT_MODEL          # retired Claude names from the Emergent days
+    return _MODEL_ALIASES.get(m, model_id)
 
 
 # ---------------------------------------------------------------------------
@@ -205,6 +219,8 @@ class LlmChat:
 
         if not parts:
             raise ValueError("send_message called with an empty message")
+        if self._model_id in CLAUDE_MODELS:
+            return await self._send_claude(message)
 
         cfg_kwargs: dict[str, Any] = {}
         if self._system_instruction:
@@ -226,6 +242,10 @@ class LlmChat:
                 msg = msg.replace(GEMINI_API_KEY, "***REDACTED***")
             raise RuntimeError(f"Gemini API call failed: {msg}") from exc
 
+        um = getattr(resp, "usage_metadata", None)
+        if um is not None:
+            _note_usage(self._model_id, int(getattr(um, "prompt_token_count", 0) or 0),
+                        int(getattr(um, "candidates_token_count", 0) or 0) + int(getattr(um, "thoughts_token_count", 0) or 0))
         text = _extract_text(resp)
         if not text:
             # Empty reply usually means safety block or truncation; give the
@@ -236,6 +256,46 @@ class LlmChat:
                 "Check safety metadata or reduce image size."
             )
         return text
+
+
+    async def _send_claude(self, message: "UserMessage") -> str:
+        """The same message through Anthropic's Messages API (images first, then the text)."""
+        import httpx
+        if not ANTHROPIC_API_KEY:
+            raise RuntimeError("Claude isn't set up (no Anthropic API key)")
+        content: List[dict] = []
+        for f in (message.file_contents or []):
+            if isinstance(f, ImageContent) and f.image_base64:
+                raw = base64.b64decode(f.image_base64)
+                content.append({"type": "image", "source": {"type": "base64", "media_type": _sniff_image_mime(raw), "data": f.image_base64}})
+        if message.text:
+            content.append({"type": "text", "text": message.text})
+        body: dict[str, Any] = {"model": self._model_id, "max_tokens": 8192, "messages": [{"role": "user", "content": content}]}
+        if self._system_instruction:
+            body["system"] = self._system_instruction
+        last: Exception | None = None
+        for attempt in range(4):
+            try:
+                async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as c:
+                    r = await c.post("https://api.anthropic.com/v1/messages", json=body,
+                                     headers={"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01"})
+                if r.status_code in (429, 500, 502, 503, 529):
+                    last = RuntimeError(f"Claude busy ({r.status_code})")
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+                if r.status_code >= 400:
+                    raise RuntimeError(f"Claude API call failed ({r.status_code}): {r.text[:300]}")
+                d = r.json()
+                u = d.get("usage") or {}
+                _note_usage(self._model_id, int(u.get("input_tokens") or 0), int(u.get("output_tokens") or 0))
+                text = "".join(b.get("text", "") for b in d.get("content") or [] if b.get("type") == "text")
+                if not text:
+                    raise RuntimeError(f"Claude returned no text (stop_reason={d.get('stop_reason')})")
+                return text
+            except httpx.HTTPError as e:
+                last = e
+                await asyncio.sleep(2 ** attempt)
+        raise RuntimeError(f"Claude API call failed: {last}")
 
 
 # ---------------------------------------------------------------------------

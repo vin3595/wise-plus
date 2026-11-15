@@ -1472,6 +1472,7 @@ def _provider_for(model: str) -> str:
 
 ALLOWED_MODELS: tuple[str, ...] = (
     "gemini-3.5-flash-lite",
+    "claude-haiku-5-5", "claude-sonnet-5-5",   # wise-plus: Claude through the Anthropic API
     # Legacy IDs kept in the allow-list so any historical caller/test that
     # passes them still works — the shim resolves them to Gemini.
     "claude-sonnet-5",
