@@ -194,7 +194,8 @@ def done(request_id: uuid.UUID, auth: Auth = Depends(require(Perm.kot_send)), db
 
 def day_line(db: Session, outlet_id, day) -> str | None:
     """For the nightly summary: how many table calls, and how fast they were answered."""
-    start = datetime.combine(day, datetime.min.time()).replace(tzinfo=timezone(timedelta(hours=5, minutes=30)))
+    # The business day starts at 4am IST (same as bills), so late-night calls count for the evening they belong to.
+    start = datetime.combine(day, datetime.min.time()).replace(tzinfo=timezone(timedelta(hours=5, minutes=30))) + timedelta(hours=4)
     rows = db.execute(select(TableRequest.created_at, TableRequest.done_at).where(
         TableRequest.outlet_id == outlet_id, TableRequest.created_at >= start, TableRequest.created_at < start + timedelta(days=1))).all()
     if not rows:

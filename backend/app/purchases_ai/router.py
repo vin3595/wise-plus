@@ -83,6 +83,8 @@ async def scan_bill(outlet_id: uuid.UUID = Form(...), file: UploadFile = File(..
     if not data:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "The file is empty")
     from ..ledger import statement as stm
+    if not enabled():
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Bill scanning isn't switched on: the server needs WISE_GEMINI_API_KEY")
     try:
         kind = ({"type": "SUPPLIER_STATEMENT"} if await run_in_threadpool(stm.looks_like_statement, data, ct, name)
                 else await classify(data, ct, name))
