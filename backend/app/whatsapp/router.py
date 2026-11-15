@@ -156,10 +156,12 @@ def _seen_now(phone: str) -> None:
 def _who(phone10: str) -> list[tuple[str, str, str, str]]:
     """(tenant_id, login_id, role, user_id) for every active owner/manager account with this mobile number."""
     allowed = [r.value for r, perms in ROLE_PERMS.items() if Perm.reports_view in perms]
+    from ..stockplus.models import WaAlert
+    muted = select(WaAlert.user_id).where(WaAlert.topic == "wa_off")   # this account switched off on WhatsApp
     with system_session() as db:
         rows = db.execute(select(User.tenant_id, Tenant.login_id, User.role, User.id).join(Tenant, Tenant.id == User.tenant_id)
                           .where(func.right(User.phone, 10) == phone10, User.is_active.is_(True), User.role.in_(allowed),
-                                 Tenant.status.not_in(["suspended"]))).all()
+                                 Tenant.status.not_in(["suspended"]), User.id.not_in(muted))).all()
     return [(str(t), l, r, str(u)) for t, l, r, u in rows]
 
 

@@ -392,3 +392,18 @@ def test_photo_kept_until_restaurant_picked(monkeypatch):
     wr.handle("919999900001", "@shakedemo")
     assert read == [("shakedemo", "m1"), ("shakedemo", "m2")] and not wr._held
     assert wr._choice["9999900001"] == "shakedemo"
+
+
+def test_account_off_on_whatsapp(shop):
+    """An account switched off on WhatsApp isn't matched to the number (sign-in by phone still works)."""
+    from app.db import system_session
+    from app.models import User
+    from app.stockplus.models import WaAlert
+    from app.whatsapp import router as wr
+    assert [p[1] for p in wr._who(shop["phone"])] == [shop["login"]]
+    with system_session() as db:
+        u = db.query(User).filter(User.phone.like(f"%{shop['phone']}")).first()
+        db.add(WaAlert(tenant_id=u.tenant_id, user_id=u.id, topic="wa_off"))
+    assert wr._who(shop["phone"]) == []
+    with system_session() as db:
+        db.query(WaAlert).filter(WaAlert.topic == "wa_off").delete()

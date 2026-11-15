@@ -38,7 +38,7 @@ class WaAlert(Base):
     id: Mapped[uuid.UUID] = pk()
     tenant_id: Mapped[uuid.UUID] = tenant_fk()
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    topic: Mapped[str] = mapped_column(String(12), nullable=False)   # nightly
+    topic: Mapped[str] = mapped_column(String(12), nullable=False)   # nightly | wa_off (this account ignored on WhatsApp)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     __table_args__ = (UniqueConstraint("user_id", "topic"),)
 
