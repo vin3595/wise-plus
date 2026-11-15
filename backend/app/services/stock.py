@@ -18,7 +18,7 @@ from ..core.kds import business_date
 from ..core.stock import Use, consumption, explode, value_paise, weighted_cost
 from ..models import Addon, AddonGroup, Bill, BillLine, Outlet, RecipeLine, StockItem, StockLevel, StockMove
 
-INCOMING = {"purchase", "prep_in"}
+INCOMING = {"purchase", "prep_in", "xfer_in"}   # xfer_in: wise-plus transfers arrive at the sender's cost
 
 
 def level(db: Session, tenant_id: uuid.UUID, outlet_id: uuid.UUID, item_id: uuid.UUID, lock: bool = True) -> StockLevel:

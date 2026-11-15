@@ -551,6 +551,10 @@ class StockItem(Base, Timestamps):
     yield_m: Mapped[int | None] = mapped_column(BigInteger)    # prep: how much one batch of its recipe makes
     # prep made fresh for each order (a chutney mixed per plate): no stock of its own; a sale takes its ingredients
     made_on_sale: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    # wise-plus: where it's kept, counted place by place ("Counter", "Fridge in use", "Carton store")
+    locations: Mapped[list | None] = mapped_column(JSONB)
+    # wise-plus: bought fresh every day (bread, buns, brownie): tomorrow's order comes from daily use, not a minimum
+    order_daily: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     last_cost_k: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)   # latest purchase price
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     __table_args__ = (UniqueConstraint("tenant_id", "name"),
@@ -635,6 +639,7 @@ class StockCount(Base):
     outlet_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("outlets.id"), nullable=False)
     business_date: Mapped[date] = mapped_column(Date, nullable=False)
     lines: Mapped[list] = mapped_column(JSONB, nullable=False)   # [{stock_item_id, expected_m, counted_m, value_paise}]
+    kind: Mapped[str] = mapped_column(String(5), default="close", server_default="close", nullable=False)  # close | spot (wise-plus)
     counted_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 

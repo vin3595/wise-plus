@@ -67,7 +67,7 @@ def checks(db: Session, outlet_id: uuid.UUID, day: date) -> list[dict]:
     if pending:
         out.append({"key": "qr", "block": False, "text": f"{pending} QR / kiosk order{'s' if pending != 1 else ''} never accepted",
                     "fix": "Accept or decline them under Orders > Waiting for you."})
-    if not db.scalar(select(StockCount.id).where(StockCount.outlet_id == outlet_id, StockCount.business_date == day).limit(1)):
+    if not db.scalar(select(StockCount.id).where(StockCount.outlet_id == outlet_id, StockCount.business_date == day, StockCount.kind == "close").limit(1)):
         if db.scalar(select(StockMove.id).where(StockMove.outlet_id == outlet_id).limit(1)):
             out.append({"key": "stock", "block": False, "text": "No closing stock count today",
                         "fix": "Count the main items under Stock > Closing count."})

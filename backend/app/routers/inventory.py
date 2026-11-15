@@ -49,6 +49,8 @@ class StockItemIn(BaseModel):
     reorder_qty_m: int = Field(default=0, ge=0)
     yield_m: int | None = Field(default=None, gt=0)
     made_on_sale: bool = False
+    locations: list[str] = Field(default=[], max_length=8)     # wise-plus
+    order_daily: bool = False                                  # wise-plus
     is_active: bool = True
 
 
@@ -113,10 +115,12 @@ class WasteIn(BaseModel):
 class CountLineIn(BaseModel):
     stock_item_id: uuid.UUID
     counted_m: int = Field(ge=0)
+    parts: dict[str, int] | None = None       # wise-plus: counted place by place; counted_m is their total
 
 
 class CountIn(BaseModel):
     outlet_id: uuid.UUID
+    kind: str = Field(default="close", pattern=r"^(close|spot)$")   # wise-plus: spot = surprise spot check
     lines: list[CountLineIn] = Field(min_length=1, max_length=500)
 
 
@@ -126,11 +130,22 @@ class LevelIn(BaseModel):
 
 # ------------------------------------------------------------------ helpers
 
+def _places(names: list[str]) -> list[str] | None:
+    """wise-plus: storage places, tidied (no blanks or repeats)."""
+    out: list[str] = []
+    for n in names:
+        n = " ".join(n.split())[:30]
+        if n and n.lower() not in {x.lower() for x in out}:
+            out.append(n)
+    return out or None
+
+
 def _item_out(it: StockItem, show_cost: bool) -> dict:
     d = {"id": str(it.id), "name": it.name, "kind": it.kind, "unit": it.unit, "category": it.category,
          "purchase_units": it.purchase_units or [], "default_supplier_id": str(it.default_supplier_id) if it.default_supplier_id else None,
          "min_level_m": it.min_level_m, "reorder_qty_m": it.reorder_qty_m, "yield_m": it.yield_m,
-         "made_on_sale": it.made_on_sale, "is_active": it.is_active}
+         "made_on_sale": it.made_on_sale, "is_active": it.is_active,
+         "locations": it.locations or [], "order_daily": it.order_daily}
     if show_cost:
         d["last_cost_k"] = it.last_cost_k
     return d
@@ -208,7 +223,7 @@ def create_item(body: StockItemIn, auth: Auth = Depends(require(Perm.inventory_m
     if body.kind != "prep":
         body.made_on_sale = False
     it = StockItem(tenant_id=auth.tenant_id, **{**body.model_dump(), "name": body.name.strip(),
-                   "purchase_units": [u.model_dump() for u in body.purchase_units] or None})
+                   "purchase_units": [u.model_dump() for u in body.purchase_units] or None, "locations": _places(body.locations)})
     db.add(it)
     db.flush()
     audit.record(db, auth.tenant_id, auth.user_id, "create", "stock_item", it.id, after=audit.snapshot(it))
@@ -228,6 +243,7 @@ def update_item(item_id: uuid.UUID, body: StockItemIn, auth: Auth = Depends(requ
         setattr(it, k, v)
     it.name = body.name.strip()
     it.purchase_units = [u.model_dump() for u in body.purchase_units] or None
+    it.locations = _places(body.locations)
     db.flush()
     audit.record(db, auth.tenant_id, auth.user_id, "update", "stock_item", it.id, before, audit.snapshot(it))
     return _item_out(it, True)
@@ -431,13 +447,18 @@ def stock_count(body: CountIn, auth: Auth = Depends(require(Perm.stock_count)), 
         val = 0
         if diff:
             mv = st.post(db, tenant_id=auth.tenant_id, outlet_id=body.outlet_id, item=it, qty_m=diff, kind="count",
-                         ref_kind="count", ref_id=cid, user_id=auth.user_id)
+                         ref_kind="count", ref_id=cid, user_id=auth.user_id, note="spot check" if body.kind == "spot" else None)
             val = mv.value_paise
         lv.counted_at = datetime.now(timezone.utc)
-        lines.append({"stock_item_id": str(it.id), "name": it.name, "unit": it.unit, "expected_m": expected,
-                      "counted_m": ln.counted_m, "diff_m": diff, "value_paise": val})
+        row = {"stock_item_id": str(it.id), "name": it.name, "unit": it.unit, "expected_m": expected,
+               "counted_m": ln.counted_m, "diff_m": diff, "value_paise": val}
+        if ln.parts:
+            if sum(ln.parts.values()) != ln.counted_m or min(ln.parts.values()) < 0:
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"{it.name}: the places don't add up to the count")
+            row["parts"] = ln.parts
+        lines.append(row)
     db.add(StockCount(id=cid, tenant_id=auth.tenant_id, outlet_id=body.outlet_id, business_date=business_date(),
-                      lines=lines, counted_by=auth.user_id))
+                      lines=lines, counted_by=auth.user_id, kind=body.kind))
     db.flush()
     if not auth.can(Perm.costing_view):
         return {"saved": len(lines)}
@@ -492,11 +513,13 @@ def reorder_list(outlet_id: uuid.UUID, auth: Auth = Depends(require(Perm.invento
     levels = {lv.stock_item_id: lv for lv in db.scalars(select(StockLevel).where(StockLevel.outlet_id == outlet_id))}
     sups = {s.id: s for s in db.scalars(select(Supplier))}
     groups: dict[str, dict] = {}
+    from ..stockplus.daily import tomorrow_need   # wise-plus: items bought fresh every day
     for it in db.scalars(select(StockItem).where(StockItem.is_active.is_(True), StockItem.made_on_sale.is_(False)).order_by(StockItem.name)):
         lv = levels.get(it.id)
         qty = lv.qty_m if lv else 0
         mn = lv.min_level_m if lv and lv.min_level_m is not None else it.min_level_m
-        need = reorder_qty(qty, mn, it.reorder_qty_m)
+        daily = tomorrow_need(db, outlet_id, it, qty) if it.order_daily else None
+        need = daily["order_m"] if daily else reorder_qty(qty, mn, it.reorder_qty_m)
         if not need:
             continue
         sup = sups.get(it.default_supplier_id) if it.default_supplier_id else None
@@ -506,7 +529,7 @@ def reorder_list(outlet_id: uuid.UUID, auth: Auth = Depends(require(Perm.invento
         units = it.purchase_units or []
         big = max(units, key=lambda u: u["factor"]) if units else None
         g["lines"].append({"stock_item_id": str(it.id), "name": it.name, "unit": it.unit, "on_hand_m": qty, "min_level_m": mn,
-                           "order_m": need, "kind": it.kind,
+                           "order_m": need, "kind": it.kind, "daily": daily,
                            "in_purchase_unit": ({"unit": big["name"], "qty": -(-need // (big["factor"] * M))} if big else None)})
     return sorted(groups.values(), key=lambda g: (g["supplier_id"] is None, g["supplier"]))
 

@@ -5,6 +5,7 @@ import { formatPaise } from "../money";
 import { useSession } from "../session";
 import type { Outlet } from "../types";
 import { Button, Card, ErrorText, Input, Select, useAction } from "../ui";
+import { NightlyToggle } from "./StockExtras";
 
 interface Check { key: string; block: boolean; text: string; fix: string }
 interface Summary {
@@ -132,6 +133,7 @@ export default function DayClose() {
           <table className="table"><tbody>{st.recent.map((r) => <tr key={r.day}><td><button className="link" onClick={() => setDay(r.day)}>{fmtDay(r.day)}</button></td><td>{r.status === "closed" ? `Closed by ${r.closed_by}` : "Reopened"}</td><td className="num">{formatPaise(r.sales_paise || 0)}</td></tr>)}</tbody></table>
         </Card>
       )}
+      <NightlyToggle />
       {printing && createPortal(
         <div id="print-root"><div className="receipt">
           <div className="r-center"><strong>{outlet?.name}</strong></div>

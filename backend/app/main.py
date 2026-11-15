@@ -17,6 +17,7 @@ from .ledger import router as ledger  # wise-plus: supplier dues
 from .assistant import router as assistant  # wise-plus: owner keyword answers
 from .whatsapp import router as whatsapp  # wise-plus: WhatsApp Cloud API
 from .daily_sheet import router as daily_sheets  # wise-plus: daily cash sheets (from Ease My Bill)
+from .stockplus import router as stockplus  # wise-plus: stock app extras (transfers, spot checks, profit, nightly)
 from .routers import accounts, ads, roles, events, cash, dayclose, inventory, loyalty, offline, payments, sms, report_tables, bill_edits, auth, billing, menu, menu_import, orders, printing, public, qr, reports, tenant, users
 
 logging.basicConfig(level=logging.INFO)
@@ -49,7 +50,7 @@ def create_app() -> FastAPI:
             detail = "A value is out of the allowed range"
         return JSONResponse({"detail": detail}, status_code=status.HTTP_409_CONFLICT)
 
-    for r in (bill_scan.router, ledger.router, assistant.router, whatsapp.router, daily_sheets.router, public.router, auth.router, tenant.router, users.router, menu.router, menu_import.router,
+    for r in (stockplus.router, stockplus.alerts, bill_scan.router, ledger.router, assistant.router, whatsapp.router, daily_sheets.router, public.router, auth.router, tenant.router, users.router, menu.router, menu_import.router,
               orders.router, billing.router, bill_edits.router, qr.router, reports.router, report_tables.router, printing.router, sms.router, cash.router, events.router, offline.router, inventory.router, dayclose.router, payments.router, loyalty.router, accounts.router, roles.router, ads.router):
         app.include_router(r, prefix="/api")
 
@@ -88,6 +89,12 @@ def create_app() -> FastAPI:
     @app.get("/api/public/config")
     def public_config() -> dict:
         return {"customer_url": s.customer_url.rstrip("/") or None}
+
+    @app.on_event("startup")
+    async def _nightly() -> None:   # wise-plus: nightly WhatsApp summary
+        import asyncio
+        from .stockplus.nightly import scheduler
+        app.state.nightly = asyncio.create_task(scheduler())
 
     return app
 

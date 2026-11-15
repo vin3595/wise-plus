@@ -74,7 +74,17 @@ async def receive(request: Request, background: BackgroundTasks) -> dict:
                                         media.get("filename") or "bill", media.get("caption") or "")
                 elif m.get("from") and text:
                     background.add_task(handle, m["from"], text)
+                if m.get("from"):                       # wise-plus: the 24-hour window for the nightly summary
+                    background.add_task(_seen_now, m["from"])
     return {"ok": True}       # always 200 fast, or Meta keeps retrying
+
+
+def _seen_now(phone: str) -> None:
+    from ..stockplus.nightly import seen
+    try:
+        seen(client.last10(phone))
+    except Exception:  # noqa: BLE001
+        log.exception("whatsapp: couldn't note the 24-hour window")
 
 
 def _who(phone10: str) -> list[tuple[str, str, str, str]]:
@@ -139,6 +149,13 @@ def reply_rich(phone: str, text: str) -> Reply | None:
             out = bills.save_or_discard(db, chosen, client.last10(phone), word not in DISCARD, add_new=word in ADD, bill_id=bill_id)
             if bill_id is None and out.text.startswith("No bill waiting"):
                 out = sheets.save_or_drop(db, client.last10(phone), word not in DISCARD) or out
+        elif word in {"nightly on", "nightly off", "stop nightly"}:
+            from ..stockplus.nightly import subscribe
+            on = word == "nightly on"
+            subscribe(db, uuid.UUID(chosen[0]), uuid.UUID(chosen[3]), on)
+            out = Reply("🌙 You'll get the closing summary every night at " + (get_settings().nightly_at or "night") + "." if on
+                        else "Nightly summary stopped. Send *nightly on* to start it again.",
+                        [("summary", "Today so far")] if on else [("nightly on", "Start again")])
         else:
             out = answer_rich(db, text or "help")
     if multi:

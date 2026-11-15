@@ -3,21 +3,23 @@ import { api, newId } from "../api";
 import { formatPaise, inputToPaise, paiseToInput } from "../money";
 import { ScanBill, type ScanDraft } from "../components/ScanBill";
 import { useSession } from "../session";
+import { ProfitTab, SpotTab, TransfersTab, TrendsTab } from "./StockExtras";
 import type { Outlet, OutletMenu } from "../types";
 import { Button, Card, ErrorText, Field, Input, Select, useAction } from "../ui";
 
 // ------------------------------------------------------------------ types and quantity helpers
 
-type Unit = "g" | "ml" | "pc";
-interface StockItem {
+export type Unit = "g" | "ml" | "pc";
+export interface StockItem {
   id: string; name: string; kind: "raw" | "prep"; unit: Unit; category: string | null; purchase_units: { name: string; factor: number }[];
   default_supplier_id: string | null; min_level_m: number; reorder_qty_m: number; yield_m: number | null; made_on_sale?: boolean; is_active: boolean; last_cost_k?: number;
+  locations?: string[]; order_daily?: boolean;
 }
 interface Supplier { id: string; name: string; phone: string | null; gstin: string | null; is_active: boolean }
 interface Level { id: string; name: string; kind: string; unit: Unit; category: string | null; qty_m?: number; min_level_m?: number; low?: boolean; negative?: boolean; cost_k?: number; value_paise?: number; counted_at: string | null }
 interface PurchaseRow { id: string; supplier: string | null; invoice_no: string | null; invoice_date: string; amount_paise: number; tax_paise: number; total_paise: number; lines: { name: string; qty_m: number; unit: string }[]; status: string }
 interface CostRow { variant_id: string; item: string; variant: string; price_paise: number; net_price_paise: number; cost_paise: number | null; margin_bp: number | null; food_cost_bp: number | null; has_recipe: boolean; missing_cost: string[] }
-interface ReorderGroup { supplier_id: string | null; supplier: string; phone: string | null; lines: { stock_item_id: string; name: string; unit: Unit; on_hand_m: number; min_level_m: number; order_m: number; in_purchase_unit: { unit: string; qty: number } | null }[] }
+interface ReorderGroup { supplier_id: string | null; supplier: string; phone: string | null; lines: { stock_item_id: string; name: string; unit: Unit; on_hand_m: number; min_level_m: number; order_m: number; in_purchase_unit: { unit: string; qty: number } | null; daily?: { usual_m: number; basis: string } | null }[] }
 
 /** "12.5" -> 12500 (thousandths). null if not a number. */
 export function parseQty(t: string): number | null {
@@ -36,7 +38,8 @@ const qtyInput = (m: number) => String(Number((m / 1000).toFixed(3)));
 
 const TABS = [
   ["stock", "Stock"], ["count", "Closing count"], ["purchases", "Purchases"], ["recipes", "Recipes"],
-  ["prep", "Prep & wastage"], ["reorder", "To order"], ["costing", "Costing"], ["items", "Stock items"],
+  ["prep", "Prep & wastage"], ["transfers", "Transfers"], ["spot", "Spot check"], ["reorder", "To order"], ["costing", "Costing"],
+  ["profit", "Menu profit"], ["trends", "Trends"], ["items", "Stock items"],
 ] as const;
 type Tab = (typeof TABS)[number][0];
 
@@ -59,7 +62,7 @@ export default function Inventory() {
     if (manage) api<Supplier[]>("/inventory/suppliers").then(setSuppliers);
   }, [bump, manage]);
 
-  const tabs = TABS.filter(([k]) => manage || k === "count").filter(([k]) => costs || k !== "costing");
+  const tabs = TABS.filter(([k]) => manage || k === "count" || k === "spot").filter(([k]) => costs || !["costing", "profit", "trends"].includes(k));
   return (
     <div className="stack inv">
       <div className="row">
@@ -82,6 +85,10 @@ export default function Inventory() {
       {outletId && tab === "prep" && <PrepTab outletId={outletId} items={items} costs={costs} onSaved={reload} />}
       {outletId && tab === "reorder" && <ReorderTab outletId={outletId} bump={bump} />}
       {outletId && tab === "costing" && <CostingTab outletId={outletId} onRecipes={() => setTab("recipes")} />}
+      {outletId && tab === "transfers" && <TransfersTab outletId={outletId} outlets={outlets} items={items} costs={costs} onChange={reload} />}
+      {outletId && tab === "spot" && <SpotTab outletId={outletId} items={items} costs={costs} manage={manage} onSaved={reload} />}
+      {outletId && tab === "profit" && <ProfitTab outletId={outletId} />}
+      {outletId && tab === "trends" && <TrendsTab outletId={outletId} />}
       {tab === "items" && <ItemsTab items={items} suppliers={suppliers} onChange={reload} />}
     </div>
   );
@@ -150,7 +157,10 @@ function StockTab({ outletId, costs, bump, onCount }: { outletId: string; costs:
 
 // ------------------------------------------------------------------ closing count (blind for staff)
 
-function CountTab({ outletId, items, costs, onSaved }: { outletId: string; items: StockItem[]; costs: boolean; onSaved: () => void }) {
+/** Closing count, or a surprise spot check of a few items (kind "spot"). Items kept in several places
+ *  are counted place by place and added up. */
+export function CountTab({ outletId, items, costs, onSaved, kind = "close", title = "Closing count", onDone }: {
+  outletId: string; items: StockItem[]; costs: boolean; onSaved: () => void; kind?: "close" | "spot"; title?: string; onDone?: () => void }) {
   const [vals, setVals] = useState<Record<string, string>>({});
   const [q, setQ] = useState("");
   const [result, setResult] = useState<{ saved: number; lines?: { name: string; unit: Unit; expected_m: number; counted_m: number; diff_m: number; value_paise: number }[]; short_value_paise?: number } | null>(null);
@@ -161,11 +171,19 @@ function CountTab({ outletId, items, costs, onSaved }: { outletId: string; items
     active.forEach((i) => { const k = i.category || "Other"; g.set(k, [...(g.get(k) || []), i]); });
     return [...g.entries()];
   }, [active]);
-  const filled = Object.entries(vals).filter(([, v]) => v.trim() !== "");
-  const bad = filled.filter(([, v]) => parseQty(v) === null);
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const bad = Object.values(vals).filter((v) => v.trim() !== "" && parseQty(v) === null);
+  // One line per item: a plain count, or the places that were filled in, added up.
+  const lines = [...new Set(Object.keys(vals).filter((k) => vals[k].trim() !== "").map((k) => k.split("|")[0]))].map((id) => {
+    const places = byId.get(id)?.locations || [];
+    if (!places.length) return { stock_item_id: id, counted_m: parseQty(vals[id]) ?? 0 };
+    const parts: Record<string, number> = {};
+    places.forEach((pl) => { const v = vals[`${id}|${pl}`]; if (v && v.trim() !== "") parts[pl] = parseQty(v) ?? 0; });
+    return { stock_item_id: id, counted_m: Object.values(parts).reduce((a, b) => a + b, 0), parts };
+  });
+  const filled = lines;
   const save = () => run(async () => {
-    const lines = filled.map(([id, v]) => ({ stock_item_id: id, counted_m: parseQty(v)! }));
-    const r = await api<typeof result>("/inventory/counts", { body: { outlet_id: outletId, lines } });
+    const r = await api<typeof result>("/inventory/counts", { body: { outlet_id: outletId, kind, lines } });
     setResult(r); setVals({}); onSaved();
   });
   if (result) {
@@ -177,18 +195,30 @@ function CountTab({ outletId, items, costs, onSaved }: { outletId: string; items
           <table className="table"><thead><tr><th>Item</th><th className="num">Expected</th><th className="num">Counted</th><th className="num">Difference</th>{costs && <th className="num">Value</th>}</tr></thead>
             <tbody>{result.lines.map((l) => <tr key={l.name} className={l.diff_m < 0 ? "row-warn" : ""}><td>{l.name}</td><td className="num">{fmtQty(l.expected_m, l.unit)}</td><td className="num">{fmtQty(l.counted_m, l.unit)}</td><td className="num">{l.diff_m ? fmtQty(l.diff_m, l.unit) : "–"}</td>{costs && <td className="num">{formatPaise(l.value_paise)}</td>}</tr>)}</tbody></table>
         </>}
-        <Button onClick={() => setResult(null)}>Count more</Button>
+        {onDone ? <Button onClick={onDone}>Done</Button> : <Button onClick={() => setResult(null)}>Count more</Button>}
       </Card>
     );
   }
   return (
-    <Card title="Closing count">
-      <p className="muted small">Count what's actually there and type it in the unit shown. Leave an item empty if you didn't count it.</p>
-      <Input placeholder="Find an item" value={q} onChange={(e) => setQ(e.target.value)} />
+    <Card title={title}>
+      <p className="muted small">Count what's actually there and type it in the unit shown. {kind === "spot" ? "Count every item below now." : "Leave an item empty if you didn't count it."}</p>
+      {kind === "close" && <Input placeholder="Find an item" value={q} onChange={(e) => setQ(e.target.value)} />}
       {groups.map(([cat, list]) => (
         <div key={cat} className="count-group">
           <h3>{cat}</h3>
-          {list.map((i) => (
+          {list.map((i) => i.locations?.length ? (
+            <div key={i.id} className="count-places">
+              <div className="count-line"><span className="grow">{i.name}</span>
+                <span className="muted small">{(() => { const l = lines.find((x) => x.stock_item_id === i.id); return l ? `Total ${fmtQty(l.counted_m, i.unit)}` : ""; })()}</span></div>
+              {i.locations.map((pl) => (
+                <label key={pl} className="count-line count-place">
+                  <span className="grow">{pl}</span>
+                  <input className="input num" inputMode="decimal" value={vals[`${i.id}|${pl}`] ?? ""} placeholder="0" aria-label={`${i.name} in ${pl}, ${i.unit}`}
+                    onChange={(e) => setVals((v) => ({ ...v, [`${i.id}|${pl}`]: e.target.value }))} />
+                  <span className="unit">{i.unit}</span>
+                </label>))}
+            </div>
+          ) : (
             <label key={i.id} className="count-line">
               <span className="grow">{i.name}</span>
               <input className="input num" inputMode="decimal" value={vals[i.id] ?? ""} placeholder="0" aria-label={`Count of ${i.name} in ${i.unit}`}
@@ -532,7 +562,7 @@ function ReorderTab({ outletId, bump }: { outletId: string; bump: number }) {
     setQty(Object.fromEntries(g.flatMap((x) => x.lines.map((l) => [l.stock_item_id, l.in_purchase_unit ? `${l.in_purchase_unit.qty} ${l.in_purchase_unit.unit}` : fmtQty(l.order_m, l.unit)]))));
   }); }, [outletId, bump]);
   if (!groups) return <p className="muted">Loading…</p>;
-  if (!groups.length) return <Card><p className="ok">Nothing is below its minimum. Set minimums under <strong>Stock items</strong> to get this list.</p></Card>;
+  if (!groups.length) return <Card><p className="ok">Nothing is below its minimum. Set minimums under <strong>Stock items</strong> to get this list. Items marked "bought fresh every day" show here with tomorrow's quantity.</p></Card>;
   const text = (g: ReorderGroup) => `Order from ${g.supplier}:\n` + g.lines.map((l) => `- ${l.name}: ${qty[l.stock_item_id] || ""}`).join("\n");
   return (
     <>
@@ -541,7 +571,7 @@ function ReorderTab({ outletId, bump }: { outletId: string; bump: number }) {
         <Card key={g.supplier_id || "none"} title={g.supplier} actions={<Button variant="ghost" onClick={() => { navigator.clipboard?.writeText(text(g)).then(() => setCopied(g.supplier)).catch(() => setCopied(null)); }}>{copied === g.supplier ? "Copied" : "Copy order"}</Button>}>
           <table className="table">
             <thead><tr><th>Item</th><th className="num">On hand</th><th className="num">Minimum</th><th>Order</th></tr></thead>
-            <tbody>{g.lines.map((l) => <tr key={l.stock_item_id}><td>{l.name}</td><td className={`num ${l.on_hand_m < 0 ? "error" : ""}`}>{fmtQty(l.on_hand_m, l.unit)}</td><td className="num">{fmtQty(l.min_level_m, l.unit)}</td>
+            <tbody>{g.lines.map((l) => <tr key={l.stock_item_id}><td>{l.name}</td><td className={`num ${l.on_hand_m < 0 ? "error" : ""}`}>{fmtQty(l.on_hand_m, l.unit)}</td><td className="num">{l.daily ? <span className="small" title={l.daily.basis}>Daily · uses {fmtQty(l.daily.usual_m, l.unit)}</span> : fmtQty(l.min_level_m, l.unit)}</td>
               <td><input className="input" value={qty[l.stock_item_id] ?? ""} onChange={(e) => setQty((q) => ({ ...q, [l.stock_item_id]: e.target.value }))} aria-label={`Order of ${l.name}`} /></td></tr>)}</tbody>
           </table>
           {g.phone && <p className="small muted">Supplier phone {g.phone}</p>}
@@ -595,15 +625,16 @@ const blank = (): StockItem => ({ id: "", name: "", kind: "raw", unit: "g", cate
 
 function ItemsTab({ items, suppliers, onChange }: { items: StockItem[]; suppliers: Supplier[]; onChange: () => void }) {
   const [edit, setEdit] = useState<StockItem | null>(null);
-  const [min, setMin] = useState(""), [re, setRe] = useState(""), [yld, setYld] = useState("");
+  const [min, setMin] = useState(""), [re, setRe] = useState(""), [yld, setYld] = useState(""), [places, setPlaces] = useState("");
   const [q, setQ] = useState("");
   const { busy, error, run } = useAction();
-  const start = (i: StockItem) => { setEdit({ ...i, purchase_units: [...(i.purchase_units || [])] }); setMin(i.min_level_m ? qtyInput(i.min_level_m) : ""); setRe(i.reorder_qty_m ? qtyInput(i.reorder_qty_m) : ""); setYld(i.yield_m ? qtyInput(i.yield_m) : ""); };
+  const start = (i: StockItem) => { setEdit({ ...i, purchase_units: [...(i.purchase_units || [])] }); setMin(i.min_level_m ? qtyInput(i.min_level_m) : ""); setRe(i.reorder_qty_m ? qtyInput(i.reorder_qty_m) : ""); setYld(i.yield_m ? qtyInput(i.yield_m) : ""); setPlaces((i.locations || []).join(", ")); };
   const save = () => run(async () => {
     const e = edit!;
     const body = { name: e.name, kind: e.kind, unit: e.unit, category: e.category || null, purchase_units: e.purchase_units.filter((u) => u.name.trim() && u.factor > 0),
       default_supplier_id: e.default_supplier_id || null, min_level_m: parseQty(min || "0") ?? 0, reorder_qty_m: parseQty(re || "0") ?? 0,
-      yield_m: e.kind === "prep" ? parseQty(yld || "0") || null : null, made_on_sale: e.kind === "prep" && !!e.made_on_sale, is_active: e.is_active };
+      yield_m: e.kind === "prep" ? parseQty(yld || "0") || null : null, made_on_sale: e.kind === "prep" && !!e.made_on_sale, is_active: e.is_active,
+      locations: places.split(",").map((x) => x.trim()).filter(Boolean), order_daily: !!e.order_daily };
     await api(e.id ? `/inventory/items/${e.id}` : "/inventory/items", { method: e.id ? "PATCH" : "POST", body });
     setEdit(null); onChange();
   });
@@ -620,6 +651,7 @@ function ItemsTab({ items, suppliers, onChange }: { items: StockItem[]; supplier
           <Field label={`Minimum to keep (${edit.unit})`} hint="Shows on the To order list at or below this"><Input inputMode="decimal" value={min} onChange={(e) => setMin(e.target.value)} /></Field>
           <Field label={`Usual order (${edit.unit})`} hint="Empty: enough to reach twice the minimum"><Input inputMode="decimal" value={re} onChange={(e) => setRe(e.target.value)} /></Field>
           <Field label="Usual supplier"><Select value={edit.default_supplier_id || ""} onChange={(e) => setEdit({ ...edit, default_supplier_id: e.target.value || null })}><option value="">–</option>{suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</Select></Field>
+          <Field label="Kept in (counted place by place)" hint='Optional, comma between places: "Counter, Fridge in use, Carton store"'><Input value={places} onChange={(e) => setPlaces(e.target.value)} /></Field>
           {edit.kind === "prep" && <Field label={`One batch makes (${edit.unit})`} hint="What comes out, after cooking down or straining"><Input inputMode="decimal" value={yld} onChange={(e) => setYld(e.target.value)} /></Field>}
         </div>
         {edit.kind === "prep" && (
@@ -632,6 +664,8 @@ function ItemsTab({ items, suppliers, onChange }: { items: StockItem[]; supplier
             </button>
           </div>
         )}
+        <label className="toggle"><input type="checkbox" checked={!!edit.order_daily} onChange={(e) => setEdit({ ...edit, order_daily: e.target.checked })} />
+          <span>Bought fresh every day (bread, buns, brownie): tomorrow's order comes from how much is usually used, not a minimum</span></label>
         <h3>Bought in</h3>
         <p className="muted small">{edit.unit === "g" ? "kg" : edit.unit === "ml" ? "litre" : "dozen"} works already. Add packs, e.g. "box of 24" = 24 {edit.unit}, or "crate" = 12000 ml.</p>
         {edit.purchase_units.map((u, i) => (
@@ -656,7 +690,7 @@ function ItemsTab({ items, suppliers, onChange }: { items: StockItem[]; supplier
       <table className="table">
         <thead><tr><th>Name</th><th>Unit</th><th>Category</th><th className="num">Minimum</th><th /></tr></thead>
         <tbody>
-          {shown.map((i) => <tr key={i.id} className={i.is_active ? "" : "muted"}><td>{i.name}{i.kind === "prep" && <span className="badge">{i.made_on_sale ? "made per order" : "made here"}</span>}</td><td>{i.unit}</td><td>{i.category || "–"}</td><td className="num">{i.min_level_m ? fmtQty(i.min_level_m, i.unit) : "–"}</td><td><button className="link" onClick={() => start(i)}>Edit</button></td></tr>)}
+          {shown.map((i) => <tr key={i.id} className={i.is_active ? "" : "muted"}><td>{i.name}{i.kind === "prep" && <span className="badge">{i.made_on_sale ? "made per order" : "made here"}</span>}{i.order_daily && <span className="badge">daily</span>}</td><td>{i.unit}</td><td>{i.category || "–"}</td><td className="num">{i.min_level_m ? fmtQty(i.min_level_m, i.unit) : "–"}</td><td><button className="link" onClick={() => start(i)}>Edit</button></td></tr>)}
           {items.length === 0 && <tr><td colSpan={5} className="muted">Start with what you buy: milk, sugar, ice cream, cups, lids, straws.</td></tr>}
         </tbody>
       </table>

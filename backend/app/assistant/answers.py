@@ -14,7 +14,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -41,6 +42,7 @@ HELP = ("*Ask me:*\n"
         "• *sales* – today's sales so far\n"
         "• *sheet* / *sheet 13 nov* – a daily cash sheet\n"
         "• *expenses* – this month's expenses by head\n"
+        "• *summary* – closing summary of all outlets (*nightly on* to get it every night)\n"
         "• Send a photo of a bill or the daily sheet to save it")
 
 DUES = {"dues", "due", "outstanding", "balance", "balances", "baki", "baaki", "udhaar", "udhar", "payable", "ledger", "ledgers"}
@@ -295,6 +297,12 @@ def answer_rich(db: Session, text: str, today: date | None = None) -> Reply:
         return daily_sheet(db, words[1:], today)
     if head in EXPENSES:
         return expenses(db, words[1:], today)
+    from ..stockplus.nightly import SUMMARY, summary_text   # wise-plus: closing summary (also the nightly message)
+    if head in SUMMARY and (len(words) == 1 or words[1] not in {"on", "off"}):
+        day = (_when(words[1:], today) if len(words) > 1 else None) or today
+        if head == "show" and datetime.now(ZoneInfo("Asia/Kolkata")).hour < 12:   # last night's message, tapped this morning
+            day = today - timedelta(days=1)
+        return summary_text(db, day)
     return Reply("I didn't get that.\n\n" + HELP, HOME)
 
 
