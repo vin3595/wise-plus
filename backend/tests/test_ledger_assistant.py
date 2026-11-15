@@ -139,3 +139,76 @@ def test_whatsapp(shop, monkeypatch):
     assert f"@{shop['login']}" in wr.reply_for("91" + shop["phone"], "last kanha")
     assert "Nothing outstanding" in wr.reply_for("91" + shop["phone"], f"@{second} dues")
     assert "not on that restaurant" in wr.reply_for("91" + shop["phone"], "@someoneelse dues")
+
+
+def test_whatsapp_bill_photo(shop, monkeypatch, tmp_path):
+    from app.config import get_settings
+    from app.purchases_ai import extraction as ex
+    from app.whatsapp import client as wa
+    from app.whatsapp import router as wr
+
+    c, h, tok = shop["c"], shop["h"], shop["tok"]
+    s = get_settings()
+    for k, v in {"wa_app_secret": "shh", "wa_token": "t", "wa_phone_number_id": "123", "upload_dir": str(tmp_path)}.items():
+        monkeypatch.setattr(s, k, v)
+    sent = []
+    monkeypatch.setattr(wa, "send_text", lambda to, body: sent.append(body))
+    monkeypatch.setattr(wa, "get_media", lambda mid: (b"\xff\xd8photo", "image/jpeg"))
+    monkeypatch.setattr(ex, "EMERGENT_LLM_KEY", "k")
+    monkeypatch.setattr(ex, "get_first_page_png", lambda d, ct, n: b"png")
+
+    async def classify(png):
+        return {"type": "INVOICE", "confidence": 95, "accepted": True, "should_warn": False}
+    bill = {"vendor": "SHIV GAURI AGENCIES", "invoice_number": "TS005700", "bill_date": "2026-11-14", "total": 796.0,
+            "items": [{"name": "Super Vanilla Bulk [1*1] 5000ML", "quantity": 2, "unit_price": 379.14, "total": 796.19, "tax_rate": 5}]}
+    reads = [bill]
+
+    async def read(d, ct, n):
+        return reads[-1], "data:image/png;base64,AAAA"
+    monkeypatch.setattr(ex, "classify_document", classify)
+    monkeypatch.setattr(ex, "extract_bill_from_file", read)
+    # The Vadilal supplier is known by name only ("Shiv Gauri Agencies (Vadilal)"), close enough to match.
+
+    def post(msg):
+        body = json.dumps({"entry": [{"changes": [{"value": {"messages": [{"id": uuid.uuid4().hex, "from": "91" + shop["phone"], **msg}]}}]}]}).encode()
+        sig = "sha256=" + hmac.new(b"shh", body, hashlib.sha256).hexdigest()
+        assert c.post("/api/whatsapp/webhook", content=body, headers={"x-hub-signature-256": sig}).status_code == 200
+
+    wr._choice.clear()
+    assert "Nothing waiting" not in wr.reply_for("91" + shop["phone"], "save") and "No bill waiting" in wr.reply_for("91" + shop["phone"], "save")
+    before = c.get(f"/api/ledger/suppliers/{shop['vad']['id']}", headers=h(tok)).json()["balance_paise"]
+    post({"type": "image", "image": {"id": "m1", "mime_type": "image/jpeg"}})
+    assert "Shiv Gauri Agencies (Vadilal)" in sent[-1] and "2 tub 5L" in sent[-1] and "Reply *save*" in sent[-1], sent[-1]
+    assert len(c.get("/api/inventory/purchases/scan/pending", headers=h(tok)).json()) == 1
+    post({"type": "text", "text": {"body": "save"}})
+    assert sent[-1].startswith("✅ Saved") and "₹796" in sent[-1], sent[-1]
+    after = c.get(f"/api/ledger/suppliers/{shop['vad']['id']}", headers=h(tok)).json()["balance_paise"]
+    assert abs((after - before) - 79600) <= 2          # GST rounds per line
+    assert c.get("/api/inventory/purchases/scan/pending", headers=h(tok)).json() == []
+    assert "No bill waiting" in wr.reply_for("91" + shop["phone"], "save")                 # saved only once
+
+    # Same bill again: flagged, can't save from WhatsApp, waits in the app
+    post({"type": "document", "document": {"id": "m2", "mime_type": "image/jpeg", "filename": "b.jpg"}})
+    assert "entered already" in sent[-1] and "discard" in sent[-1]
+    assert "Can't save it from here" in wr.reply_for("91" + shop["phone"], "save")
+    assert "Discarded" in wr.reply_for("91" + shop["phone"], "discard")
+
+    # An item Wise doesn't know: waits in the app with the draft, ready for the Purchases form
+    reads.append({**bill, "invoice_number": "TS005701", "items": [{"name": "Rajbhog Cone 120ML", "quantity": 1, "total": 500, "tax_rate": 5}], "total": 525})
+    post({"type": "image", "image": {"id": "m3", "mime_type": "image/jpeg", "caption": "sardarpura"}})
+    assert "1 line(s) need a stock item" in sent[-1] and "/stock" in sent[-1]
+    pend = c.get("/api/inventory/purchases/scan/pending", headers=h(tok)).json()
+    assert len(pend) == 1 and pend[0]["unmatched"] == 1
+    one = c.get(f"/api/inventory/purchases/scan/pending/{pend[0]['id']}", headers=h(tok)).json()
+    assert one["draft"]["lines"][0]["bill_name"] == "Rajbhog Cone 120ML" and one["draft"]["thumbnail"]
+    assert c.post(f"/api/inventory/purchases/scan/pending/{pend[0]['id']}/done", headers=h(tok), json={"discard": True}).status_code == 200
+    assert c.get("/api/inventory/purchases/scan/pending", headers=h(tok)).json() == []
+    assert list(tmp_path.rglob("*.jpg"))                                                     # the photos are kept
+
+    # A cashier's phone is ignored, photo or not
+    c.post("/api/users", headers=h(tok), json={"name": "Ravi", "role": "cashier", "pin": "7322", "phone": "9000000099", "outlet_ids": [shop["out"]["id"]]})
+    n = len(sent)
+    body = json.dumps({"entry": [{"changes": [{"value": {"messages": [{"id": "x9", "from": "919000000099", "type": "image",
+                                                                     "image": {"id": "m4", "mime_type": "image/jpeg"}}]}}]}]}).encode()
+    c.post("/api/whatsapp/webhook", content=body, headers={"x-hub-signature-256": "sha256=" + hmac.new(b"shh", body, hashlib.sha256).hexdigest()})
+    assert len(sent) == n

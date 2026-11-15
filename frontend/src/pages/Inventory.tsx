@@ -211,6 +211,7 @@ function CountTab({ outletId, items, costs, onSaved }: { outletId: string; items
 const STD: Record<Unit, { name: string; factor: number }[]> = { g: [{ name: "kg", factor: 1000 }], ml: [{ name: "l", factor: 1000 }], pc: [{ name: "dozen", factor: 12 }] };
 const unitsOf = (i: StockItem) => [{ name: i.unit, factor: 1 }, ...STD[i.unit], ...(i.purchase_units || [])];
 
+interface PendingBill { id: string; vendor: string | null; invoice_no: string | null; total_paise: number; lines: number; unmatched: number; created_at: string }
 interface PLine { key: string; item: StockItem | null; qty: string; unit: string; amount: string; gst: string; billName?: string; check?: string | null }
 
 function PurchasesTab({ outletId, items, suppliers, onChange }: { outletId: string; items: StockItem[]; suppliers: Supplier[]; onChange: () => void }) {
@@ -232,8 +233,22 @@ function PurchasesTab({ outletId, items, suppliers, onChange }: { outletId: stri
   };
   const set = (k: string, patch: Partial<PLine>) => setLines((l) => l.map((x) => (x.key === k ? { ...x, ...patch } : x)));
   const [scan, setScan] = useState<ScanDraft | null>(null);
+  // Bills sent on WhatsApp that need a check here.
+  const [pending, setPending] = useState<PendingBill[]>([]);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const loadPending = () => api<PendingBill[]>("/inventory/purchases/scan/pending").then(setPending).catch(() => setPending([]));
+  useEffect(() => { loadPending(); }, []);
+  const openPending = (id: string) => run(async () => {
+    const r = await api<PendingBill & { draft: ScanDraft }>(`/inventory/purchases/scan/pending/${id}`);
+    fromScan(r.draft); setPendingId(id);
+  });
+  const discardPending = (id: string) => run(async () => {
+    await api(`/inventory/purchases/scan/pending/${id}/done`, { body: { discard: true } });
+    if (pendingId === id) { setPendingId(null); setScan(null); setLines([]); setInvoice(""); }
+    loadPending();
+  });
   const fromScan = (d: ScanDraft) => {
-    setScan(d); setSaved(null);
+    setScan(d); setSaved(null); setPendingId(null);
     if (d.supplier) { setSupplierId(d.supplier.id); setNewSupplier(""); }
     else if (d.vendor) { setSupplierId("_new"); setNewSupplier(d.vendor.slice(0, 120)); }
     setInvoice(d.invoice_no || "");
@@ -268,14 +283,29 @@ function PurchasesTab({ outletId, items, suppliers, onChange }: { outletId: stri
       if (!newSupplier.trim()) throw new Error("Type the supplier's name");
       sid = (await api<Supplier>("/inventory/suppliers", { body: { name: newSupplier.trim() } })).id;
     }
-    await api("/inventory/purchases", { body: { id: newId(), outlet_id: outletId, supplier_id: sid, invoice_no: invoice || null, invoice_date: date,
+    const made = await api<{ id: string }>("/inventory/purchases", { body: { id: newId(), outlet_id: outletId, supplier_id: sid, invoice_no: invoice || null, invoice_date: date,
       lines: lines.map((l) => ({ stock_item_id: l.item!.id, qty_m: parseQty(l.qty)!, unit: l.unit, amount_paise: inputToPaise(l.amount || "0") ?? 0, gst_bp: Math.round(Number(l.gst || 0) * 100), bill_name: l.billName || null })) } });
     setSaved(`Saved. Stock added for ${lines.length} item${lines.length === 1 ? "" : "s"}.`);
+    if (pendingId) { await api(`/inventory/purchases/scan/pending/${pendingId}/done`, { body: { purchase_id: made.id } }); setPendingId(null); loadPending(); }
     setLines([]); setInvoice(""); setNewSupplier(""); setScan(null); onChange(); load();
   });
 
   return (
     <>
+      {pending.length > 0 && (
+        <Card title={`Bills from WhatsApp to check (${pending.length})`}>
+          <ul className="pending-list">
+            {pending.map((b) => (
+              <li key={b.id} className={pendingId === b.id ? "on" : ""}>
+                <div><strong>{b.vendor || "Unknown supplier"}</strong>{b.invoice_no ? ` · ${b.invoice_no}` : ""}
+                  <div className="small muted">{formatPaise(b.total_paise)} · {b.lines} item{b.lines === 1 ? "" : "s"}{b.unmatched ? ` · ${b.unmatched} to pick` : ""} · {new Date(b.created_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</div></div>
+                <div className="row nowrap">
+                  <Button onClick={() => openPending(b.id)}>Check</Button>
+                  <Button variant="ghost" onClick={() => discardPending(b.id)}>Discard</Button>
+                </div>
+              </li>))}
+          </ul>
+        </Card>)}
       <Card title="Enter a supplier's bill" actions={<ScanBill outletId={outletId} onDraft={fromScan} />}>
         {scan && (
           <div className="scan-result">

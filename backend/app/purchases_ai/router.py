@@ -1,7 +1,8 @@
 """Scan a supplier's bill (photo or PDF) into a draft purchase. Ease My Bill's reader, Wise's stock.
 
 The only link to the rest of Wise: the draft is shaped like POST /inventory/purchases, and the person saves
-it there after checking it. Remove this folder and its one line in main.py and Wise is as it was.
+it there after checking it. Remove this folder and its line in main.py and Wise is as it was.
+Bills sent on WhatsApp wait here (scanned_bills) until saved there or in the app.
 
 The AI call takes several seconds, so it runs with no database connection held open."""
 from __future__ import annotations
@@ -9,35 +10,22 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from ..core.permissions import Perm
 from ..db import tenant_session
-from ..deps import Auth, ensure_outlet_access, require
-from ..models import Outlet, Purchase, StockItem, Supplier, Tenant, User
-from .match import build_draft
+from ..deps import Auth, ensure_outlet_access, get_db, require
+from ..models import Outlet, Tenant, User
+from .models import ScannedBill
+from .service import ScanError, enabled, read_bill, tenant_draft
 
 router = APIRouter(prefix="/inventory/purchases/scan", tags=["bill scan"])
 
 MAX_BYTES = 15 * 1024 * 1024
 ACCEPT = {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "application/pdf"}
-
-
-def _reader():
-    """Imported on first use so Wise still starts on a server without the AI packages."""
-    try:
-        from . import extraction
-    except ImportError as e:  # google-genai / pypdfium2 / pillow missing
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, f"Bill scanning isn't installed on this server ({e.name})") from e
-    return extraction
-
-
-def enabled() -> bool:
-    try:
-        return bool(_reader().EMERGENT_LLM_KEY)
-    except HTTPException:
-        return False
 
 
 @router.get("/status")
@@ -58,31 +46,9 @@ def _check(auth: Auth, outlet_id: uuid.UUID) -> None:
         ensure_outlet_access(db, auth, outlet_id)
 
 
-def _match(auth: Auth, outlet_id: uuid.UUID, bill: dict) -> dict:
+def _draft(auth: Auth, bill: dict) -> dict:
     with tenant_session(auth.tenant_id) as db:
-        items = [{"id": str(i.id), "name": i.name, "unit": i.unit, "purchase_units": i.purchase_units or []}
-                 for i in db.scalars(select(StockItem).where(StockItem.is_active.is_(True), StockItem.kind == "raw"))]
-        sups = [{"id": str(s.id), "name": s.name, "gstin": s.gstin}
-                for s in db.scalars(select(Supplier).where(Supplier.is_active.is_(True)))]
-        draft = build_draft(bill, items, sups, {})
-        sup_id = draft["supplier"]["id"] if draft["supplier"] else None
-        if sup_id:
-            # What this supplier's bill lines were saved as before: learn from the person's own corrections.
-            remembered: dict[str, str] = {}
-            past = db.scalars(select(Purchase).where(Purchase.supplier_id == uuid.UUID(sup_id), Purchase.status == "posted")
-                              .order_by(Purchase.created_at.desc()).limit(40))
-            for p in past:
-                for ln in p.lines or []:
-                    if ln.get("bill_name"):
-                        remembered.setdefault(ln["bill_name"].strip().lower(), ln["stock_item_id"])
-            if remembered:
-                draft = build_draft(bill, items, sups, remembered)
-            if draft["invoice_no"]:
-                dup = db.scalar(select(Purchase).where(Purchase.supplier_id == uuid.UUID(sup_id), Purchase.invoice_no == draft["invoice_no"],
-                                                       Purchase.status == "posted").limit(1))
-                if dup is not None:
-                    draft["duplicate"] = {"id": str(dup.id), "invoice_date": str(dup.invoice_date), "total_paise": dup.total_paise}
-        return draft
+        return tenant_draft(db, bill)
 
 
 @router.post("")
@@ -98,24 +64,58 @@ async def scan_bill(outlet_id: uuid.UUID = Form(...), file: UploadFile = File(..
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "That file is over 15 MB")
     if not data:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "The file is empty")
-    ex = _reader()
-    if not ex.EMERGENT_LLM_KEY:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Bill scanning isn't switched on: the server needs WISE_GEMINI_API_KEY")
     try:
-        first = await run_in_threadpool(ex.get_first_page_png, data, ct, name)
-    except Exception as e:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Couldn't open that file. Try a clearer photo or the original PDF.") from e
-    kind = await ex.classify_document(first)
-    if not kind.get("accepted") and kind.get("confidence", 0) >= 80:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
-                            f"This doesn't look like a supplier's bill ({kind.get('reason') or kind.get('type', '').lower()}).")
-    try:
-        bill, thumb = await ex.extract_bill_from_file(data, ct, name)
-    except Exception as e:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "The bill reader didn't answer. Try again in a minute.") from e
-    if bill.get("_extraction_failed") or not (bill.get("items") or bill.get("total")):
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Couldn't read any items on that bill. Try a straighter, brighter photo.")
-    draft = await run_in_threadpool(_match, auth, outlet_id, bill)
+        bill, thumb, kind = await read_bill(data, ct, name)
+    except ScanError as e:
+        raise HTTPException(e.status, str(e)) from e
+    draft = await run_in_threadpool(_draft, auth, bill)
     draft["thumbnail"] = thumb
     draft["low_confidence"] = bool(kind.get("should_warn"))
     return draft
+
+
+# ---------------------------------------------------------------- bills sent on WhatsApp, waiting for a check
+
+def _pending_out(b: ScannedBill, full: bool) -> dict:
+    d = b.draft or {}
+    out = {"id": str(b.id), "outlet_id": str(b.outlet_id), "source": b.source, "created_at": b.created_at.isoformat(),
+           "vendor": (d.get("supplier") or {}).get("name") or d.get("vendor"), "invoice_no": d.get("invoice_no"),
+           "total_paise": d.get("total_paise") or 0, "lines": len(d.get("lines") or []),
+           "unmatched": sum(1 for ln in d.get("lines") or [] if not ln.get("stock_item_id"))}
+    if full:
+        out["draft"] = d
+    return out
+
+
+@router.get("/pending")
+def pending(db: Session = Depends(get_db), auth: Auth = Depends(require(Perm.inventory_manage))) -> list[dict]:
+    rows = db.scalars(select(ScannedBill).where(ScannedBill.status == "pending").order_by(ScannedBill.created_at.desc()).limit(50))
+    return [_pending_out(b, False) for b in rows]
+
+
+@router.get("/pending/{bill_id}")
+def pending_one(bill_id: uuid.UUID, db: Session = Depends(get_db), auth: Auth = Depends(require(Perm.inventory_manage))) -> dict:
+    b = db.get(ScannedBill, bill_id)
+    if b is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+    if b.status == "pending":
+        # Suppliers or stock items may have been added since it was read: match again.
+        fresh = tenant_draft(db, {**(b.draft.get("_bill") or {})}) if b.draft.get("_bill") else None
+        if fresh:
+            b.draft = {**fresh, "thumbnail": b.draft.get("thumbnail"), "_bill": b.draft["_bill"]}
+    return _pending_out(b, True)
+
+
+class DoneIn(BaseModel):
+    purchase_id: uuid.UUID | None = None      # saved through POST /inventory/purchases
+    discard: bool = False
+
+
+@router.post("/pending/{bill_id}/done")
+def pending_done(bill_id: uuid.UUID, body: DoneIn, db: Session = Depends(get_db), auth: Auth = Depends(require(Perm.inventory_manage))) -> dict:
+    b = db.get(ScannedBill, bill_id)
+    if b is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+    b.status = "discarded" if body.discard else "saved"
+    b.purchase_id = body.purchase_id
+    return {"ok": True}

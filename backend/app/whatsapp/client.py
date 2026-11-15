@@ -51,3 +51,17 @@ def send_template(to: str, name: str, params: list[str] | None = None, lang: str
 def send_document(to: str, link: str, filename: str, caption: str | None = None) -> dict:
     return _post({"to": to_wa(to), "type": "document",
                   "document": {"link": link, "filename": filename, **({"caption": caption} if caption else {})}})
+
+
+def get_media(media_id: str) -> tuple[bytes, str]:
+    """A photo or PDF someone sent us: (bytes, mime type). Meta gives a short-lived URL that needs the token."""
+    s = get_settings()
+    h = {"Authorization": f"Bearer {s.wa_token}"}
+    meta = httpx.get(f"https://graph.facebook.com/{s.wa_graph_version}/{media_id}", headers=h, timeout=20)
+    meta.raise_for_status()
+    info = meta.json()
+    if int(info.get("file_size") or 0) > 16 * 1024 * 1024:
+        raise ValueError("file too large")
+    r = httpx.get(info["url"], headers=h, timeout=60, follow_redirects=True)
+    r.raise_for_status()
+    return r.content, info.get("mime_type") or r.headers.get("content-type", "application/octet-stream")

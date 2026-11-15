@@ -175,3 +175,8 @@ td.num.paid { color: var(--mint); }
   table.ledger td:nth-child(4) { grid-area: bal; font-size: 0.8rem; color: var(--ink-3); }
   table.ledger td:nth-child(4)::before { content: "Balance "; }
 }
+.pending-list { list-style: none; margin: 0; padding: 0; }
+.pending-list li { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; padding: 0.6rem 0; border-bottom: 1px solid var(--line); }
+.pending-list li:last-child { border-bottom: 0; }
+.pending-list li.on { background: var(--wash); margin: 0 -0.5rem; padding-left: 0.5rem; padding-right: 0.5rem; border-radius: var(--r-m, 10px); }
+@media (max-width: 759px) { .pending-list li { flex-direction: column; align-items: stretch; } }
