@@ -13,6 +13,7 @@ to read on a phone. Keywords (English and common Hinglish), anything after them 
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from sqlalchemy import func, select
@@ -22,6 +23,15 @@ from ..core.kds import business_date
 from ..ledger.balances import balances, statement
 from ..models import Bill, Purchase, StockItem, Supplier
 from ..purchases_ai.match import name_score
+
+@dataclass
+class Reply:
+    """An answer and the taps that follow from it: (command, label). Buttons on WhatsApp, chips in the app."""
+    text: str
+    options: list[tuple[str, str]] = field(default_factory=list)
+
+
+HOME = [("dues", "Dues"), ("sales", "Sales today")]
 
 HELP = ("*Ask me:*\n"
         "• *dues* – what you owe every supplier\n"
@@ -77,10 +87,10 @@ def _rest(words: list[str]) -> str:
     return " ".join(w for w in words if w not in FILLER).strip()
 
 
-def dues_all(db: Session, today: date) -> str:
+def dues_all(db: Session, today: date) -> Reply:
     rows = [b for b in balances(db) if b.balance_paise]
     if not rows:
-        return "Nothing outstanding. 🎉 (Add opening balances under Money › Supplier dues if older bills aren't in Wise.)"
+        return Reply("Nothing outstanding. 🎉 (Add opening balances under Money › Supplier dues if older bills aren't in Wise.)", HOME[1:])
     owe = [b for b in rows if b.balance_paise > 0]
     lines = [f"*Supplier dues: {rs(sum(b.balance_paise for b in owe))}*"]
     for b in rows[:15]:
@@ -90,10 +100,10 @@ def dues_all(db: Session, today: date) -> str:
     adv = [b for b in rows if b.balance_paise < 0]
     if adv:
         lines.append(f"_Minus = you paid in advance._")
-    return "\n".join(lines)
+    return Reply("\n".join(lines), [(f"dues {b.name}", b.name) for b in rows[:10]])
 
 
-def dues_one(db: Session, sup: Supplier, today: date) -> str:
+def dues_one(db: Session, sup: Supplier, today: date) -> Reply:
     st = statement(db, sup.id, limit=5)
     lines = [f"*{sup.name}: {rs(st['balance_paise'])} due*"]
     names = {"bill": "Bill", "payment": "Paid", "debit_note": "Debit note", "cash_drawer": "Cash", "opening": "Opening"}
@@ -102,14 +112,14 @@ def dues_one(db: Session, sup: Supplier, today: date) -> str:
         sign = "+" if e["debit_paise"] else "−"
         ref = f" {e['ref']}" if e.get("ref") else ""
         lines.append(f"• {e['date'].strftime('%d %b')} {names[e['kind']]}{ref}: {sign}{rs(amt)}")
-    return "\n".join(lines)
+    return Reply("\n".join(lines), [(f"last {sup.name}", "Last order"), ("dues", "All dues")])
 
 
-def last_order(db: Session, sup: Supplier, today: date) -> str:
+def last_order(db: Session, sup: Supplier, today: date) -> Reply:
     p = db.scalar(select(Purchase).where(Purchase.supplier_id == sup.id, Purchase.status == "posted")
                   .order_by(Purchase.invoice_date.desc(), Purchase.created_at.desc()).limit(1))
     if p is None:
-        return f"No bills from *{sup.name}* yet."
+        return Reply(f"No bills from *{sup.name}* yet.", [(f"dues {sup.name}", "Their dues")])
     lines = [f"*Last order from {sup.name}*", f"{p.invoice_date.strftime('%d %b %Y')} ({ago(p.invoice_date, today)})"
              + (f" · Bill {p.invoice_no}" if p.invoice_no else "") + f" · {rs(p.total_paise)}"]
     for ln in (p.lines or [])[:8]:
@@ -118,10 +128,11 @@ def last_order(db: Session, sup: Supplier, today: date) -> str:
     n = db.scalar(select(func.count()).select_from(Purchase).where(Purchase.supplier_id == sup.id, Purchase.status == "posted",
                                                                   Purchase.invoice_date >= today - timedelta(days=30)))
     lines.append(f"_{n} bill(s) from them in the last 30 days._")
-    return "\n".join(lines)
+    opts = [(f"dues {sup.name}", "Their dues")] + [(f"price {ln['name']}", f"Price: {ln['name']}") for ln in (p.lines or [])[:9]]
+    return Reply("\n".join(lines), opts)
 
 
-def last_price(db: Session, item: StockItem, today: date) -> str:
+def last_price(db: Session, item: StockItem, today: date) -> Reply:
     """Price per purchase unit as bought, before GST, from the last two bills that had this item."""
     hits = []
     for p in db.scalars(select(Purchase).where(Purchase.status == "posted", Purchase.lines.contains([{"stock_item_id": str(item.id)}]))
@@ -133,7 +144,7 @@ def last_price(db: Session, item: StockItem, today: date) -> str:
         if len(hits) == 2:
             break
     if not hits:
-        return f"*{item.name}* hasn't been bought yet in Wise."
+        return Reply(f"*{item.name}* hasn't been bought yet in Wise.", HOME)
     sups = {s.id: s.name for s in db.scalars(select(Supplier))}
 
     def each(p, ln) -> tuple[int, str]:
@@ -157,23 +168,28 @@ def last_price(db: Session, item: StockItem, today: date) -> str:
             ch = (per - per2) * 100 / per2
             arrow = "▲" if ch > 0.5 else "▼" if ch < -0.5 else "="
             lines.append(f"Before: {rs(per2)} per {unit} on {p2.invoice_date.strftime('%d %b')} ({arrow} {abs(ch):.1f}%){note}")
-    return "\n".join(lines)
+    sup = sups.get(p.supplier_id)
+    return Reply("\n".join(lines), [(f"last {sup}", "Last order"), (f"dues {sup}", "Their dues")] if sup else HOME)
 
 
-def sales_today(db: Session) -> str:
+def sales_today(db: Session) -> Reply:
     d = business_date()
     n, total = db.execute(select(func.count(), func.coalesce(func.sum(Bill.total_paise), 0))
                           .where(Bill.business_date == d, Bill.status != "cancelled")).one()
     if not n:
-        return f"No bills yet today ({d.strftime('%d %b')})."
-    return f"*Sales today ({d.strftime('%d %b')})*: {rs(int(total))} from {n} bill(s), average {rs(int(total) // n)}."
+        return Reply(f"No bills yet today ({d.strftime('%d %b')}).", HOME[:1])
+    return Reply(f"*Sales today ({d.strftime('%d %b')})*: {rs(int(total))} from {n} bill(s), average {rs(int(total) // n)}.", HOME[:1])
 
 
 def answer(db: Session, text: str, today: date | None = None) -> str:
+    return answer_rich(db, text, today).text
+
+
+def answer_rich(db: Session, text: str, today: date | None = None) -> Reply:
     today = today or business_date()
     words = re.findall(r"[a-z0-9?]+", (text or "").lower())
     if not words or words[0] in HELPS:
-        return HELP
+        return Reply(HELP, HOME)
     head, rest = words[0], _rest(words[1:])
     if head == "last" and len(words) > 1 and words[1] in PRICE:      # "last price vanilla"
         head, rest = words[1], _rest(words[2:])
@@ -181,23 +197,24 @@ def answer(db: Session, text: str, today: date | None = None) -> str:
         if not rest:
             return dues_all(db, today)
         sup, maybe = _best(rest, [(s.name, s) for s in db.scalars(select(Supplier).where(Supplier.is_active.is_(True)))])
-        return dues_one(db, sup, today) if sup else _unsure("supplier", rest, maybe)
+        return dues_one(db, sup, today) if sup else _unsure("supplier", rest, maybe, "dues")
     if head in LAST:
+        sups = db.scalars(select(Supplier).where(Supplier.is_active.is_(True)).order_by(Supplier.name)).all()
         if not rest:
-            return "Which party? e.g. *last kanha*"
-        sup, maybe = _best(rest, [(s.name, s) for s in db.scalars(select(Supplier).where(Supplier.is_active.is_(True)))])
-        return last_order(db, sup, today) if sup else _unsure("supplier", rest, maybe)
+            return Reply("Which party? e.g. *last kanha*", [(f"last {x.name}", x.name) for x in sups[:10]])
+        sup, maybe = _best(rest, [(x.name, x) for x in sups])
+        return last_order(db, sup, today) if sup else _unsure("supplier", rest, maybe, "last")
     if head in PRICE:
         if not rest:
-            return "Which item? e.g. *price vanilla*"
+            return Reply("Which item? e.g. *price vanilla*")
         it, maybe = _best(rest, [(i.name, i) for i in db.scalars(select(StockItem).where(StockItem.is_active.is_(True)))])
-        return last_price(db, it, today) if it else _unsure("item", rest, maybe)
+        return last_price(db, it, today) if it else _unsure("item", rest, maybe, "price")
     if head in SALES:
         return sales_today(db)
-    return "I didn't get that.\n\n" + HELP
+    return Reply("I didn't get that.\n\n" + HELP, HOME)
 
 
-def _unsure(what: str, name: str, maybe: list[str]) -> str:
+def _unsure(what: str, name: str, maybe: list[str], cmd: str) -> Reply:
     if maybe:
-        return f"Which {what}?\n" + "\n".join(f"• {m}" for m in maybe)
-    return f"No {what} called “{name}”."
+        return Reply(f"Which {what}?\n" + "\n".join(f"• {m}" for m in maybe), [(f"{cmd} {m}", m) for m in maybe])
+    return Reply(f"No {what} called “{name}”.", HOME)

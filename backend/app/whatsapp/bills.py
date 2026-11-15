@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from ..assistant.answers import rs
+from ..assistant.answers import Reply, rs
 from ..config import get_settings
 from ..core.permissions import Perm, Role
 from ..db import tenant_session
@@ -60,24 +60,24 @@ def summary(d: dict) -> str:
     return "\n".join(lines)
 
 
-async def read_sent_bill(chosen: tuple, phone10: str, media_id: str, mime: str, filename: str, caption: str = "") -> str:
+async def read_sent_bill(chosen: tuple, phone10: str, media_id: str, mime: str, filename: str, caption: str = "") -> Reply:
     tenant_id, login_id, role, user_id = chosen
     if Perm.inventory_manage not in effective(uuid.UUID(tenant_id), Role(role)):
-        return "Your account can't add purchases. Ask the owner to allow it under Staff › Who can do what."
+        return Reply("Your account can't add purchases. Ask the owner to allow it under Staff › Who can do what.")
     if not enabled():
-        return "Bill scanning isn't switched on for this restaurant yet."
+        return Reply("Bill scanning isn't switched on for this restaurant yet.")
     data, ct = await run_in_threadpool(client.get_media, media_id)
     ct = (mime or ct or "").split(";")[0].lower()
     try:
         bill, thumb, kind = await read_bill(data, ct, filename or "bill")
     except ScanError as e:
-        return str(e)
+        return Reply(str(e))
 
-    def store() -> str:
+    def store() -> Reply:
         with tenant_session(tenant_id) as db:
             out = _outlet(db, caption)
             if out is None:
-                return "Add an outlet in the app first (Setup › Outlets)."
+                return Reply("Add an outlet in the app first (Setup › Outlets).")
             folder = os.path.join(get_settings().upload_dir, "scans", tenant_id)
             os.makedirs(folder, exist_ok=True)
             sid = uuid.uuid4()
@@ -89,13 +89,13 @@ async def read_sent_bill(chosen: tuple, phone10: str, media_id: str, mime: str, 
                                file_path=path, draft={**d, "thumbnail": thumb, "low_confidence": bool(kind.get("should_warn")), "_bill": bill}))
             why = ready_to_save(d)
             if why and _addable(d):
-                return (summary(d) + "\n\n🆕 New in Wise: " + "; ".join(why) + "."
-                        + "\nReply *add* to add them and save the bill, *discard* to drop it,"
-                        + f" or finish it in the app under Stock › Purchases: {_link()}")
+                return Reply(summary(d) + "\n\n🆕 New in Wise: " + "; ".join(why) + "."
+                             + f"\nAdd them and save the bill, or finish it in the app: {_link()}",
+                             [("add", "Add & save"), ("discard", "Discard")])
             if why:
-                return (summary(d) + "\n\n⚠️ Needs a look: " + "; ".join(why) + f".\nFinish it in the app under Stock › Purchases: {_link()}"
-                        + "\n(or reply *discard*)")
-            return summary(d) + "\n\nReply *save* to add it to stock and supplier dues, or *discard*."
+                return Reply(summary(d) + "\n\n⚠️ Needs a look: " + "; ".join(why) + f".\nFinish it in the app under Stock › Purchases: {_link()}",
+                             [("discard", "Discard")])
+            return Reply(summary(d) + "\n\nAdd it to stock and supplier dues?", [("save", "Save"), ("discard", "Discard")])
     return await run_in_threadpool(store)
 
 
@@ -155,19 +155,19 @@ def add_new(db: Session, d: dict, auth: Auth) -> list[str]:
     return made
 
 
-def save_or_discard(db: Session, chosen: tuple, phone10: str, save: bool, add_new_items: bool = False, **kw) -> str:
+def save_or_discard(db: Session, chosen: tuple, phone10: str, save: bool, add_new_items: bool = False, **kw) -> Reply:
     add_new_items = add_new_items or kw.get("add_new", False)
     tenant_id, login_id, role, user_id = chosen
     since = datetime.now(timezone.utc) - timedelta(days=2)
     b = db.scalar(select(ScannedBill).where(ScannedBill.status == "pending", ScannedBill.sender == phone10, ScannedBill.created_at >= since)
                   .order_by(ScannedBill.created_at.desc()).limit(1))
     if b is None:
-        return "No bill waiting from you. Send a photo or PDF of a supplier's bill."
+        return Reply("No bill waiting from you. Send a photo or PDF of a supplier's bill.")
     if not save:
         b.status = "discarded"
-        return "Discarded. It won't be added."
+        return Reply("Discarded. It won't be added.")
     if Perm.inventory_manage not in effective(uuid.UUID(tenant_id), Role(role)):
-        return "Your account can't add purchases."
+        return Reply("Your account can't add purchases.")
     # Match again: a supplier or stock item may have been added since the photo came in.
     d = tenant_draft(db, b.draft.get("_bill") or {}) if b.draft.get("_bill") else b.draft
     made: list[str] = []
@@ -177,7 +177,8 @@ def save_or_discard(db: Session, chosen: tuple, phone10: str, save: bool, add_ne
     why = ready_to_save(d)
     if why:
         b.draft = {**d, "thumbnail": b.draft.get("thumbnail"), "_bill": b.draft.get("_bill")}
-        return "Can't save it from here: " + "; ".join(why) + f".\nFinish it in the app under Stock › Purchases: {_link()}"
+        opts = [("add", "Add & save"), ("discard", "Discard")] if _addable(d) else [("discard", "Discard")]
+        return Reply("Can't save it from here: " + "; ".join(why) + f".\nFinish it in the app under Stock › Purchases: {_link()}", opts)
     from ..routers.inventory import PurchaseIn, PurchaseLineIn, create_purchase
     try:
         inv_date = date.fromisoformat(d["invoice_date"]) if d.get("invoice_date") else date.today()
@@ -193,5 +194,6 @@ def save_or_discard(db: Session, chosen: tuple, phone10: str, save: bool, add_ne
     b.status, b.purchase_id = "saved", uuid.UUID(p["id"])
     due = statement(db, body.supplier_id)["balance_paise"]
     added = ("Added " + ", ".join(made) + ".\n") if made else ""
-    return (f"{added}✅ Saved: {d['supplier']['name']}, {rs(p['total_paise'])}. Stock updated."
-            f"\n{d['supplier']['name']} now: {rs(due)} due.")
+    return Reply(f"{added}✅ Saved: {d['supplier']['name']}, {rs(p['total_paise'])}. Stock updated."
+                 f"\n{d['supplier']['name']} now: {rs(due)} due.",
+                 [(f"dues {d['supplier']['name']}", "Their account"), ("dues", "All dues")])

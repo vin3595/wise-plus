@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from ..core.permissions import Perm
 from ..deps import Auth, get_db, require
-from .answers import answer
+from .answers import answer_rich
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
 
@@ -16,4 +16,5 @@ class Ask(BaseModel):
 
 @router.post("/ask")
 def ask(body: Ask, db: Session = Depends(get_db), auth: Auth = Depends(require(Perm.reports_view))) -> dict:
-    return {"text": answer(db, body.q)}
+    r = answer_rich(db, body.q)
+    return {"text": r.text, "options": [{"q": q, "label": label} for q, label in r.options]}

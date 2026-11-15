@@ -108,7 +108,7 @@ def test_whatsapp(shop, monkeypatch):
     monkeypatch.setattr(s, "wa_token", "t")
     monkeypatch.setattr(s, "wa_phone_number_id", "123")
     sent = []
-    monkeypatch.setattr(wa, "send_text", lambda to, body: sent.append((to, body)))
+    monkeypatch.setattr(wa, "send_options", lambda to, body, options, button="Choose": sent.append((to, body, options)))
 
     # Meta's one-time check
     assert c.get("/api/whatsapp/webhook", params={"hub.mode": "subscribe", "hub.verify_token": "vt", "hub.challenge": "42"}).text == "42"
@@ -124,8 +124,12 @@ def test_whatsapp(shop, monkeypatch):
     assert post("91" + shop["phone"], "dues", mid="m1").status_code == 200
     assert post("91" + shop["phone"], "dues", mid="m1").status_code == 200              # Meta's retry: answered once
     assert len(sent) == 1 and sent[0][0] == "91" + shop["phone"] and "Supplier dues" in sent[0][1]
+    assert ("dues Kanha Food Products", "Kanha Food Products") in sent[0][2]
+    post("91" + shop["phone"], "dues Kanha Food Products")              # a list tap comes back as its command
+    assert "Kanha Food Products: ₹2,285.72 due" in sent[-1][1] and sent[-1][2] == [("last Kanha Food Products", "Last order"), ("dues", "All dues")]
+    n = len(sent)
     post("919999999999", "dues")                                                         # a stranger: no answer at all
-    assert len(sent) == 1
+    assert len(sent) == n
     post("91" + shop["phone"], "price vanilla")
     assert "₹379.14 per tub 5L" in sent[-1][1]
 
@@ -134,7 +138,8 @@ def test_whatsapp(shop, monkeypatch):
     second = "ledger2" + uuid.uuid4().hex[:5]
     signup(c, second, shop["phone"])
     wr._choice.clear()
-    assert "more than one restaurant" in wr.reply_for("91" + shop["phone"], "dues")
+    r = wr.reply_rich("91" + shop["phone"], "dues")
+    assert "more than one restaurant" in r.text and (f"@{shop['login']} dues", f"@{shop['login']}") in r.options
     assert "Kanha" in wr.reply_for("91" + shop["phone"], f"@{shop['login']} dues")
     assert f"@{shop['login']}" in wr.reply_for("91" + shop["phone"], "last kanha")
     assert "Nothing outstanding" in wr.reply_for("91" + shop["phone"], f"@{second} dues")
@@ -151,8 +156,8 @@ def test_whatsapp_bill_photo(shop, monkeypatch, tmp_path):
     s = get_settings()
     for k, v in {"wa_app_secret": "shh", "wa_token": "t", "wa_phone_number_id": "123", "upload_dir": str(tmp_path)}.items():
         monkeypatch.setattr(s, k, v)
-    sent = []
-    monkeypatch.setattr(wa, "send_text", lambda to, body: sent.append(body))
+    sent, opts = [], []
+    monkeypatch.setattr(wa, "send_options", lambda to, body, options, button="Choose": (sent.append(body), opts.append(options)))
     monkeypatch.setattr(wa, "get_media", lambda mid: (b"\xff\xd8photo", "image/jpeg"))
     monkeypatch.setattr(ex, "EMERGENT_LLM_KEY", "k")
     monkeypatch.setattr(ex, "get_first_page_png", lambda d, ct, n: b"png")
@@ -178,10 +183,10 @@ def test_whatsapp_bill_photo(shop, monkeypatch, tmp_path):
     assert "Nothing waiting" not in wr.reply_for("91" + shop["phone"], "save") and "No bill waiting" in wr.reply_for("91" + shop["phone"], "save")
     before = c.get(f"/api/ledger/suppliers/{shop['vad']['id']}", headers=h(tok)).json()["balance_paise"]
     post({"type": "image", "image": {"id": "m1", "mime_type": "image/jpeg"}})
-    assert "Shiv Gauri Agencies (Vadilal)" in sent[-1] and "2 tub 5L" in sent[-1] and "Reply *save*" in sent[-1], sent[-1]
+    assert "Shiv Gauri Agencies (Vadilal)" in sent[-1] and "2 tub 5L" in sent[-1] and opts[-1] == [("save", "Save"), ("discard", "Discard")], sent[-1]
     assert len(c.get("/api/inventory/purchases/scan/pending", headers=h(tok)).json()) == 1
-    post({"type": "text", "text": {"body": "save"}})
-    assert sent[-1].startswith("✅ Saved") and "₹796" in sent[-1], sent[-1]
+    post({"type": "interactive", "interactive": {"type": "button_reply", "button_reply": {"id": "save", "title": "Save"}}})   # tapped
+    assert sent[-1].startswith("✅ Saved") and opts[-1][1] == ("dues", "All dues") and "₹796" in sent[-1], sent[-1]
     after = c.get(f"/api/ledger/suppliers/{shop['vad']['id']}", headers=h(tok)).json()["balance_paise"]
     assert abs((after - before) - 79600) <= 2          # GST rounds per line
     assert c.get("/api/inventory/purchases/scan/pending", headers=h(tok)).json() == []
@@ -189,7 +194,7 @@ def test_whatsapp_bill_photo(shop, monkeypatch, tmp_path):
 
     # Same bill again: flagged, can't save from WhatsApp, waits in the app
     post({"type": "document", "document": {"id": "m2", "mime_type": "image/jpeg", "filename": "b.jpg"}})
-    assert "entered already" in sent[-1] and "discard" in sent[-1]
+    assert "entered already" in sent[-1] and opts[-1] == [("discard", "Discard")]
     assert "Can't save it from here" in wr.reply_for("91" + shop["phone"], "save")
     assert "Discarded" in wr.reply_for("91" + shop["phone"], "discard")
 
@@ -213,7 +218,7 @@ def test_whatsapp_bill_photo(shop, monkeypatch, tmp_path):
                             {"name": "VEEBA TANDOORI MAYONNAISE 1 KG", "quantity": 6, "unit_price": 214.29, "total": 1285.74, "tax_rate": 5},
                             {"name": "VEEBA SCHEZWAN DIP AND STIR FRY SAUCE 1KG", "quantity": 3, "unit_price": 171.43, "total": 514.29, "tax_rate": 5}]})
     post({"type": "image", "image": {"id": "m5", "mime_type": "image/jpeg"}})
-    assert "Reply *add*" in sent[-1] and "CHARU MARKETING" in sent[-1], sent[-1]
+    assert opts[-1] == [("add", "Add & save"), ("discard", "Discard")] and "CHARU MARKETING" in sent[-1], sent[-1]
     post({"type": "text", "text": {"body": "Add"}})
     assert "Added supplier Charu Marketing" in sent[-1] and "Veeba Pizza Pasta Sauce" in sent[-1] and "✅ Saved" in sent[-1], sent[-1]
     items = {i["name"]: i for i in c.get("/api/inventory/items", headers=h(tok)).json()}
@@ -227,7 +232,7 @@ def test_whatsapp_bill_photo(shop, monkeypatch, tmp_path):
     # Their next bill matches by itself and saves with one word
     reads.append({**reads[-1], "invoice_number": "CM/26-27/18200"})
     post({"type": "image", "image": {"id": "m6", "mime_type": "image/jpeg"}})
-    assert "Reply *save*" in sent[-1], sent[-1]
+    assert opts[-1][0] == ("save", "Save"), sent[-1]
 
     # A cashier's phone is ignored, photo or not
     c.post("/api/users", headers=h(tok), json={"name": "Ravi", "role": "cashier", "pin": "7322", "phone": "9000000099", "outlet_ids": [shop["out"]["id"]]})
@@ -236,3 +241,19 @@ def test_whatsapp_bill_photo(shop, monkeypatch, tmp_path):
                                                                      "image": {"id": "m4", "mime_type": "image/jpeg"}}]}}]}]}).encode()
     c.post("/api/whatsapp/webhook", content=body, headers={"x-hub-signature-256": "sha256=" + hmac.new(b"shh", body, hashlib.sha256).hexdigest()})
     assert len(sent) == n
+
+
+def test_send_options_format(monkeypatch):
+    from app.whatsapp import client as wa
+    out = []
+    monkeypatch.setattr(wa, "_post", lambda payload: out.append(payload) or {})
+    wa.send_options("9829000001", "Add it?", [("save", "Save"), ("discard", "Discard")])
+    i = out[-1]["interactive"]
+    assert out[-1]["to"] == "919829000001" and i["type"] == "button" and i["action"]["buttons"][0] == {"type": "reply", "reply": {"id": "save", "title": "Save"}}
+    wa.send_options("9829000001", "Which?", [(f"dues s{n}", "A very long supplier name number " + str(n)) for n in range(12)])
+    i = out[-1]["interactive"]
+    rows = i["action"]["sections"][0]["rows"]
+    assert i["type"] == "list" and len(rows) == 10 and all(len(r["title"]) <= 24 for r in rows)
+    monkeypatch.setattr(wa, "send_text", lambda to, body: out.append({"text": body}))
+    wa.send_options("9829000001", "x" * 1500, [("save", "Save")])
+    assert out[-2] == {"text": "x" * 1500} and out[-1]["interactive"]["body"]["text"] == "What next?"

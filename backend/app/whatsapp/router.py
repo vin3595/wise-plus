@@ -22,6 +22,7 @@ from ..config import get_settings
 from ..core.permissions import Perm, Role, ROLE_PERMS
 from ..db import system_session, tenant_session
 from ..models import Tenant, User
+from ..assistant.answers import Reply
 from . import client
 
 log = logging.getLogger("wise.whatsapp")
@@ -63,7 +64,9 @@ async def receive(request: Request, background: BackgroundTasks) -> dict:
                 _seen[mid] = None
                 while len(_seen) > 2000:
                     _seen.popitem(last=False)
-                text = (m.get("text") or {}).get("body") or (m.get("button") or {}).get("text") or ""
+                inter = m.get("interactive") or {}
+                tap = inter.get("button_reply") or inter.get("list_reply") or {}
+                text = tap.get("id") or (m.get("text") or {}).get("body") or (m.get("button") or {}).get("text") or ""
                 media = m.get("image") or m.get("document")
                 if m.get("from") and media and media.get("id"):
                     background.add_task(handle_media, m["from"], media["id"], media.get("mime_type") or "",
@@ -83,7 +86,7 @@ def _who(phone10: str) -> list[tuple[str, str, str, str]]:
     return [(str(t), l, r, str(u)) for t, l, r, u in rows]
 
 
-def _place(phone: str, text: str) -> tuple[tuple | None, str, bool, str | None]:
+def _place(phone: str, text: str) -> tuple[tuple | None, str, bool, Reply | None]:
     """(chosen (tenant_id, login_id, role, user_id) or None, text without @loginid, on several restaurants?,
     a reply to send instead). chosen None and reply None = a stranger: stay silent."""
     p10 = client.last10(phone)
@@ -95,14 +98,16 @@ def _place(phone: str, text: str) -> tuple[tuple | None, str, bool, str | None]:
     if m:
         want = m.group(1).lower()
         if want not in {pl[1] for pl in places}:
-            return None, text, True, "You're not on that restaurant. Yours: " + ", ".join(f"@{pl[1]}" for pl in places)
+            return None, text, True, Reply("You're not on that restaurant. Yours: " + ", ".join(f"@{pl[1]}" for pl in places),
+                                           [(f"@{pl[1]} help", f"@{pl[1]}") for pl in places])
         _choice[p10] = want
         text = m.group(2)
     pick = _choice.get(p10)
     chosen = next((pl for pl in places if pl[1] == pick), None) or (places[0] if len(places) == 1 else None)
     if chosen is None:
-        return None, text, True, ("You're on more than one restaurant. Start with which one, e.g.\n"
-                                  + "\n".join(f"*@{pl[1]} dues*" for pl in places) + "\nAfter that I'll remember it.")
+        rest = (text or "").strip() or "help"
+        return None, text, True, Reply("You're on more than one restaurant. Which one? I'll remember it.",
+                                       [(f"@{pl[1]} {rest}", f"@{pl[1]}") for pl in places])
     return chosen, text, len(places) > 1, None
 
 
@@ -111,9 +116,9 @@ ADD = {"add", "add all", "create", "add new", "new"}
 DISCARD = {"discard", "cancel", "no", "delete", "nahi", "skip"}
 
 
-def reply_for(phone: str, text: str) -> str | None:
-    """What to answer; None = stay silent (a number that isn't an owner or manager)."""
-    from ..assistant.answers import answer
+def reply_rich(phone: str, text: str) -> Reply | None:
+    """What to answer, with the taps that follow; None = stay silent (a number that isn't an owner or manager)."""
+    from ..assistant.answers import answer_rich
     chosen, text, multi, early = _place(phone, text)
     if chosen is None:
         return early
@@ -123,8 +128,20 @@ def reply_for(phone: str, text: str) -> str | None:
             from . import bills
             out = bills.save_or_discard(db, chosen, client.last10(phone), word not in DISCARD, add_new=word in ADD)
         else:
-            out = answer(db, text or "help")
-    return out + (f"\n\n_@{chosen[1]}_" if multi else "")
+            out = answer_rich(db, text or "help")
+    if multi:
+        out.text += f"\n\n_@{chosen[1]}_"
+    return out
+
+
+def reply_for(phone: str, text: str) -> str | None:
+    r = reply_rich(phone, text)
+    return r.text if r else None
+
+
+def send(phone: str, r: Reply) -> None:
+    if client.enabled():
+        client.send_options(phone, r.text, r.options)
 
 
 async def handle_media(phone: str, media_id: str, mime: str, filename: str, caption: str) -> None:
@@ -133,12 +150,17 @@ async def handle_media(phone: str, media_id: str, mime: str, filename: str, capt
     try:
         chosen, rest, multi, early = _place(phone, caption)
         if chosen is None:
-            if early and client.enabled():
-                client.send_text(phone, early)
+            if early:
+                # Which restaurant is this bill for? Ask; the photo has to be sent again with the answer known.
+                early.text = "Which restaurant is this bill for? Tap one, then send the photo again."
+                early.options = [(cmd.split(" ")[0] + " help", label) for cmd, label in early.options]
+                send(phone, early)
             return
         out = await bills.read_sent_bill(chosen, client.last10(phone), media_id, mime, filename, rest)
-        if out and client.enabled():
-            client.send_text(phone, out + (f"\n\n_@{chosen[1]}_" if multi else ""))
+        if out:
+            if multi:
+                out.text += f"\n\n_@{chosen[1]}_"
+            send(phone, out)
     except Exception:
         log.exception("whatsapp: couldn't read a sent bill")
         if client.enabled():
@@ -147,8 +169,8 @@ async def handle_media(phone: str, media_id: str, mime: str, filename: str, capt
 
 def handle(phone: str, text: str) -> None:
     try:
-        out = reply_for(phone, text)
-        if out and client.enabled():
-            client.send_text(phone, out)
+        out = reply_rich(phone, text)
+        if out:
+            send(phone, out)
     except Exception:  # never let one bad message break the webhook
         log.exception("whatsapp: couldn't answer")

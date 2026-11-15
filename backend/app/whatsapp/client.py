@@ -65,3 +65,22 @@ def get_media(media_id: str) -> tuple[bytes, str]:
     r = httpx.get(info["url"], headers=h, timeout=60, follow_redirects=True)
     r.raise_for_status()
     return r.content, info.get("mime_type") or r.headers.get("content-type", "application/octet-stream")
+
+
+def send_options(to: str, body: str, options: list[tuple[str, str]], button: str = "Choose") -> dict:
+    """Text with tappable choices: up to 3 as buttons, up to 10 as a list. options = (command, label).
+    A tap comes back as that command, as if typed. Only inside the 24-hour window (replies to the person)."""
+    options = options[:10]
+    if not options:
+        return send_text(to, body)
+    if len(body) > 1000:                       # interactive bodies are capped at 1024 characters
+        send_text(to, body)
+        body = "What next?"
+    if len(options) <= 3:
+        action = {"buttons": [{"type": "reply", "reply": {"id": cmd[:256], "title": label[:20]}} for cmd, label in options]}
+        kind = "button"
+    else:
+        action = {"button": button[:20], "sections": [{"title": "Choose one", "rows": [
+            {"id": cmd[:200], "title": label[:24]} for cmd, label in options]}]}
+        kind = "list"
+    return _post({"to": to_wa(to), "type": "interactive", "interactive": {"type": kind, "body": {"text": body}, "action": action}})

@@ -180,3 +180,5 @@ td.num.paid { color: var(--mint); }
 .pending-list li:last-child { border-bottom: 0; }
 .pending-list li.on { background: var(--wash); margin: 0 -0.5rem; padding-left: 0.5rem; padding-right: 0.5rem; border-radius: var(--r-m, 10px); }
 @media (max-width: 759px) { .pending-list li { flex-direction: column; align-items: stretch; } }
+.chip-next { border-color: color-mix(in srgb, var(--brand) 45%, var(--line-2)); color: color-mix(in srgb, var(--brand) 75%, black); background: var(--card); font-weight: 500; }
+.chip-next:hover { background: var(--wash); }

@@ -8,12 +8,15 @@ const CHIPS = ["dues", "sales", "last ", "price "];
 export function AskBox() {
   const [q, setQ] = useState("");
   const [text, setText] = useState<string | null>(null);
+  const [options, setOptions] = useState<{ q: string; label: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const ask = async (question: string) => {
     if (!question.trim()) return;
     setBusy(true);
-    try { setText((await api<{ text: string }>("/assistant/ask", { body: { q: question } })).text); }
-    catch (e) { setText(e instanceof Error ? e.message : "Couldn't ask right now"); }
+    try {
+      const r = await api<{ text: string; options?: { q: string; label: string }[] }>("/assistant/ask", { body: { q: question } });
+      setText(r.text); setOptions(r.options || []); setQ(question);
+    } catch (e) { setText(e instanceof Error ? e.message : "Couldn't ask right now"); setOptions([]); }
     finally { setBusy(false); }
   };
   return (
@@ -28,6 +31,10 @@ export function AskBox() {
         {CHIPS.map((c) => <button key={c} type="button" className="chip" onClick={() => { setQ(c); if (!c.endsWith(" ")) ask(c); else (document.querySelector(".ask-row input") as HTMLInputElement | null)?.focus(); }}>{c.trim()}</button>)}
       </div>
       {text && <WaText text={text} />}
+      {text && options.length > 0 && (
+        <div className="ask-chips ask-next">
+          {options.map((o) => <button key={o.q} type="button" className="chip chip-next" disabled={busy} onClick={() => ask(o.q)}>{o.label}</button>)}
+        </div>)}
     </div>
   );
 }
