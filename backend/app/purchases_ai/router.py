@@ -22,7 +22,7 @@ from ..db import tenant_session
 from ..deps import Auth, ensure_outlet_access, get_db, require
 from ..models import Outlet, Tenant, User
 from .models import ScannedBill
-from .service import ScanError, enabled, read_bill, tenant_draft
+from .service import ScanError, classify, enabled, read_bill, tenant_draft
 
 router = APIRouter(prefix="/inventory/purchases/scan", tags=["bill scan"])
 
@@ -52,6 +52,12 @@ def _check(auth: Auth, outlet_id: uuid.UUID) -> None:
         ensure_outlet_access(db, auth, outlet_id)
 
 
+def _statement(auth: Auth, st: dict) -> dict:
+    from ..ledger.statement import check
+    with tenant_session(auth.tenant_id) as db:
+        return check(db, auth.tenant_id, st, new_supplier=False)
+
+
 def _draft(auth: Auth, bill: dict) -> dict:
     with tenant_session(auth.tenant_id) as db:
         return tenant_draft(db, bill)
@@ -76,8 +82,21 @@ async def scan_bill(outlet_id: uuid.UUID = Form(...), file: UploadFile = File(..
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "That file is over 15 MB")
     if not data:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "The file is empty")
+    from ..ledger import statement as stm
     try:
-        bill, thumb, kind = await read_bill(data, ct, name)
+        kind = ({"type": "SUPPLIER_STATEMENT"} if await run_in_threadpool(stm.looks_like_statement, data, ct, name)
+                else await classify(data, ct, name))
+        if kind.get("type") == "SUPPLIER_STATEMENT":
+            # A supplier's ledger, not a bill: check it against the POS instead (Money › Supplier dues shows it).
+            try:
+                st = await stm.read_statement(data, ct, name)
+            except stm.StatementError as e:
+                raise HTTPException(e.status, str(e)) from e
+            if not st["rows"]:
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "No bills or payments found on that statement")
+            await run_in_threadpool(_count, auth)
+            return {"kind": "statement"} | await run_in_threadpool(_statement, auth, st)
+        bill, thumb, kind = await read_bill(data, ct, name, kind=kind)
     except ScanError as e:
         raise HTTPException(e.status, str(e)) from e
     await run_in_threadpool(_count, auth)

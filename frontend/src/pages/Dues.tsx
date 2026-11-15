@@ -3,6 +3,7 @@ import { api } from "../api";
 import { formatPaise, inputToPaise } from "../money";
 import { useSession } from "../session";
 import { Button, Card, ErrorText, Field, Input, Select, useAction } from "../ui";
+import { StatementUpload, StatementView, type StatementResult } from "../components/StatementCheck";
 
 interface Bal { supplier_id: string; name: string; opening_paise: number; bills_paise: number; paid_paise: number; balance_paise: number;
   last_bill_date: string | null; last_payment_date: string | null }
@@ -19,6 +20,14 @@ export default function Dues() {
   const [rows, setRows] = useState<Bal[] | null>(null);
   const [total, setTotal] = useState(0);
   const [open, setOpen] = useState<string | null>(null);
+  // A statement checked here, or one the bill scanner recognised (Stock › Purchases hands it over).
+  const [check, setCheck] = useState<{ res: StatementResult; file: File | null } | null>(() => {
+    try {
+      const s = sessionStorage.getItem("wise-statement");
+      if (s) { sessionStorage.removeItem("wise-statement"); return { res: JSON.parse(s), file: null }; }
+    } catch { /* storage unavailable */ }
+    return null;
+  });
   const load = useCallback(() => api<{ total_paise: number; suppliers: Bal[] }>("/ledger/suppliers?all=true")
     .then((r) => { setRows(r.suppliers); setTotal(r.total_paise); }), []);
   useEffect(() => { load(); }, [load]);
@@ -31,7 +40,13 @@ export default function Dues() {
         <div className="stat"><span>You owe</span><strong>{formatPaise(total)}</strong></div>
         <div className="stat"><span>Suppliers with dues</span><strong>{rows.filter((r) => r.balance_paise > 0).length}</strong></div>
       </div>
-      {sel ? <Statement bal={sel} canPay={can("inventory.manage")} onBack={() => setOpen(null)} onChange={load} /> : (
+      {can("inventory.manage") && !check && (
+        <div className="row wrap">
+          <StatementUpload onResult={(res, file) => { setCheck({ res, file }); setOpen(null); load(); }} />
+          <span className="muted small">Upload a supplier's ledger: see which of their bills are in the POS and add their payments.</span>
+        </div>)}
+      {check ? <StatementView res={check.res} file={check.file} onBack={() => setCheck(null)} onChange={(res) => { setCheck({ ...check, res }); load(); }} />
+      : sel ? <Statement bal={sel} canPay={can("inventory.manage")} onBack={() => setOpen(null)} onChange={load} /> : (
         <Card title="By supplier">
           {rows.length === 0 ? <p className="muted">No suppliers yet. Add them under Stock › Suppliers, or scan a bill.</p> : (
             <table className="table">

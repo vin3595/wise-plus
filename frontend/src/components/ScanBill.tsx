@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import { ScanLine } from "lucide-react";
 import { api } from "../api";
@@ -25,6 +26,7 @@ export function ScanBill({ outletId, onDraft }: { outletId: string; onDraft: (d:
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
   useEffect(() => { api<{ enabled: boolean }>("/inventory/purchases/scan/status").then((r) => setOn(r.enabled)).catch(() => setOn(false)); }, []);
   if (!on) return null;
   const send = async (file: File) => {
@@ -32,7 +34,17 @@ export function ScanBill({ outletId, onDraft }: { outletId: string; onDraft: (d:
     const fd = new FormData();
     fd.append("outlet_id", outletId);
     fd.append("file", file);
-    try { onDraft(await api<ScanDraft>("/inventory/purchases/scan", { form: fd })); buzz(20); }
+    try {
+      const r = await api<ScanDraft & { kind?: string }>("/inventory/purchases/scan", { form: fd });
+      if (r.kind === "statement") {
+        // A supplier's statement, not a bill: show the check on Supplier dues.
+        try { sessionStorage.setItem("wise-statement", JSON.stringify(r)); } catch { /* storage unavailable */ }
+        buzz(20);
+        navigate("/dues");
+        return;
+      }
+      onDraft(r); buzz(20);
+    }
     catch (e) { setError(e instanceof Error ? e.message : "Couldn't read that bill"); }
     finally { setBusy(false); }
   };

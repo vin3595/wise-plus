@@ -110,7 +110,18 @@ async def _read_sent_bill(chosen: tuple, phone10: str, media_id: str, mime: str,
     data, ct = await run_in_threadpool(client.get_media, media_id)
     ct = (mime or ct or "").split(";")[0].lower()
     try:
-        kind = {"type": "LEDGER_PAGE"} if re.search(r"\bsheet\b", caption or "", re.I) else await classify(data, ct, filename or "bill")
+        from ..ledger import statement as stm
+        if re.search(r"\bsheet\b", caption or "", re.I):
+            kind = {"type": "LEDGER_PAGE"}
+        elif await run_in_threadpool(stm.looks_like_statement, data, ct, filename or "", caption or ""):
+            kind = {"type": "SUPPLIER_STATEMENT"}
+        else:
+            kind = await classify(data, ct, filename or "bill")
+        if kind.get("type") == "SUPPLIER_STATEMENT":
+            # A supplier's ledger: which of their bills are in the POS, and their payments into supplier dues.
+            if Perm.inventory_manage not in effective(uuid.UUID(tenant_id), Role(role)):
+                return Reply("Your account can't check supplier statements. Ask the owner to allow it under Staff › Who can do what.")
+            return await _read_statement(tenant_id, user_id, data, ct, filename or "statement")
         if kind.get("type") == "LEDGER_PAGE":
             # The daily cash sheet, not a supplier's bill.
             from . import sheets
@@ -146,6 +157,24 @@ async def _read_sent_bill(chosen: tuple, phone10: str, media_id: str, mime: str,
                              [(f"discard {sid}", "Discard")])
             return Reply(summary(d) + "\n\nAdd it to stock and supplier dues?", [(f"save {sid}", "Save"), (f"discard {sid}", "Discard")])
     return await run_in_threadpool(store)
+
+
+async def _read_statement(tenant_id: str, user_id: str, data: bytes, ct: str, filename: str) -> Reply:
+    from ..ledger import statement as stm
+    try:
+        st = await stm.read_statement(data, ct, filename)
+    except stm.StatementError as e:
+        return Reply(str(e))
+    if not st["rows"]:
+        return Reply("No bills or payments found on that statement. Try the PDF, or a straighter photo.")
+    await run_in_threadpool(_counted, tenant_id)
+
+    def go() -> Reply:
+        with tenant_session(tenant_id) as db:
+            res = stm.check(db, uuid.UUID(tenant_id), st)
+            added = stm.auto_apply(db, uuid.UUID(tenant_id), uuid.UUID(user_id), res)
+            return Reply(stm.summary_text(res, added) + f"\n\nFull check in the app: Money › Supplier dues › Check a statement {_link()}")
+    return await run_in_threadpool(go)
 
 
 def _addable(d: dict) -> bool:
