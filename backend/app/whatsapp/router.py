@@ -12,6 +12,7 @@ import hmac
 import json
 import logging
 import re
+import time
 import uuid
 from collections import OrderedDict
 
@@ -30,7 +31,72 @@ log = logging.getLogger("wise.whatsapp")
 router = APIRouter(prefix="/whatsapp", tags=["whatsapp"])
 
 _seen: OrderedDict[str, None] = OrderedDict()     # Meta retries; answer each message once
-_choice: dict[str, str] = {}                       # phone -> login_id picked with @loginid
+HOLD_SECS = 30 * 60
+
+
+class _Store:
+    """phone -> value, kept in the wa_state table so every API process sees the same thing.
+    _choice: the restaurant (login id) picked with @loginid; _held: photos sent before that choice."""
+    def __init__(self, col: str):
+        self.col = col
+
+    def _row(self, db, p10, create=False):
+        from ..stockplus.models import WaState
+        r = db.get(WaState, p10)
+        if r is None and create:
+            r = WaState(phone10=p10)
+            db.add(r)
+        return r
+
+    def get(self, p10, default=None):
+        from ..db import system_session
+        with system_session() as db:
+            r = self._row(db, p10)
+            v = getattr(r, self.col) if r else None
+            return default if v is None else v
+
+    def __getitem__(self, p10):
+        v = self.get(p10)
+        if v is None:
+            raise KeyError(p10)
+        return v
+
+    def __setitem__(self, p10, value):
+        from ..db import system_session
+        with system_session() as db:
+            setattr(self._row(db, p10, create=True), self.col, value)
+
+    def pop(self, p10, default=None):
+        from ..db import system_session
+        with system_session() as db:
+            r = self._row(db, p10)
+            v = getattr(r, self.col) if r else None
+            if r is not None:
+                setattr(r, self.col, None)
+            return default if v is None else v
+
+    def __contains__(self, p10):
+        return self.get(p10) is not None
+
+    def __bool__(self):
+        from sqlalchemy import func, select
+
+        from ..db import system_session
+        from ..stockplus.models import WaState
+        with system_session() as db:
+            return bool(db.scalar(select(func.count()).select_from(WaState).where(getattr(WaState, self.col).is_not(None))))
+
+    def clear(self):
+        from sqlalchemy import update
+
+        from ..db import system_session
+        from ..stockplus.models import WaState
+        with system_session() as db:
+            db.execute(update(WaState).values({self.col: None}))
+
+
+_choice = _Store("choice")
+_held = _Store("held")
 
 
 @router.get("/webhook")
@@ -180,10 +246,16 @@ async def handle_media(phone: str, media_id: str, mime: str, filename: str, capt
         chosen, rest, multi, early = _place(phone, caption)
         if chosen is None:
             if early:
-                # Which restaurant is this bill for? Ask; the photo has to be sent again with the answer known.
-                early.text = "Which restaurant is this bill for? Tap one, then send the photo again."
-                early.options = [(cmd.split(" ")[0] + " help", label) for cmd, label in early.options]
-                send(phone, early)
+                # Which restaurant is this bill for? Keep the photo and read it once they tap one.
+                p10 = client.last10(phone)
+                waiting = [h for h in _held.get(p10, []) if time.time() - h[0] < HOLD_SECS]
+                first = not waiting
+                waiting.append([time.time(), media_id, mime, filename, caption or ""])
+                _held[p10] = waiting[-10:]
+                if first:   # one question for a batch of photos
+                    early.text = "Which restaurant is this bill for? Tap one and I'll read it straight away."
+                    early.options = [(cmd.split(" ")[0], label) for cmd, label in early.options]
+                    send(phone, early)
             return
         from ..modules import enabled
         on = enabled(chosen[0])
@@ -201,8 +273,26 @@ async def handle_media(phone: str, media_id: str, mime: str, filename: str, capt
             client.send_text(phone, "Sorry, I couldn't read that bill. Try again, or use Scan bill in the app.")
 
 
+def _release_held(phone: str, text: str) -> bool:
+    """They just picked a restaurant ("@shakedemo") and photos are waiting: read those instead of showing help."""
+    p10 = client.last10(phone)
+    waiting = [h for h in _held.pop(p10, []) if time.time() - h[0] < HOLD_SECS]
+    m = re.fullmatch(r"\s*@([a-z0-9-]+)\s*(help)?\s*", text or "", re.I)
+    if not waiting or not m:
+        if waiting:
+            _held[p10] = waiting
+        return False
+    login = m.group(1).lower()
+    import asyncio
+    for _, media_id, mime, filename, caption in waiting:
+        asyncio.run(handle_media(phone, media_id, mime, filename, f"@{login} {caption}".strip()))
+    return True
+
+
 def handle(phone: str, text: str) -> None:
     try:
+        if _release_held(phone, text):
+            return
         out = reply_rich(phone, text)
         if out:
             send(phone, out)

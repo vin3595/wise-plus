@@ -363,3 +363,32 @@ def test_daily_sheet(shop, monkeypatch, tmp_path):
     sheets.append({**SHEET_13_NOV, "date": None})
     post({"type": "image", "image": {"id": "s3", "mime_type": "image/jpeg"}})
     assert "No date on the sheet" in sent[-1] and [l for _, l in opts[-1]] == ["Discard"]
+
+
+def test_photo_kept_until_restaurant_picked(monkeypatch):
+    """On two restaurants: a photo sent before choosing is read as soon as one is tapped."""
+    import asyncio
+
+    from app.whatsapp import client as wa
+    from app.whatsapp import router as wr
+
+    places = [("t1", "shakewallah", "owner", "u1"), ("t2", "shakedemo", "owner", "u2")]
+    monkeypatch.setattr(wr, "_who", lambda p10: places)
+    sent, read = [], []
+    monkeypatch.setattr(wr, "send", lambda to, r: sent.append(r))
+    monkeypatch.setattr(wa, "enabled", lambda: True)
+    wr._choice.clear(); wr._held.clear()
+
+    async def fake_read(chosen, p10, media_id, mime, filename, caption=""):
+        read.append((chosen[1], media_id))
+        from app.assistant.answers import Reply
+        return Reply("read")
+    from app.whatsapp import bills
+    monkeypatch.setattr(bills, "read_sent_bill", fake_read)
+    monkeypatch.setattr("app.modules.enabled", lambda tid: ["bills"])
+    asyncio.run(wr.handle_media("919999900001", "m1", "image/jpeg", "", ""))
+    asyncio.run(wr.handle_media("919999900001", "m2", "image/jpeg", "", ""))      # a second photo: no second question
+    assert len(sent) == 1 and "straight away" in sent[0].text and [c for c, _ in sent[0].options] == ["@shakewallah", "@shakedemo"]
+    wr.handle("919999900001", "@shakedemo")
+    assert read == [("shakedemo", "m1"), ("shakedemo", "m2")] and not wr._held
+    assert wr._choice["9999900001"] == "shakedemo"

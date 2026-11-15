@@ -55,3 +55,13 @@ class NightlyRun(Base):
     __tablename__ = "nightly_runs"
     day: Mapped[date] = mapped_column(Date, primary_key=True)
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class WaState(Base):
+    """Per WhatsApp number: the restaurant they picked, and photos waiting for that choice.
+    In the database (not memory) because the API runs as more than one process."""
+    __tablename__ = "wa_state"
+    phone10: Mapped[str] = mapped_column(String(10), primary_key=True)
+    choice: Mapped[str | None] = mapped_column(String(30))
+    held: Mapped[list | None] = mapped_column(JSONB(none_as_null=True))   # [[time, media_id, mime, filename, caption]]
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
