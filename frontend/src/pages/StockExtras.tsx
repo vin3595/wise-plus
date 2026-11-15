@@ -217,6 +217,7 @@ export function TrendsTab({ outletId }: { outletId: string }) {
               <td className={`num ${m.change_bp !== null && m.change_bp > 2000 ? "warn-text" : ""}`}>{m.change_bp === null ? "new" : `${m.change_bp > 0 ? "+" : ""}${Math.round(m.change_bp / 100)}%`}</td></tr>)}</tbody></table>)}
         <p className="muted small">Use at cost: sales, prep, wastage and transfers out. A big jump with flat sales is worth a look.</p>
       </Card>
+      <NightlyToggle />
     </>
   );
 }

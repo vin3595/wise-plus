@@ -30,7 +30,8 @@ class Settings(BaseSettings):
     wa_app_secret: str = ""         # checks that webhook calls really come from Meta
     wa_verify_token: str = ""       # what Meta sends back once when the webhook is set up
     wa_graph_version: str = "v23.0"
-    wa_nightly_template: str = ""   # approved template for the nightly summary outside the 24-hour window
+    wa_nightly_template: str = ""
+    wa_otp_template: str = "login_code"   # authentication template for sign-up / sign-in codes (WISE_OTP_PROVIDER=whatsapp)   # approved template for the nightly summary outside the 24-hour window
     nightly_at: str = "23:30"       # India time; "" turns the nightly WhatsApp summary off
 
     pin_max_failures: int = 5

@@ -60,6 +60,7 @@ export interface Me {
   outlet_id: string | null;
   training?: boolean;       // signed in to a training outlet
   permissions: string[];
+  modules?: string[];       // wise-plus: services switched on (pos, stock, bills, sheets)
 }
 
 export interface Outlet {

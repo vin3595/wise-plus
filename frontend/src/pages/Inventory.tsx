@@ -45,12 +45,12 @@ type Tab = (typeof TABS)[number][0];
 
 /** Stock: what's in, what the recipes used, what to order, what each item costs to make. */
 export default function Inventory() {
-  const { me, deviceOutletId, can } = useSession();
+  const { me, deviceOutletId, can, has } = useSession();
   const manage = can("inventory.manage");
   const costs = can("costing.view");
   const [outlets, setOutlets] = useState<Outlet[]>([]);
   const [outletId, setOutletId] = useState(me?.outlet_id || deviceOutletId || "");
-  const [tab, setTab] = useState<Tab>(manage ? "stock" : "count");
+  const [tab, setTab] = useState<Tab>(!has("stock") ? "purchases" : manage ? "stock" : "count");
   const [items, setItems] = useState<StockItem[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [bump, setBump] = useState(0);
@@ -62,11 +62,12 @@ export default function Inventory() {
     if (manage) api<Supplier[]>("/inventory/suppliers").then(setSuppliers);
   }, [bump, manage]);
 
-  const tabs = TABS.filter(([k]) => manage || k === "count" || k === "spot").filter(([k]) => costs || !["costing", "profit", "trends"].includes(k));
+  const tabs = TABS.filter(([k]) => manage || k === "count" || k === "spot").filter(([k]) => costs || !["costing", "profit", "trends"].includes(k))
+    .filter(([k]) => has("stock") || k === "purchases" || k === "items");   // bill scan only: purchases and the items they're for
   return (
     <div className="stack inv">
       <div className="row">
-        <h1 className="grow">Stock</h1>
+        <h1 className="grow">{has("stock") ? "Stock" : "Purchases"}</h1>
         {!me?.outlet_id && outlets.length > 1 && (
           <Select value={outletId} onChange={(e) => setOutletId(e.target.value)} aria-label="Outlet">
             {outlets.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}

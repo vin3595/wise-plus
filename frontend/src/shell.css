@@ -209,3 +209,13 @@ td.num.paid { color: var(--mint); }
 .trend-axis { display: flex; justify-content: space-between; margin-bottom: 0.5rem; }
 details.spot { border-top: 1px solid var(--line); padding: 0.45rem 0; }
 details.spot summary { cursor: pointer; }
+/* Services picker (sign-up and Settings › Services) */
+.services { display: grid; gap: 0.55rem; margin: 0.6rem 0 1rem; }
+.service { display: grid; grid-template-columns: auto 1fr auto; gap: 0.75rem; align-items: center; text-align: left; padding: 0.75rem 0.85rem;
+  border: 1.5px solid var(--line); border-radius: 12px; background: var(--card, #fff); color: inherit; font: inherit; cursor: pointer; }
+.service strong { display: block; }
+.service small { display: block; color: var(--ink-2); font-size: 0.82rem; line-height: 1.35; margin-top: 0.1rem; }
+.service .tick { width: 1.5rem; height: 1.5rem; border-radius: 50%; border: 1.5px solid var(--line); display: grid; place-items: center; font-weight: 800; font-size: 0.85rem; }
+.service.on { border-color: var(--primary, #138996); background: color-mix(in srgb, var(--primary, #138996) 7%, var(--card, #fff)); }
+.service.on .tick { background: var(--primary, #138996); border-color: var(--primary, #138996); color: #fff; }
+.service:disabled { opacity: 0.6; cursor: progress; }

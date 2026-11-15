@@ -50,9 +50,20 @@ def create_app() -> FastAPI:
             detail = "A value is out of the allowed range"
         return JSONResponse({"detail": detail}, status_code=status.HTTP_409_CONFLICT)
 
-    for r in (stockplus.router, stockplus.alerts, bill_scan.router, ledger.router, assistant.router, whatsapp.router, daily_sheets.router, public.router, auth.router, tenant.router, users.router, menu.router, menu_import.router,
-              orders.router, billing.router, bill_edits.router, qr.router, reports.router, report_tables.router, printing.router, sms.router, cash.router, events.router, offline.router, inventory.router, dayclose.router, payments.router, loyalty.router, accounts.router, roles.router, ads.router):
-        app.include_router(r, prefix="/api")
+    from fastapi import Depends
+
+    from .modules import guard
+    # wise-plus: each service's endpoints answer only for businesses that switched it on (app/modules.py)
+    pos, stock_or_bills = [Depends(guard("pos"))], [Depends(guard("stock", "bills"))]
+    routes = [(stockplus.router, [Depends(guard("stock"))]), (stockplus.alerts, []), (bill_scan.router, [Depends(guard("bills"))]),
+              (ledger.router, [Depends(guard("bills"))]), (daily_sheets.router, [Depends(guard("sheets"))]),
+              (inventory.router, stock_or_bills), (orders.router, pos), (billing.router, pos), (bill_edits.router, pos), (qr.router, pos),
+              (printing.router, pos), (cash.router, pos), (dayclose.router, pos), (payments.router, pos), (loyalty.router, pos),
+              (offline.router, pos), (ads.router, pos)]
+    routes += [(r, []) for r in (assistant.router, whatsapp.router, public.router, auth.router, tenant.router, users.router, menu.router,
+                                 menu_import.router, reports.router, report_tables.router, sms.router, events.router, accounts.router, roles.router)]
+    for r, deps in routes:
+        app.include_router(r, prefix="/api", dependencies=deps)
 
     Path(s.upload_dir).mkdir(parents=True, exist_ok=True)
     app.mount("/uploads", StaticFiles(directory=s.upload_dir), name="uploads")

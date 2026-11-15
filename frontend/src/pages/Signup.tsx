@@ -4,10 +4,12 @@ import { api } from "../api";
 import { useSession } from "../session";
 import type { TokenOut } from "../types";
 import { Button, ErrorText, Field, Input, useAction } from "../ui";
+import { ServicePicker } from "./Services";
 
 export default function Signup() {
   const { signedIn } = useSession();
   const [form, setForm] = useState({ restaurant_name: "", login_id: "", owner_name: "", email: "", phone: "" });
+  const [modules, setModules] = useState<string[]>(["pos", "stock", "bills", "sheets"]);
   const [idStatus, setIdStatus] = useState<{ available: boolean; reason: string | null } | null>(null);
   const [sent, setSent] = useState<{ sent_to: string; dev_otp: string | null } | null>(null);
   const [otp, setOtp] = useState("");
@@ -28,18 +30,18 @@ export default function Signup() {
     return (
       <div className="auth-page"><div className="auth-card">
         <h1>Verify your mobile</h1>
-        <p className="muted">We sent a 6-digit code to {sent.sent_to}.</p>
+        <p className="muted">We sent a 6-digit code to {sent.sent_to}. Check WhatsApp.</p>
         {sent.dev_otp && <p className="dev-note">Development mode code: <strong>{sent.dev_otp}</strong></p>}
         <form onSubmit={(e) => {
           e.preventDefault();
-          run(async () => signedIn(await api<TokenOut>("/auth/signup/verify", { body: { ...form, otp } })));
+          run(async () => signedIn(await api<TokenOut>("/auth/signup/verify", { body: { ...form, modules, otp } })));
         }}>
           <Field label="Code">
             <Input value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
               inputMode="numeric" autoComplete="one-time-code" autoFocus />
           </Field>
           <ErrorText error={error} />
-          <Button disabled={busy || otp.length !== 6}>Create restaurant</Button>
+          <Button disabled={busy || otp.length !== 6}>Start now</Button>
           <button type="button" className="link" onClick={() => setSent(null)}>Edit details</button>
         </form>
       </div></div>
@@ -48,13 +50,14 @@ export default function Signup() {
 
   return (
     <div className="auth-page"><div className="auth-card">
-      <h1>Create your restaurant</h1>
-      <p className="muted">14-day free trial. Your staff and customers will see your name and logo, not ours.</p>
+      <h1>Start free</h1>
+      <p className="muted">Pick what you need. It's ready in a minute, no one has to set it up for you. 14-day free trial; switch services on or off any time.</p>
       <form onSubmit={(e) => {
         e.preventDefault();
-        run(async () => setSent(await api("/auth/signup/start", { body: form })));
+        run(async () => setSent(await api("/auth/signup/start", { body: { ...form, modules } })));
       }}>
-        <Field label="Restaurant name"><Input value={form.restaurant_name} onChange={(e) => {
+        <ServicePicker value={modules} onChange={(v) => v.length && setModules(v)} />
+        <Field label="Business name"><Input value={form.restaurant_name} onChange={(e) => {
           // Keep suggesting a login ID from the name until the owner edits it themselves.
           const name = e.target.value;
           setForm((f) => ({ ...f, restaurant_name: name,

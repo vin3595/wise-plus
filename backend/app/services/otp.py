@@ -103,4 +103,18 @@ def _deliver(identifier: str, code: str) -> None:
             log.error("Fast2SMS send failed: %s %s", resp.status_code, resp.text[:200])
             raise OtpError("Couldn't send the code right now. Try again.")
         return
+    if s.otp_provider == "whatsapp":
+        # wise-plus: the code arrives on WhatsApp from the business number (approved authentication
+        # template WISE_WA_OTP_TEMPLATE with a copy-code button), so people can sign up on their own.
+        from ..whatsapp import client
+        try:
+            client._post({"to": client.to_wa(_phone(identifier)), "type": "template", "template": {
+                "name": s.wa_otp_template, "language": {"code": "en"}, "components": [
+                    {"type": "body", "parameters": [{"type": "text", "text": code}]},
+                    {"type": "button", "sub_type": "url", "index": "0", "parameters": [{"type": "text", "text": code}]}]}})
+        except Exception:  # noqa: BLE001
+            log.exception("WhatsApp OTP send failed")
+            log.warning("OTP for %s: %s", identifier, code)
+            raise OtpError("Couldn't send the code on WhatsApp right now. Try again.") from None
+        return
     raise OtpError(f"Unknown OTP provider {s.otp_provider!r}")

@@ -6,9 +6,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import modules
 from ..config import get_settings
 from ..core.permissions import Perm, Role
 from ..deps import Auth, get_auth, get_db, require
@@ -19,6 +21,7 @@ from ..schemas import (
 from ..services import audit
 from ..services.uploads import save_image as _save_image
 from .common import get_or_404, user_out
+
 
 router = APIRouter(prefix="/tenant", tags=["tenant"])
 
@@ -35,7 +38,33 @@ def me(auth: Auth = Depends(get_auth), db: Session = Depends(get_db)) -> dict:
         "outlet_id": str(auth.outlet_id) if auth.outlet_id else None,
         "training": bool(auth.outlet_id and (o := db.get(Outlet, auth.outlet_id)) and o.is_training),
         "permissions": sorted(p.value for p in Perm if auth.can(p)),
+        "modules": modules.enabled(auth.tenant_id),      # wise-plus: services switched on
     }
+
+
+class ModulesIn(BaseModel):
+    modules: list[str]
+
+
+@router.get("/modules")
+def list_modules(auth: Auth = Depends(get_auth)) -> dict:
+    """wise-plus: every service, and which are on for this business."""
+    return {"all": [{"key": k, "name": v} for k, v in modules.MODULES.items()], "on": modules.enabled(auth.tenant_id)}
+
+
+@router.put("/modules")
+def set_modules(body: ModulesIn, auth: Auth = Depends(require(Perm.tenant_settings)), db: Session = Depends(get_db)) -> dict:
+    """wise-plus: switch services on or off; works straight away. Nothing is deleted when a service is off."""
+    tenant = db.get(Tenant, auth.tenant_id)
+    before = {"modules": tenant.modules}
+    tenant.modules = modules.clean(body.modules)
+    if "pos" not in tenant.modules:
+        from ..services.first_outlet import first_outlet
+        first_outlet(db, tenant)
+    db.flush()
+    modules.forget(auth.tenant_id)
+    audit.record(db, auth.tenant_id, auth.user_id, "update", "modules", tenant.id, before, {"modules": tenant.modules})
+    return {"on": tenant.modules}
 
 
 @router.patch("/branding", response_model=TenantOut)

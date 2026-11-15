@@ -24,6 +24,7 @@ class SignupStart(BaseModel):
     owner_name: str = Field(min_length=2, max_length=120)
     email: str
     phone: str
+    modules: list[str] | None = None      # wise-plus: services picked at sign-up; None = all
 
     _v_login = field_validator("login_id")(lambda v: validate_login_id(v))
     _v_email = field_validator("email")(lambda v: normalize_email(v))
@@ -79,6 +80,7 @@ class TenantOut(ORM):
     logo_url: str | None
     primary_color: str
     ui_theme: str = "ease"
+    modules: list[str] | None = None      # wise-plus: None = everything
     custom_domain: str | None
     show_powered_by: bool
     gstin: str | None

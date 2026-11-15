@@ -36,41 +36,43 @@ import Accounts from "./pages/Accounts";
 import Access from "./pages/Access";
 import Cash from "./pages/Cash";
 import Dues from "./pages/Dues";
+import Services from "./pages/Services";
 import Sheets from "./pages/Sheets";
 import Reports from "./pages/Reports";
 import GettingStarted from "./pages/GettingStarted";
 
 const ICONS: Record<string, LucideIcon> = {
   "Home": LayoutDashboard, "Orders": ClipboardList, "Kitchen display": ChefHat, "Bills": Receipt,
-  "Cash": Wallet, "Supplier dues": Truck, "Daily sheets": NotebookPen, "Reports": BarChart3, "Stock": Package, "Customers": UsersIcon, "Getting started": Rocket,
+  "Cash": Wallet, "Supplier dues": Truck, "Daily sheets": NotebookPen, "Reports": BarChart3, "Stock": Package, "Purchases": Package, "Customers": UsersIcon, "Getting started": Rocket,
   "Menu": UtensilsCrossed, "Outlets and screens": Store, "Staff": UserCog, "Settings": SettingsIcon,
 };
 
 function Shell({ children }: { children: ReactNode }) {
-  const { branding, me, can, signOut } = useSession();
+  const { branding, me, can, has, signOut } = useSession();
   const loc = useLocation();
   // One menu entry per job. An entry with several pages opens on the first one you may use, and the
   // others show as tabs along the top of the page, so the menu stays short.
   type Page = [string, string, boolean];
   type Entry = { label: string; section: string; pages: Page[] };
+  const pos = has("pos");
   const entries: Entry[] = [
     { label: "Home", section: "Counter", pages: [["/", "Home", can("tenant.settings") || can("menu.override")]] },
-    { label: "Orders", section: "Counter", pages: [["/orders", "Orders", can("kot.send")]] },
-    { label: "Kitchen display", section: "Counter", pages: [["/kds", "Kitchen display", can("kds.view")]] },
-    { label: "Bills", section: "Counter", pages: [["/bills", "Bills", can("billing")]] },
-    { label: "Cash", section: "Money", pages: [["/cash", "Cash", can("cash.expected")], ["/day-close", "Day close", can("day.close")]] },
-    { label: "Daily sheets", section: "Money", pages: [["/sheets", "Daily sheets", can("reports.view")]] },
-    { label: "Supplier dues", section: "Money", pages: [["/dues", "Supplier dues", can("reports.view")]] },
+    { label: "Orders", section: "Counter", pages: [["/orders", "Orders", pos && can("kot.send")]] },
+    { label: "Kitchen display", section: "Counter", pages: [["/kds", "Kitchen display", pos && can("kds.view")]] },
+    { label: "Bills", section: "Counter", pages: [["/bills", "Bills", pos && can("billing")]] },
+    { label: "Cash", section: "Money", pages: [["/cash", "Cash", pos && can("cash.expected")], ["/day-close", "Day close", pos && can("day.close")]] },
+    { label: "Daily sheets", section: "Money", pages: [["/sheets", "Daily sheets", has("sheets") && can("reports.view")]] },
+    { label: "Supplier dues", section: "Money", pages: [["/dues", "Supplier dues", has("bills") && can("reports.view")]] },
     { label: "Reports", section: "Money", pages: [["/reports", "Reports", can("reports.view")], ["/accounts", "Accounts and Tally", can("reports.view")]] },
-    { label: "Stock", section: "Stock and customers", pages: [["/stock", "Stock", can("stock.count")]] },
-    { label: "Customers", section: "Stock and customers", pages: [["/customers", "Customers", can("loyalty.manage")]] },
+    { label: has("stock") ? "Stock" : "Purchases", section: "Stock and customers", pages: [["/stock", has("stock") ? "Stock" : "Purchases", (has("stock") || has("bills")) && can("stock.count")]] },
+    { label: "Customers", section: "Stock and customers", pages: [["/customers", "Customers", pos && can("loyalty.manage")]] },
     { label: "Getting started", section: "Setup", pages: [["/start", "Getting started", can("tenant.settings")]] },
-    { label: "Menu", section: "Setup", pages: [["/menu", "Items", can("menu.manage")], ["/outlet-menu", "Outlet prices", can("menu.override")],
-      ["/tax", "Tax", can("menu.manage")], ["/kitchen", "Kitchen and printers", can("menu.manage") || can("outlets.manage")]] },
-    { label: "Outlets and screens", section: "Setup", pages: [["/outlets", "Outlets", can("outlets.manage")], ["/screens", "Screens", can("outlets.manage")],
-      ["/screen-ads", "Screen ads", can("ads.manage")]] },
+    { label: "Menu", section: "Setup", pages: [["/menu", "Items", (pos || has("stock")) && can("menu.manage")], ["/outlet-menu", "Outlet prices", pos && can("menu.override")],
+      ["/tax", "Tax", pos && can("menu.manage")], ["/kitchen", "Kitchen and printers", pos && (can("menu.manage") || can("outlets.manage"))]] },
+    { label: "Outlets and screens", section: "Setup", pages: [["/outlets", "Outlets", can("outlets.manage")], ["/screens", "Screens", pos && can("outlets.manage")],
+      ["/screen-ads", "Screen ads", pos && can("ads.manage")]] },
     { label: "Staff", section: "Setup", pages: [["/users", "Staff", can("users.manage")], ["/access", "Who can do what", can("users.manage")]] },
-    { label: "Settings", section: "Setup", pages: [["/payments", "Payments", can("tenant.settings")], ["/sms", "SMS", can("tenant.settings")],
+    { label: "Settings", section: "Setup", pages: [["/services", "Services", can("tenant.settings")], ["/payments", "Payments", pos && can("tenant.settings")], ["/sms", "SMS", pos && can("tenant.settings")],
       ["/branding", "Branding", can("tenant.settings")]] },
   ];
   const path = loc.pathname;
@@ -194,14 +196,15 @@ function Shell({ children }: { children: ReactNode }) {
 }
 
 /** Where each role lands after signing in. */
-function landing(can: (p: string) => boolean): string {
+function landing(can: (p: string) => boolean, has: (m: string) => boolean = () => true): string {
   if (can("tenant.settings") || can("menu.override")) return "/";
+  if (!has("pos")) return has("sheets") && !has("stock") && !has("bills") ? "/sheets" : "/stock";   // wise-plus: no POS
   if (can("kot.send")) return "/orders";
   return "/kds";
 }
 
 export default function App() {
-  const { loading, loginId, me, can } = useSession();
+  const { loading, loginId, me, can, has } = useSession();
   // The customer TV screen needs no restaurant setup or login.
   const display = location.pathname.match(/^\/display\/([^/]+)/);
   if (display) return <CustomerDisplay displayKey={decodeURIComponent(display[1])} />;
@@ -235,7 +238,7 @@ export default function App() {
   return (
     <Shell>
       <Routes>
-        <Route path="/" element={landing(can) === "/" ? <Home /> : <Navigate to={landing(can)} replace />} />
+        <Route path="/" element={landing(can, has) === "/" ? <Home /> : <Navigate to={landing(can, has)} replace />} />
         <Route path="/orders" element={<Orders />} />
         <Route path="/kds" element={<Kds />} />
         <Route path="/kitchen" element={<Kitchen />} />
@@ -249,6 +252,7 @@ export default function App() {
         <Route path="/reports" element={<Reports />} />
         <Route path="/dues" element={<Dues />} />
         <Route path="/sheets" element={<Sheets />} />
+        <Route path="/services" element={<Services />} />
         <Route path="/menu" element={<MenuEditor />} />
         <Route path="/menu/import" element={<MenuImport />} />
         <Route path="/outlet-menu" element={<OutletMenu />} />

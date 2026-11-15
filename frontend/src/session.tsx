@@ -12,6 +12,7 @@ interface Session {
   me: Me | null;
   deviceOutletId: string | null;
   can: (perm: string) => boolean;
+  has: (mod: string) => boolean;   // wise-plus: is this service switched on?
   chooseRestaurant: (loginId: string) => Promise<void>;
   forgetRestaurant: () => void;
   setDeviceOutlet: (id: string | null) => void;
@@ -105,6 +106,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       me,
       deviceOutletId,
       can: (perm) => !!me?.permissions.includes(perm),
+      has: (mod) => !me?.modules || me.modules.includes(mod),
       chooseRestaurant: loadBranding,
       forgetRestaurant: () => {
         localStorage.removeItem(LOGIN_ID_KEY);

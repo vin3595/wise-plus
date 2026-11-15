@@ -185,6 +185,11 @@ async def handle_media(phone: str, media_id: str, mime: str, filename: str, capt
                 early.options = [(cmd.split(" ")[0] + " help", label) for cmd, label in early.options]
                 send(phone, early)
             return
+        from ..modules import enabled
+        on = enabled(chosen[0])
+        if "bills" not in on and "sheets" not in on:     # wise-plus: neither photo service switched on
+            send(phone, Reply("Bill scan and daily sheets aren't switched on for this business. The owner can turn them on in Settings › Services."))
+            return
         out = await bills.read_sent_bill(chosen, client.last10(phone), media_id, mime, filename, rest)
         if out:
             if multi:

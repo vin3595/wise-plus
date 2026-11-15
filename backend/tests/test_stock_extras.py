@@ -162,3 +162,29 @@ def test_menu_profit_trends_and_nightly(client, monkeypatch):
     ask = client.post("/api/assistant/ask", headers=h(tok), json={"q": "summary"}).json()
     assert "🌙" in ask["text"] and "*Sardarpura*: Sales ₹0 (0 bills)" in ask["text"]
     assert client.put("/api/whatsapp-alerts/me", headers=h(tok), json={"nightly": False}).json()["nightly"] is False
+
+
+def test_sign_up_for_only_some_services(client):
+    login = "mod" + uuid.uuid4().hex[:6]
+    body = {"login_id": login, "restaurant_name": "Ravi Sweets", "owner_name": "Ravi", "email": f"{login}@example.com",
+            "phone": "95" + str(uuid.uuid4().int)[:8], "modules": ["bills", "stock", "nonsense"]}
+    code = client.post("/api/auth/signup/start", json=body).json()["dev_otp"]
+    tok = client.post("/api/auth/signup/verify", json={**body, "otp": code}).json()["token"]
+    me = client.get("/api/tenant/me", headers=h(tok)).json()
+    assert me["modules"] == ["stock", "bills"] and me["tenant"]["modules"] == ["stock", "bills"]
+    outs = client.get("/api/tenant/outlets", headers=h(tok)).json()
+    assert len(outs) == 1 and outs[0]["name"] == "Ravi Sweets"            # ready to use straight away
+    oid = outs[0]["id"]
+    assert client.get("/api/inventory/stock", headers=h(tok), params={"outlet_id": oid}).status_code == 200
+    assert client.get("/api/ledger/suppliers", headers=h(tok)).status_code == 200
+    r = client.post("/api/shifts", headers=h(tok), json={"outlet_id": oid, "opening_cash_paise": 0})
+    assert r.status_code == 403 and "Settings › Services" in r.json()["detail"]
+    assert client.get("/api/daily-sheets", headers=h(tok)).status_code == 403
+    # Switch POS and daily sheets on: works straight away
+    assert client.put("/api/tenant/modules", headers=h(tok), json={"modules": []}).status_code == 422
+    assert client.put("/api/tenant/modules", headers=h(tok), json={"modules": ["pos", "sheets", "stock", "bills"]}).json()["on"] == ["pos", "stock", "bills", "sheets"]
+    assert client.get("/api/daily-sheets", headers=h(tok)).status_code == 200
+    assert client.get("/api/tenant/modules", headers=h(tok)).json()["on"] == ["pos", "stock", "bills", "sheets"]
+    # Older businesses have everything
+    t = signup(client, "old" + uuid.uuid4().hex[:6], "94" + str(uuid.uuid4().int)[:8])
+    assert client.get("/api/tenant/me", headers=h(t["token"])).json()["modules"] == ["pos", "stock", "bills", "sheets"]

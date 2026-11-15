@@ -15,8 +15,11 @@ from ..core.security import pin_lookup_key, verify_secret
 from ..db import system_session
 from ..models import Brand, Outlet, TaxGroup, Tenant, User, UserOutlet
 from ..schemas import OtpRequest, OtpSent, OtpVerify, PinLogin, SignupStart, SignupVerify, TokenOut
+from ..modules import clean as clean_modules
 from ..services import audit, otp, throttle
+from ..services.first_outlet import first_outlet
 from .common import issue_token
+
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -79,15 +82,19 @@ def signup_verify(body: SignupVerify) -> TokenOut:
                 login_id=body.login_id, name=body.restaurant_name, owner_email=body.email,
                 owner_phone=body.phone, app_name=body.restaurant_name,
                 trial_ends_at=datetime.now(timezone.utc) + timedelta(days=s.trial_days),
+                modules=clean_modules(body.modules) if body.modules is not None else None,
             )
             db.add(tenant)
             db.flush()
-            db.add(Brand(tenant_id=tenant.id, name=body.restaurant_name))
+            brand = Brand(tenant_id=tenant.id, name=body.restaurant_name)
+            db.add(brand)
             db.add(TaxGroup(tenant_id=tenant.id, name="GST 5%", cgst_bp=250, sgst_bp=250, is_default=True))
             owner = User(tenant_id=tenant.id, name=body.owner_name, email=body.email, phone=body.phone,
                          role=Role.owner.value, last_login_at=datetime.now(timezone.utc))
             db.add(owner)
             db.flush()
+            if tenant.modules is not None and "pos" not in tenant.modules:
+                first_outlet(db, tenant, brand)   # wise-plus: stock / bills / sheets work straight away
             audit.record(db, tenant.id, owner.id, "signup", "tenant", tenant.id, after=audit.snapshot(tenant))
             result = issue_token(db, owner, tenant)
     if error:
