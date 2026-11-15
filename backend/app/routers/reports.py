@@ -5,7 +5,7 @@ import uuid
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import text, func, select
 from sqlalchemy.orm import Session
 
 from ..core.kds import business_date
@@ -154,8 +154,9 @@ def bill_edits(outlet_id: uuid.UUID | None = None, date_from: date | None = None
     names = {u.id: u.name for u in db.scalars(select(User))}
     rows = db.execute(
         select(BillRevision, Bill.invoice_no, Bill.business_date).join(Bill, Bill.id == BillRevision.bill_id)
-        .where(Bill.outlet_id.in_(outlets), func.date(func.timezone("Asia/Kolkata", BillRevision.created_at)) >= d1,
-               func.date(func.timezone("Asia/Kolkata", BillRevision.created_at)) <= d2)
+        .where(Bill.outlet_id.in_(outlets),   # by the business day (starts 4am), like the bills themselves
+               func.date(func.timezone("Asia/Kolkata", BillRevision.created_at) - text("interval '4 hours'")) >= d1,
+               func.date(func.timezone("Asia/Kolkata", BillRevision.created_at) - text("interval '4 hours'")) <= d2)
         .order_by(BillRevision.created_at.desc()))
     return [{"invoice_no": inv, "bill_date": str(day), "at": r.created_at.isoformat(), "version": r.revision_no + 1,
              "changes": r.changes, "reason": r.reason, "by": names.get(r.edited_by),
