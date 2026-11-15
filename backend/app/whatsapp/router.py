@@ -124,15 +124,21 @@ def reply_rich(phone: str, text: str) -> Reply | None:
     if chosen is None:
         return early
     word = (text or "").strip().lower().strip(".!")
-    # A button under one bill: "save <bill id>".
+    # A button under one bill: "save <bill id>"; under a daily sheet: "savesheet <sheet id>".
     m = re.fullmatch(r"(save|add|discard) ([0-9a-f-]{36})", word)
     bill_id = None
     if m:
         word, bill_id = m.group(1), uuid.UUID(m.group(2))
+    ms = re.fullmatch(r"(savesheet|dropsheet) ([0-9a-f-]{36})", word)
     with tenant_session(chosen[0]) as db:
-        if word in SAVE | DISCARD | ADD:
+        from . import sheets
+        if ms:
+            out = sheets.save_or_drop(db, client.last10(phone), ms.group(1) == "savesheet", uuid.UUID(ms.group(2))) or Reply("That sheet isn't here any more.")
+        elif word in SAVE | DISCARD | ADD:
             from . import bills
             out = bills.save_or_discard(db, chosen, client.last10(phone), word not in DISCARD, add_new=word in ADD, bill_id=bill_id)
+            if bill_id is None and out.text.startswith("No bill waiting"):
+                out = sheets.save_or_drop(db, client.last10(phone), word not in DISCARD) or out
         else:
             out = answer_rich(db, text or "help")
     if multi:

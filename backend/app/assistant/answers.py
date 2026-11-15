@@ -31,20 +31,26 @@ class Reply:
     options: list[tuple[str, str]] = field(default_factory=list)
 
 
-HOME = [("dues", "Dues"), ("sales", "Sales today")]
+HOME = [("dues", "Dues"), ("sales", "Sales today"), ("sheet", "Last daily sheet")]
 
 HELP = ("*Ask me:*\n"
         "• *dues* – what you owe every supplier\n"
         "• *dues kanha* – one supplier's balance\n"
         "• *last kanha* – last order from a party\n"
         "• *price vanilla* – last price paid for an item\n"
-        "• *sales* – today's sales so far")
+        "• *sales* – today's sales so far\n"
+        "• *sheet* / *sheet 13 nov* – a daily cash sheet\n"
+        "• *expenses* – this month's expenses by head\n"
+        "• Send a photo of a bill or the daily sheet to save it")
 
 DUES = {"dues", "due", "outstanding", "balance", "balances", "baki", "baaki", "udhaar", "udhar", "payable", "ledger", "ledgers"}
 LAST = {"last", "lastorder", "order", "kab"}
 PRICE = {"price", "rate", "cost", "bhav", "daam"}
 SALES = {"sales", "sale", "today", "aaj", "bikri"}
 HELPS = {"help", "hi", "hello", "menu", "?", "start"}
+SHEET = {"sheet", "sheets", "hisab", "hisaab", "daily"}
+EXPENSES = {"expenses", "expense", "kharcha", "kharch", "kharche"}
+MONTHS = {m: i for i, m in enumerate(["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], 1)}
 FILLER = {"order", "from", "of", "for", "the", "party", "ka", "ki", "ke", "se", "what", "is", "was", "when", "did", "we", "last"}
 
 
@@ -172,6 +178,80 @@ def last_price(db: Session, item: StockItem, today: date) -> Reply:
     return Reply("\n".join(lines), [(f"last {sup}", "Last order"), (f"dues {sup}", "Their dues")] if sup else HOME)
 
 
+def _when(words: list[str], today: date) -> date | None:
+    """'13 nov', '13/11', '13-11-2026', 'yesterday', 'today' -> a date."""
+    t = " ".join(words)
+    if "yesterday" in t or "kal" in words:
+        return today - timedelta(days=1)
+    if "today" in t or "aaj" in words:
+        return today
+    m = re.search(r"(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?", t)
+    if m:
+        y = int(m.group(3)) if m.group(3) else today.year
+        try:
+            return date(y + 2000 if y < 100 else y, int(m.group(2)), int(m.group(1)))
+        except ValueError:
+            return None
+    m = re.search(r"(\d{1,2})\s*([a-z]{3})", t)
+    if m and m.group(2) in MONTHS:
+        try:
+            return date(today.year, MONTHS[m.group(2)], int(m.group(1)))
+        except ValueError:
+            return None
+    return None
+
+
+def daily_sheet(db: Session, words: list[str], today: date) -> Reply:
+    from ..daily_sheet.models import DailySheet
+    from ..daily_sheet.service import summary as sheet_summary
+    want = _when(words, today)
+    q = select(DailySheet).where(DailySheet.status == "saved")
+    if want:
+        q = q.where(DailySheet.sheet_date == want)
+    s = db.scalar(q.order_by(DailySheet.sheet_date.desc(), DailySheet.updated_at.desc()).limit(1))
+    if s is None:
+        return Reply((f"No daily sheet saved for {want.strftime('%d %b')}." if want else "No daily sheet saved yet.")
+                     + " Send a photo of the sheet to save it.", [("sheet", "Last sheet")] if want else [])
+    prev = s.sheet_date - timedelta(days=1)
+    return Reply(sheet_summary(s.data, s.sheet_date), [(f"sheet {prev.strftime('%d %b')}", f"{prev.strftime('%d %b')} sheet"), ("expenses", "Month's expenses")])
+
+
+def expenses(db: Session, words: list[str], today: date) -> Reply:
+    """Expenses written on the daily sheets, by head, for a month (default this one)."""
+    from ..daily_sheet.models import DailySheet
+    from ..daily_sheet.service import PAYOUTS, rows
+    t = " ".join(words)
+    mon = next((MONTHS[w[:3]] for w in words if w[:3] in MONTHS), None)
+    y = today.year
+    if "last" in t or "pichla" in t:
+        mon = today.month - 1 or 12
+        y = today.year - (today.month == 1)
+    mon = mon or today.month
+    if mon > today.month and y == today.year:
+        y -= 1
+    start = date(y, mon, 1)
+    end = date(y + (mon == 12), mon % 12 + 1, 1)
+    heads: dict[str, float] = {}
+    family: dict[str, float] = {}
+    days = 0
+    for s in db.scalars(select(DailySheet).where(DailySheet.status == "saved", DailySheet.sheet_date >= start, DailySheet.sheet_date < end)):
+        days += 1
+        for n, a in rows((s.data or {}).get("expenses")) + rows((s.data or {}).get("expense_payouts")):
+            bucket = family if n.upper() in PAYOUTS else heads
+            bucket[n.title()] = bucket.get(n.title(), 0) + a
+    label = start.strftime("%B %Y")
+    if not days:
+        return Reply(f"No daily sheets saved for {label} yet.", [("sheet", "Last sheet")])
+    total = sum(heads.values())
+    lines = [f"*Expenses, {label}: {rs(round(total * 100))}* ({days} sheet(s))"]
+    for n, a in sorted(heads.items(), key=lambda x: -x[1])[:15]:
+        lines.append(f"• {n}: {rs(round(a * 100))}")
+    if family:
+        lines.append("To family: " + ", ".join(f"{n} {rs(round(a * 100))}" for n, a in family.items()))
+    other = "expenses last month" if mon == today.month else "expenses"
+    return Reply("\n".join(lines), [(other, "Last month" if mon == today.month else "This month"), ("sheet", "Last sheet")])
+
+
 def sales_today(db: Session) -> Reply:
     d = business_date()
     n, total = db.execute(select(func.count(), func.coalesce(func.sum(Bill.total_paise), 0))
@@ -211,6 +291,10 @@ def answer_rich(db: Session, text: str, today: date | None = None) -> Reply:
         return last_price(db, it, today) if it else _unsure("item", rest, maybe, "price")
     if head in SALES:
         return sales_today(db)
+    if head in SHEET:
+        return daily_sheet(db, words[1:], today)
+    if head in EXPENSES:
+        return expenses(db, words[1:], today)
     return Reply("I didn't get that.\n\n" + HELP, HOME)
 
 

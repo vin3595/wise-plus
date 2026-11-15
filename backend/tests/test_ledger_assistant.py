@@ -273,3 +273,91 @@ def test_send_options_format(monkeypatch):
     monkeypatch.setattr(wa, "send_text", lambda to, body: out.append({"text": body}))
     wa.send_options("9829000001", "x" * 1500, [("save", "Save")])
     assert out[-2] == {"text": "x" * 1500} and out[-1]["interactive"]["body"]["text"] == "What next?"
+
+
+SHEET_13_NOV = {  # Vineet's Shakewallah sheet for 13/11/2026, as the reader returns it
+    "date": "2026-11-13",
+    "cash_in": {"d500": 8, "d200": 5, "d100": 94, "d50": 73, "d20": 26, "d10": 63, "coins": 42, "total": 19242},
+    "cash_out": {"d500": 43, "d200": 4, "d100": 96, "d50": 73, "d20": 94, "d10": 53, "coins": 67, "total": 0},
+    "vijay_ras_bhandar": [{"name": "STRAWBERRY", "amount": 0}],
+    "expenses": [{"name": "MILK", "amount": 1380}, {"name": "BROWNIE", "amount": 650}, {"name": "SNACK", "amount": 240},
+                 {"name": "TEA", "amount": 60}, {"name": "15 AD", "amount": 555}, {"name": "PETROL", "amount": 500},
+                 {"name": "VEGETABLE", "amount": 30}, {"name": "TAXI", "amount": 50}, {"name": "MUMMY", "amount": 0}],
+    "expense_payouts": [], "vijay_ras": [{"name": "VANILLA", "amount": 6}, {"name": "KITKAT", "amount": 0}],
+    "absent": ["Ankull", "Raj", "Aman", "Culter", "Prince", "Guard"],
+    "advances": [{"name": "Ajeet", "amount": 4000}, {"name": "Guard", "amount": 200}],
+    "dues": [{"name": "Ajeet", "amount": 4000}], "notes": "Shiva - 11:52",
+}
+
+
+def test_daily_sheet(shop, monkeypatch, tmp_path):
+    from app.config import get_settings
+    from app.daily_sheet import extract as dx
+    from app.purchases_ai import extraction as ex
+    from app.whatsapp import client as wa
+    from app.whatsapp import router as wr
+
+    c, h, tok = shop["c"], shop["h"], shop["tok"]
+    s = get_settings()
+    for k, v in {"wa_app_secret": "shh", "wa_token": "t", "wa_phone_number_id": "123", "upload_dir": str(tmp_path)}.items():
+        monkeypatch.setattr(s, k, v)
+    sent, opts = [], []
+    monkeypatch.setattr(wa, "send_options", lambda to, body, options, button="Choose": (sent.append(body), opts.append(options)))
+    monkeypatch.setattr(wa, "get_media", lambda mid: (b"\xff\xd8sheet", "image/jpeg"))
+    monkeypatch.setattr(ex, "EMERGENT_LLM_KEY", "k")
+    monkeypatch.setattr(dx, "EMERGENT_LLM_KEY", "k")
+    monkeypatch.setattr(ex, "get_first_page_png", lambda d, ct, n: b"png")
+
+    async def classify(png):
+        return {"type": "LEDGER_PAGE", "confidence": 93, "accepted": False, "should_warn": False, "reason": "internal cash sheet"}
+    sheets = [SHEET_13_NOV]
+
+    async def read(b64):
+        return sheets[-1]
+    monkeypatch.setattr(ex, "classify_document", classify)
+    monkeypatch.setattr(dx, "extract_daily_sheet", read)
+
+    def post(msg):
+        body = json.dumps({"entry": [{"changes": [{"value": {"messages": [{"id": uuid.uuid4().hex, "from": "91" + shop["phone"], **msg}]}}]}]}).encode()
+        c.post("/api/whatsapp/webhook", content=body, headers={"x-hub-signature-256": "sha256=" + hmac.new(b"shh", body, hashlib.sha256).hexdigest()})
+
+    wr._choice.clear()
+    post({"type": "image", "image": {"id": "s1", "mime_type": "image/jpeg"}})
+    t = sent[-1]
+    assert "Daily sheet · 13 Nov 2026" in t and "Cash in: ₹19,242" in t and "Cash out: ₹38,027 (counted)" in t, t
+    assert "Expenses ₹3,465" in t and "Milk 1380" in t and "Vijay Ras out: Vanilla 6" in t and "Absent: Ankull, Raj" in t, t
+    assert "Advances: Ajeet 4000, Guard 200" in t and "Shiva - 11:52" in t
+    save_cmd = opts[-1][0][0]
+    assert save_cmd.startswith("savesheet ") and [l for _, l in opts[-1]] == ["Save", "Discard"]
+    post({"type": "interactive", "interactive": {"type": "button_reply", "button_reply": {"id": save_cmd, "title": "Save"}}})
+    assert sent[-1].startswith("✅ Daily sheet for 13 Nov 2026 saved"), sent[-1]
+
+    ask = lambda q: c.post("/api/assistant/ask", headers=h(tok), json={"q": q}).json()  # noqa: E731
+    assert "Cash in: ₹19,242" in ask("sheet 13 nov")["text"] and "Cash in: ₹19,242" in ask("sheet 13/11")["text"]
+    e = ask("expenses nov")["text"]
+    assert "Expenses, November 2026: ₹3,465" in e and "• Milk: ₹1,380" in e and "(1 sheet(s))" in e, e
+    assert "No daily sheet saved for 12 Nov" in ask("sheet 12 nov")["text"]
+
+    # Same date again, with a wrongly written total: flagged, and saving replaces the first
+    sheets.append({**SHEET_13_NOV, "cash_in": {**SHEET_13_NOV["cash_in"], "total": 19442}})
+    post({"type": "image", "image": {"id": "s2", "mime_type": "image/jpeg", "caption": "sheet"}})
+    assert "₹19,442 written, but the notes add up to ₹19,242 ⚠️" in sent[-1] and "already saved" in sent[-1], sent[-1]
+    post({"type": "text", "text": {"body": "save"}})                                          # typed: the waiting sheet
+    assert "replaces the sheet already saved" in sent[-1], sent[-1]
+
+    # In the app: list, open, fix a number, photo
+    lst = c.get("/api/daily-sheets", headers=h(tok)).json()
+    assert len(lst) == 1 and lst[0]["sheet_date"] == "2026-11-13" and lst[0]["expenses"] == 3465 and lst[0]["absent"] == 6
+    one = c.get(f"/api/daily-sheets/{lst[0]['id']}", headers=h(tok)).json()
+    data = one["data"]
+    data["expenses"][0]["amount"] = 1400
+    r = c.put(f"/api/daily-sheets/{lst[0]['id']}", headers=h(tok), json={"data": data})
+    assert r.status_code == 200 and r.json()["expenses"] == 3485
+    assert "₹3,485" in ask("expenses")["text"] or "No daily sheets" in ask("expenses")["text"]   # "this month" depends on today's date
+    assert c.get(f"/api/daily-sheets/{lst[0]['id']}/photo", headers=h(tok)).content == b"\xff\xd8sheet"
+    assert c.get("/api/daily-sheets", headers=h(shop["c"].post("/api/auth/pin", json={"login_id": shop["login"], "outlet_id": shop["out"]["id"], "pin": "0000"}).json().get("token", "x"))).status_code in (401, 403)
+
+    # A sheet with no date can't be saved from WhatsApp
+    sheets.append({**SHEET_13_NOV, "date": None})
+    post({"type": "image", "image": {"id": "s3", "mime_type": "image/jpeg"}})
+    assert "No date on the sheet" in sent[-1] and [l for _, l in opts[-1]] == ["Discard"]

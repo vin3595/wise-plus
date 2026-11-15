@@ -33,17 +33,30 @@ def enabled() -> bool:
         return False
 
 
-async def read_bill(data: bytes, content_type: str, name: str) -> tuple[dict, str | None, dict]:
-    """(bill as read, thumbnail data URL, what kind of document it looked like). Raises ScanError."""
+async def classify(data: bytes, content_type: str, name: str) -> dict:
+    """What kind of document this is (INVOICE, RECEIPT, HANDWRITTEN_BILL, LEDGER_PAGE = a daily sheet, …)."""
     from starlette.concurrency import run_in_threadpool
     ex = reader()
-    if not ex.EMERGENT_LLM_KEY:
-        raise ScanError("Bill scanning isn't switched on: the server needs WISE_GEMINI_API_KEY", 503)
     try:
         first = await run_in_threadpool(ex.get_first_page_png, data, content_type, name)
     except Exception as e:
         raise ScanError("Couldn't open that file. Try a clearer photo or the original PDF.") from e
-    kind = await ex.classify_document(first)
+    return await ex.classify_document(first)
+
+
+async def read_bill(data: bytes, content_type: str, name: str, kind: dict | None = None) -> tuple[dict, str | None, dict]:
+    """(bill as read, thumbnail data URL, what kind of document it looked like). Raises ScanError.
+    kind: a classification already made (WhatsApp classifies first to tell bills from daily sheets)."""
+    from starlette.concurrency import run_in_threadpool
+    ex = reader()
+    if not ex.EMERGENT_LLM_KEY:
+        raise ScanError("Bill scanning isn't switched on: the server needs WISE_GEMINI_API_KEY", 503)
+    if kind is None:
+        try:
+            first = await run_in_threadpool(ex.get_first_page_png, data, content_type, name)
+        except Exception as e:
+            raise ScanError("Couldn't open that file. Try a clearer photo or the original PDF.") from e
+        kind = await ex.classify_document(first)
     if not kind.get("accepted") and kind.get("confidence", 0) >= 80:
         raise ScanError(f"This doesn't look like a supplier's bill ({kind.get('reason') or kind.get('type', '').lower()}).")
     try:

@@ -22,7 +22,7 @@ from ..deps import Auth
 from ..ledger.balances import statement
 from ..models import Outlet
 from ..purchases_ai.models import ScannedBill
-from ..purchases_ai.service import ScanError, enabled, read_bill, ready_to_save, tenant_draft
+from ..purchases_ai.service import ScanError, classify, enabled, read_bill, ready_to_save, tenant_draft
 from ..services.role_perms import effective
 from . import client
 
@@ -80,14 +80,19 @@ async def read_sent_bill(chosen: tuple, phone10: str, media_id: str, mime: str, 
 
 async def _read_sent_bill(chosen: tuple, phone10: str, media_id: str, mime: str, filename: str, caption: str = "") -> Reply:
     tenant_id, login_id, role, user_id = chosen
-    if Perm.inventory_manage not in effective(uuid.UUID(tenant_id), Role(role)):
-        return Reply("Your account can't add purchases. Ask the owner to allow it under Staff › Who can do what.")
     if not enabled():
         return Reply("Bill scanning isn't switched on for this restaurant yet.")
     data, ct = await run_in_threadpool(client.get_media, media_id)
     ct = (mime or ct or "").split(";")[0].lower()
     try:
-        bill, thumb, kind = await read_bill(data, ct, filename or "bill")
+        kind = {"type": "LEDGER_PAGE"} if re.search(r"\bsheet\b", caption or "", re.I) else await classify(data, ct, filename or "bill")
+        if kind.get("type") == "LEDGER_PAGE":
+            # The daily cash sheet, not a supplier's bill.
+            from . import sheets
+            return await sheets.read_sent_sheet(chosen, phone10, data, ct, caption)
+        if Perm.inventory_manage not in effective(uuid.UUID(tenant_id), Role(role)):
+            return Reply("Your account can't add purchases. Ask the owner to allow it under Staff › Who can do what.")
+        bill, thumb, kind = await read_bill(data, ct, filename or "bill", kind=kind)
     except ScanError as e:
         return Reply(str(e))
 
