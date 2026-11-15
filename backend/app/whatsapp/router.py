@@ -106,7 +106,8 @@ def _place(phone: str, text: str) -> tuple[tuple | None, str, bool, str | None]:
     return chosen, text, len(places) > 1, None
 
 
-SAVE = {"save", "ok", "okay", "yes", "haan", "han", "done", "add"}
+SAVE = {"save", "ok", "okay", "yes", "haan", "han", "done"}
+ADD = {"add", "add all", "create", "add new", "new"}
 DISCARD = {"discard", "cancel", "no", "delete", "nahi", "skip"}
 
 
@@ -118,9 +119,9 @@ def reply_for(phone: str, text: str) -> str | None:
         return early
     word = (text or "").strip().lower().strip(".!")
     with tenant_session(chosen[0]) as db:
-        if word in SAVE | DISCARD:
+        if word in SAVE | DISCARD | ADD:
             from . import bills
-            out = bills.save_or_discard(db, chosen, client.last10(phone), word in SAVE)
+            out = bills.save_or_discard(db, chosen, client.last10(phone), word not in DISCARD, add_new=word in ADD)
         else:
             out = answer(db, text or "help")
     return out + (f"\n\n_@{chosen[1]}_" if multi else "")

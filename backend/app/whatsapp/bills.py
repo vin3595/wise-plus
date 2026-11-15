@@ -88,6 +88,10 @@ async def read_sent_bill(chosen: tuple, phone10: str, media_id: str, mime: str, 
             db.add(ScannedBill(id=sid, tenant_id=uuid.UUID(tenant_id), outlet_id=out.id, sender=phone10, user_id=uuid.UUID(user_id),
                                file_path=path, draft={**d, "thumbnail": thumb, "low_confidence": bool(kind.get("should_warn")), "_bill": bill}))
             why = ready_to_save(d)
+            if why and _addable(d):
+                return (summary(d) + "\n\n🆕 New in Wise: " + "; ".join(why) + "."
+                        + "\nReply *add* to add them and save the bill, *discard* to drop it,"
+                        + f" or finish it in the app under Stock › Purchases: {_link()}")
             if why:
                 return (summary(d) + "\n\n⚠️ Needs a look: " + "; ".join(why) + f".\nFinish it in the app under Stock › Purchases: {_link()}"
                         + "\n(or reply *discard*)")
@@ -95,7 +99,64 @@ async def read_sent_bill(chosen: tuple, phone10: str, media_id: str, mime: str, 
     return await run_in_threadpool(store)
 
 
-def save_or_discard(db: Session, chosen: tuple, phone10: str, save: bool) -> str:
+def _addable(d: dict) -> bool:
+    """Only new things are missing (supplier and/or items), nothing the person must judge."""
+    return (not d.get("duplicate") and bool(d.get("lines"))
+            and all(ln.get("qty_m") for ln in d["lines"])
+            and (not d.get("supplier") or any(not ln.get("stock_item_id") for ln in d["lines"])))
+
+
+def _nice(name: str) -> str:
+    """'VEEBA PIZZA PASTA SAUCE 1KG' -> 'Veeba Pizza Pasta Sauce 1kg'."""
+    out = []
+    for w in re.sub(r"\s+", " ", name).strip().split(" "):
+        out.append(w.lower() if re.match(r"^\(?\d", w) else w[:1].upper() + w[1:].lower())
+    return " ".join(out)[:120]
+
+
+def add_new(db: Session, d: dict, auth: Auth) -> list[str]:
+    """Create the supplier and stock items this bill needs, through Wise's own create functions (same checks and
+    audit log as the app). Items with a pack size on the line ('1KG') are kept in g / ml and bought by that pack;
+    others are counted in pieces."""
+    from fastapi import HTTPException
+    from sqlalchemy import func
+    from ..core.stock import STANDARD_UNITS
+    from ..models import StockItem, Supplier
+    from ..purchases_ai.match import pack_size
+    from ..routers.inventory import StockItemIn, SupplierIn, UnitIn, create_item, create_supplier
+    made = []
+    if not d.get("supplier") and d.get("vendor"):
+        name = _nice(d["vendor"])
+        if db.scalar(select(Supplier.id).where(func.lower(Supplier.name) == name.lower())) is None:
+            gstin = (d.get("gstin") or "").strip().upper()[:15] or None
+            try:
+                create_supplier(SupplierIn(name=name, gstin=gstin), auth, db)
+            except Exception:       # a GSTIN the form wouldn't accept: keep the supplier, drop the GSTIN
+                create_supplier(SupplierIn(name=name), auth, db)
+            made.append(f"supplier {name}")
+    for ln in d.get("lines") or []:
+        if ln.get("stock_item_id"):
+            continue
+        name = _nice(ln["bill_name"])
+        if db.scalar(select(StockItem.id).where(func.lower(StockItem.name) == name.lower())) is not None:
+            continue
+        ps = pack_size(ln["bill_name"])
+        unit, packs = "pc", []
+        if ps:
+            base_unit, per = STANDARD_UNITS.get(ps[1], ("", 0))
+            if base_unit in ("g", "ml") and per:
+                unit = base_unit
+                packs = [UnitIn(name=f"pack {ps[0]:g}{ps[1]}", factor=int(round(ps[0] * per)))]
+        try:
+            create_item(StockItemIn(name=name, kind="raw", unit=unit, purchase_units=packs), auth, db)
+            made.append(name)
+        except HTTPException:
+            pass
+    return made
+
+
+def save_or_discard(db: Session, chosen: tuple, phone10: str, save: bool, add_new_items: bool = False, **kw) -> str:
+    add_new_items = add_new_items or kw.get("add_new", False)
     tenant_id, login_id, role, user_id = chosen
     since = datetime.now(timezone.utc) - timedelta(days=2)
     b = db.scalar(select(ScannedBill).where(ScannedBill.status == "pending", ScannedBill.sender == phone10, ScannedBill.created_at >= since)
@@ -109,6 +170,10 @@ def save_or_discard(db: Session, chosen: tuple, phone10: str, save: bool) -> str
         return "Your account can't add purchases."
     # Match again: a supplier or stock item may have been added since the photo came in.
     d = tenant_draft(db, b.draft.get("_bill") or {}) if b.draft.get("_bill") else b.draft
+    made: list[str] = []
+    if add_new_items and ready_to_save(d) and _addable(d):
+        made = add_new(db, d, Auth(user_id=uuid.UUID(user_id), tenant_id=uuid.UUID(tenant_id), role=Role(role), outlet_id=None, via="whatsapp"))
+        d = tenant_draft(db, b.draft.get("_bill") or {}) if b.draft.get("_bill") else d
     why = ready_to_save(d)
     if why:
         b.draft = {**d, "thumbnail": b.draft.get("thumbnail"), "_bill": b.draft.get("_bill")}
@@ -127,5 +192,6 @@ def save_or_discard(db: Session, chosen: tuple, phone10: str, save: bool) -> str
     p = create_purchase(body, auth, db)
     b.status, b.purchase_id = "saved", uuid.UUID(p["id"])
     due = statement(db, body.supplier_id)["balance_paise"]
-    return (f"✅ Saved: {d['supplier']['name']}, {rs(p['total_paise'])}. Stock updated."
+    added = ("Added " + ", ".join(made) + ".\n") if made else ""
+    return (f"{added}✅ Saved: {d['supplier']['name']}, {rs(p['total_paise'])}. Stock updated."
             f"\n{d['supplier']['name']} now: {rs(due)} due.")

@@ -205,6 +205,30 @@ def test_whatsapp_bill_photo(shop, monkeypatch, tmp_path):
     assert c.get("/api/inventory/purchases/scan/pending", headers=h(tok)).json() == []
     assert list(tmp_path.rglob("*.jpg"))                                                     # the photos are kept
 
+    # Vineet's Charu Marketing bill (15 Nov 2026): new supplier and four new items -> "add" makes them and saves
+    reads.append({"vendor": "CHARU MARKETING", "gstin": "08FCJPB5750C1ZT", "invoice_number": "CM/26-27/18111", "bill_date": "2026-11-14",
+                  "total": 5130.0, "taxable_amount": 4885.77, "cgst_amount": 122.14, "sgst_amount": 122.14,
+                  "items": [{"name": "VEEBA PROFESSIONAL WHITE CHEESE DRESSING (1KG)", "quantity": 12, "unit_price": 171.43, "total": 2057.16, "tax_rate": 5},
+                            {"name": "VEEBA PIZZA PASTA SAUCE", "quantity": 6, "unit_price": 171.43, "total": 1028.58, "tax_rate": 5},
+                            {"name": "VEEBA TANDOORI MAYONNAISE 1 KG", "quantity": 6, "unit_price": 214.29, "total": 1285.74, "tax_rate": 5},
+                            {"name": "VEEBA SCHEZWAN DIP AND STIR FRY SAUCE 1KG", "quantity": 3, "unit_price": 171.43, "total": 514.29, "tax_rate": 5}]})
+    post({"type": "image", "image": {"id": "m5", "mime_type": "image/jpeg"}})
+    assert "Reply *add*" in sent[-1] and "CHARU MARKETING" in sent[-1], sent[-1]
+    post({"type": "text", "text": {"body": "Add"}})
+    assert "Added supplier Charu Marketing" in sent[-1] and "Veeba Pizza Pasta Sauce" in sent[-1] and "✅ Saved" in sent[-1], sent[-1]
+    items = {i["name"]: i for i in c.get("/api/inventory/items", headers=h(tok)).json()}
+    cheese = items["Veeba Professional White Cheese Dressing (1kg)"]
+    assert cheese["unit"] == "g" and cheese["purchase_units"][0] == {"name": "pack 1kg", "factor": 1000}
+    assert items["Veeba Pizza Pasta Sauce"]["unit"] == "pc"
+    t = c.post("/api/assistant/ask", headers=h(tok), json={"q": "dues charu"}).json()["text"]
+    assert "Charu Marketing: ₹5,130" in t, t
+    t = c.post("/api/assistant/ask", headers=h(tok), json={"q": "price tandoori mayo"}).json()["text"]
+    assert "per pack 1kg" in t, t
+    # Their next bill matches by itself and saves with one word
+    reads.append({**reads[-1], "invoice_number": "CM/26-27/18200"})
+    post({"type": "image", "image": {"id": "m6", "mime_type": "image/jpeg"}})
+    assert "Reply *save*" in sent[-1], sent[-1]
+
     # A cashier's phone is ignored, photo or not
     c.post("/api/users", headers=h(tok), json={"name": "Ravi", "role": "cashier", "pin": "7322", "phone": "9000000099", "outlet_ids": [shop["out"]["id"]]})
     n = len(sent)
