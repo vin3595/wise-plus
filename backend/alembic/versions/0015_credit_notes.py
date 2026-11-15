@@ -32,5 +32,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.execute("alter table supplier_entries drop constraint if exists ck_supplier_entry_kind")
+    op.execute("set local app.bypass_rls = 'on'")
+    op.execute("update supplier_entries set kind = 'debit_note' where kind = 'credit_note'")   # same effect on the balance
     op.execute("alter table supplier_entries add constraint ck_supplier_entry_kind check (kind in ('opening','payment','debit_note'))")
     op.drop_table("credit_notes")
