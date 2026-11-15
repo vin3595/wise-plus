@@ -109,6 +109,8 @@ class Outlet(Base, Timestamps):
     kiosk_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)  # /kiosk/<qr_key>
     # wise-plus: send the bill on WhatsApp (with feedback buttons), and where happy customers can review us
     wa_bills: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    # wise-plus: water / waiter / bill buttons on the table QR
+    table_service: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     google_review_url: Mapped[str | None] = mapped_column(String(300))
     table_labels: Mapped[list | None] = mapped_column(JSONB)  # ["T1", "T2", ...]
     stock_check_frequency_days: Mapped[int] = mapped_column(Integer, default=7, nullable=False)

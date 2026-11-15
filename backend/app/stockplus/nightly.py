@@ -90,6 +90,10 @@ def outlet_lines(db: Session, o: Outlet, day: date) -> tuple[list[str], dict]:
         out.append(f"   Low stock ({len(low)}): " + ", ".join(low[:8]) + ("…" if len(low) > 8 else ""))
     if order:
         out.append("   Order for tomorrow: " + ", ".join(order[:10]))
+    from ..tableqr.router import day_line
+    tql = day_line(db, o.id, day)
+    if tql:
+        out.append(tql)
     from ..custwa.router import outlet_line as fb_line
     fbl = fb_line(db, o.id, day)
     if fbl:

@@ -11,7 +11,7 @@ const empty = (brandId: string): Form => ({
   brand_id: brandId, name: "", code: "", gstin: null, fssai: null, address: null, state_code: "08", phone: null,
   bill_footer: null, car_number_required: false, order_types: ["dine_in", "takeaway", "delivery"], default_order_type: "takeaway",
   stock_check_frequency_days: 7, is_active: true,
-  upi_vpa: null, upi_payee_name: null, qr_ordering: false, qr_auto_accept: false, kiosk_enabled: false, wa_bills: false, google_review_url: null, print_kots: false, table_labels: [],
+  upi_vpa: null, upi_payee_name: null, qr_ordering: false, qr_auto_accept: false, kiosk_enabled: false, wa_bills: false, google_review_url: null, table_service: false, print_kots: false, table_labels: [],
 });
 
 /** "T1-T12, Garden 1" -> ["T1".."T12", "GARDEN 1"] */
@@ -105,6 +105,7 @@ export default function Outlets() {
             )}
             {(f.order_types || []).includes("takeaway") && <Toggle checked={f.car_number_required} onChange={(v) => set("car_number_required", v)} label="Car number required on takeaway orders" />}
             <Toggle checked={f.qr_ordering} onChange={(v) => set("qr_ordering", v)} label="Customers can order by scanning the table QR" />
+            <Toggle checked={!!f.table_service} onChange={(v) => set("table_service", v)} label="Water, waiter and bill buttons on table QRs (alerts on the POS and waiter phones)" />
             {f.qr_ordering && <Toggle checked={f.qr_auto_accept} onChange={(v) => set("qr_auto_accept", v)} label="Send QR orders to the kitchen without staff accepting" />}
             <Toggle checked={f.kiosk_enabled} onChange={(v) => set("kiosk_enabled", v)} label="Self-order kiosk (touch screen)" />
             <Toggle checked={!!f.wa_bills} onChange={(v) => set("wa_bills", v)} label="Send the bill on WhatsApp, with 'how was it?' buttons (when the customer gives a number)" />

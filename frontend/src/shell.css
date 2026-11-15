@@ -252,3 +252,55 @@ details.spot summary { cursor: pointer; }
 .fb-list li.bad { background: color-mix(in srgb, #dc2626 5%, transparent); }
 .fb-list p { margin: 0.2rem 0 0; }
 .fb-face { font-size: 1.4rem; }
+/* Table service: the customer's table page */
+.ts { max-width: 520px; margin: 0 auto; padding: 1rem 1rem 3rem; font-size: 1.05rem; }
+.ts-head { display: flex; gap: 0.7rem; align-items: center; margin-bottom: 1rem; }
+.ts-head img { width: 48px; height: 48px; border-radius: 12px; object-fit: cover; }
+.ts-head div { display: flex; flex-direction: column; }
+.ts-head span { color: var(--ink-2); font-size: 0.92rem; }
+.ts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; }
+.ts-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.35rem; min-height: 8.5rem; padding: 0.8rem;
+  border: 1.5px solid var(--line); border-radius: 18px; background: var(--card, #fff); color: var(--ink, #111); font: inherit; cursor: pointer; text-align: center; }
+.ts-tile svg { color: var(--primary, #138996); }
+.ts-tile strong { font-size: 1.1rem; }
+.ts-tile small { color: var(--ink-2); font-size: 0.78rem; min-height: 1.1em; }
+.ts-tile.order { grid-column: 1 / -1; min-height: 6.5rem; background: var(--primary, #138996); color: #fff; border-color: transparent; }
+.ts-tile.order svg, .ts-tile.order small { color: #fff; }
+.ts-tile.waiting { border-color: var(--amber, #d97706); background: color-mix(in srgb, var(--amber, #d97706) 9%, var(--card, #fff)); }
+.ts-tile:active { transform: scale(0.98); }
+.ts-card { margin-top: 1rem; padding: 1rem; border: 1px solid var(--line); border-radius: 16px; background: var(--card, #fff); }
+.ts-card h2 { font-size: 1.2rem; margin: 0 0 0.3rem; display: flex; gap: 0.4rem; align-items: center; }
+.ts-card h3 { font-size: 1rem; margin: 0 0 0.4rem; }
+.ts-card ul { list-style: none; padding: 0; margin: 0 0 0.5rem; }
+.ts-card li { padding: 0.2rem 0; }
+.ts-sub { color: var(--ink-2); font-size: 0.92rem; }
+.ts-total { display: flex; justify-content: space-between; border-top: 1px solid var(--line); padding-top: 0.5rem; margin: 0; }
+.ts-btn { display: block; width: 100%; text-align: center; margin-top: 0.55rem; padding: 0.85rem; border-radius: 12px; border: 0; font: inherit; font-weight: 700;
+  background: var(--primary, #138996); color: #fff; text-decoration: none; cursor: pointer; }
+.ts-btn.ghost { background: transparent; color: var(--primary, #138996); border: 1.5px solid var(--primary, #138996); }
+.ts-msg { color: #b91c1c; margin-top: 0.7rem; }
+.ts-foot { text-align: center; color: var(--ink-2); font-size: 0.82rem; margin-top: 1.5rem; }
+/* Table service: alerts on the POS / waiter phone */
+.ta { background: var(--card, #fff); border-radius: 16px; }
+.ta-float { position: fixed; right: 1rem; bottom: 1rem; width: min(360px, calc(100vw - 2rem)); max-height: 70vh; overflow: auto; z-index: 60;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.22); border: 2px solid var(--amber, #d97706); padding: 0.6rem; animation: ta-pop 0.25s ease-out; }
+.ta-full { border: 1px solid var(--line); padding: 0.6rem; }
+@keyframes ta-pop { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
+.ta-head { display: flex; justify-content: space-between; align-items: center; padding: 0.2rem 0.3rem 0.5rem; }
+.ta-mute { border: 0; background: transparent; color: var(--ink-2); cursor: pointer; padding: 0.3rem; }
+.ta-card { display: grid; grid-template-columns: 3.4rem 1fr auto; gap: 0.6rem; align-items: center; padding: 0.55rem; border-radius: 12px; margin-bottom: 0.45rem;
+  background: var(--bg); border-left: 5px solid var(--primary, #138996); }
+.ta-card.k-water { border-left-color: #0ea5e9; } .ta-card.k-waiter { border-left-color: #8b5cf6; } .ta-card.k-bill { border-left-color: #16a34a; }
+.ta-card.slow { background: color-mix(in srgb, var(--amber, #d97706) 12%, var(--bg)); }
+.ta-card.late { background: color-mix(in srgb, #dc2626 13%, var(--bg)); animation: ta-blink 1.2s ease-in-out infinite; }
+@keyframes ta-blink { 50% { background: color-mix(in srgb, #dc2626 24%, var(--bg)); } }
+.ta-table { font-size: 1.5rem; font-weight: 800; text-align: center; font-variant-numeric: tabular-nums; }
+.ta-what { display: flex; flex-direction: column; min-width: 0; }
+.ta-kind { display: inline-flex; gap: 0.35rem; align-items: center; font-weight: 700; }
+.ta-kind em { font-style: normal; color: #b91c1c; font-weight: 600; }
+.ta-sub { font-size: 0.82rem; color: var(--ink-2); }
+.ta-done { border: 0; border-radius: 10px; padding: 0.65rem 0.9rem; font: inherit; font-weight: 700; background: var(--primary, #138996); color: #fff; cursor: pointer; }
+.ta-full .ta-card { grid-template-columns: 4.2rem 1fr auto; padding: 0.8rem; }
+.ta-full .ta-table { font-size: 2rem; }
+.ta-full .ta-done { padding: 0.9rem 1.2rem; font-size: 1.05rem; }
+.ta-done-list { padding: 0.4rem 0.3rem; border-top: 1px solid var(--line); margin-top: 0.4rem; }

@@ -57,7 +57,8 @@ def create_app() -> FastAPI:
     pos, stock_or_bills = [Depends(guard("pos"))], [Depends(guard("stock", "bills"))]
     from .billing import router as plans   # wise-plus subscriptions (not routers.billing, the POS bills)
     from .custwa import router as custfb
-    routes = [(custfb.router, [Depends(guard("pos"))]), (plans.router, []), (plans.public, []), (stockplus.router, [Depends(guard("stock"))]), (stockplus.alerts, []), (bill_scan.router, [Depends(guard("bills"))]),
+    from .tableqr import router as tableqr
+    routes = [(tableqr.router, [Depends(guard("pos"))]), (custfb.router, [Depends(guard("pos"))]), (plans.router, []), (plans.public, []), (stockplus.router, [Depends(guard("stock"))]), (stockplus.alerts, []), (bill_scan.router, [Depends(guard("bills"))]),
               (ledger.router, [Depends(guard("bills"))]), (daily_sheets.router, [Depends(guard("sheets"))]),
               (inventory.router, stock_or_bills), (orders.router, pos), (billing.router, pos), (bill_edits.router, pos), (qr.router, pos),
               (printing.router, pos), (cash.router, pos), (dayclose.router, pos), (payments.router, pos), (loyalty.router, pos),

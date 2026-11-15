@@ -26,7 +26,8 @@ CHANNEL = "wise_events"
 # Which tables count as which kind of change.
 TOPICS = {"orders": "orders", "kots": "orders", "order_items": "orders", "bills": "bills", "payments": "bills",
           "shifts": "shift", "cash_movements": "shift", "cash_alerts": "cash",
-          "outlet_variant_overrides": "menu", "owner_alerts": "alerts"}
+          "outlet_variant_overrides": "menu", "owner_alerts": "alerts",
+          "table_requests": "requests"}   # wise-plus: water / waiter / bill from the table QR
 
 
 def _collect(session: Session, flush_context) -> None:  # noqa: ARG001  (SQLAlchemy hook signature)

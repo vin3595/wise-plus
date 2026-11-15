@@ -86,7 +86,8 @@ export interface Outlet {
   qr_ordering: boolean;
   qr_auto_accept: boolean;
   kiosk_enabled: boolean;
-  wa_bills?: boolean;                 // wise-plus: bill + feedback buttons on WhatsApp
+  wa_bills?: boolean;
+  table_service?: boolean;            // wise-plus: water / waiter / bill buttons on table QRs                 // wise-plus: bill + feedback buttons on WhatsApp
   google_review_url?: string | null;
   print_kots?: boolean;
   print_key?: string;

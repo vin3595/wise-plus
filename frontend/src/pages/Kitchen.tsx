@@ -181,7 +181,7 @@ function QrSheet({ outlet, url, onDone }: { outlet: Outlet; url: (table?: string
               <div key={t || "takeaway"} className="qr-card">
                 <QrImage text={url(t || undefined)} size={180} />
                 <strong>{t ? `Table ${t}` : "Takeaway"}</strong>
-                <span>Scan to see the menu and order</span>
+                <span>{t && outlet.table_service ? "Scan to order · water · waiter · bill" : "Scan to see the menu and order"}</span>
               </div>
             ))}
           </div>, document.body)}

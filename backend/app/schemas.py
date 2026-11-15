@@ -139,6 +139,7 @@ class OutletIn(BaseModel):
     qr_auto_accept: bool = False
     kiosk_enabled: bool = False
     wa_bills: bool = False                 # wise-plus: bill + feedback on WhatsApp
+    table_service: bool = False            # wise-plus: water / waiter / bill buttons on table QRs
     google_review_url: str | None = Field(default=None, max_length=300)
     print_kots: bool = False
     table_labels: list[str] = Field(default=[], max_length=200)
@@ -195,6 +196,7 @@ class OutletOut(ORM):
     qr_key: str = ""
     kiosk_enabled: bool = False
     wa_bills: bool = False                 # wise-plus: bill + feedback on WhatsApp
+    table_service: bool = False            # wise-plus: water / waiter / bill buttons on table QRs
     google_review_url: str | None = Field(default=None, max_length=300)
     print_kots: bool = False
     print_key: str = ""

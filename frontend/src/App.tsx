@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import InstallApp from "./components/InstallApp";
 import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { BarChart3, ChefHat, ChevronDown, ClipboardList, LayoutDashboard, LogOut, Menu, NotebookPen, Archive, Package, PanelLeftClose, PanelLeftOpen, Receipt,
+import { BarChart3, ChefHat, ChevronDown, ClipboardList, LayoutDashboard, LogOut, Menu, NotebookPen, Archive, BellRing, Package, PanelLeftClose, PanelLeftOpen, Receipt,
   Rocket, Settings as SettingsIcon, SlidersHorizontal, Store, Truck, UserCog, Users as UsersIcon, UtensilsCrossed, Wallet, X, type LucideIcon } from "lucide-react";
 import { useSession } from "./session";
 import Setup from "./pages/Setup";
@@ -36,6 +36,9 @@ import Accounts from "./pages/Accounts";
 import Access from "./pages/Access";
 import Cash from "./pages/Cash";
 import Dues from "./pages/Dues";
+import Floor from "./pages/Floor";
+import TableService from "./pages/TableService";
+import TableAlerts from "./components/TableAlerts";
 import Feedback from "./pages/Feedback";
 import BillKeeper from "./pages/BillKeeper";
 import Billing from "./pages/Billing";
@@ -47,12 +50,12 @@ import GettingStarted from "./pages/GettingStarted";
 
 const ICONS: Record<string, LucideIcon> = {
   "Home": LayoutDashboard, "Orders": ClipboardList, "Kitchen display": ChefHat, "Bills": Receipt,
-  "Cash": Wallet, "Supplier dues": Truck, "Daily sheets": NotebookPen, "Bill keeper": Archive, "Reports": BarChart3, "Stock": Package, "Purchases": Package, "Customers": UsersIcon, "Getting started": Rocket,
+  "Cash": Wallet, "Supplier dues": Truck, "Daily sheets": NotebookPen, "Bill keeper": Archive, "Table requests": BellRing, "Reports": BarChart3, "Stock": Package, "Purchases": Package, "Customers": UsersIcon, "Getting started": Rocket,
   "Menu": UtensilsCrossed, "Outlets and screens": Store, "Staff": UserCog, "Settings": SettingsIcon,
 };
 
 function Shell({ children }: { children: ReactNode }) {
-  const { branding, me, can, has, signOut } = useSession();
+  const { branding, me, can, has, signOut, deviceOutletId } = useSession();
   const loc = useLocation();
   // One menu entry per job. An entry with several pages opens on the first one you may use, and the
   // others show as tabs along the top of the page, so the menu stays short.
@@ -63,6 +66,7 @@ function Shell({ children }: { children: ReactNode }) {
     { label: "Home", section: "Counter", pages: [["/", "Home", can("tenant.settings") || can("menu.override")]] },
     { label: "Orders", section: "Counter", pages: [["/orders", "Orders", pos && can("kot.send")]] },
     { label: "Kitchen display", section: "Counter", pages: [["/kds", "Kitchen display", pos && can("kds.view")]] },
+    { label: "Table requests", section: "Counter", pages: [["/floor", "Table requests", pos && can("kot.send")]] },
     { label: "Bills", section: "Counter", pages: [["/bills", "Bills", pos && can("billing")]] },
     { label: "Cash", section: "Money", pages: [["/cash", "Cash", pos && can("cash.expected")], ["/day-close", "Day close", pos && can("day.close")]] },
     { label: "Daily sheets", section: "Money", pages: [["/sheets", "Daily sheets", has("sheets") && can("reports.view")]] },
@@ -184,6 +188,7 @@ function Shell({ children }: { children: ReactNode }) {
             </nav>
           )}
           <main className="main" key={current?.label || path}><TrialBanner />{children}</main>
+          {has("pos") && can("kot.send") && (me?.outlet_id || deviceOutletId) && path !== "/floor" && <TableAlerts outletId={(me?.outlet_id || deviceOutletId)!} />}
           {branding?.show_powered_by !== false && <footer className="powered">Powered by Wise</footer>}
         </div>
       </div>
@@ -223,6 +228,8 @@ export default function App() {
   if (station) return <PrintStation printKey={decodeURIComponent(station[1])} />;
   // Customer self-ordering: QR at the table, or the kiosk touch screen.
   const self = location.pathname.match(/^\/(q|kiosk)\/([^/]+)/);
+  const tableParam = new URLSearchParams(location.search).get("t");
+  if (self && self[1] === "q" && tableParam) return <TableService outletKey={decodeURIComponent(self[2])} table={tableParam} />;   // wise-plus: order · water · waiter · bill
   if (self) return <SelfOrder key={self[0]} mode={self[1] === "q" ? "qr" : "kiosk"} outletKey={decodeURIComponent(self[2])} />;
   // Kitchen display from its link: signs itself in, no PIN (Setup > Screens).
   const kitchen = location.pathname.match(/^\/kitchen\/([^/]+)/);
@@ -260,6 +267,7 @@ export default function App() {
         <Route path="/services" element={<Services />} />
         <Route path="/bill-keeper" element={<BillKeeper />} />
         <Route path="/feedback" element={<Feedback />} />
+        <Route path="/floor" element={<Floor />} />
         <Route path="/billing" element={<Billing />} />
         <Route path="/menu" element={<MenuEditor />} />
         <Route path="/menu/import" element={<MenuImport />} />
