@@ -1,6 +1,6 @@
 // App-shell service worker: the app opens even with no internet.
 // API calls always go to the network (offline billing data sync arrives in Phase 2).
-const CACHE = "wise-shell-v2";
+const CACHE = "emb-shell-v3";   // new name: phones drop the old Wise icons
 const SHELL = ["/", "/index.html", "/icon.svg", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png"];
 
 self.addEventListener("install", (event) => {

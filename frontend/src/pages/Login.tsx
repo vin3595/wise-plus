@@ -3,6 +3,7 @@ import { api } from "../api";
 import { useSession } from "../session";
 import type { TokenOut } from "../types";
 import { Button, ErrorText, Field, Input, Select, useAction } from "../ui";
+import { EmbMark, PoweredBy } from "../components/Brand";
 
 type Mode = "staff" | "owner";
 
@@ -14,7 +15,7 @@ export default function Login() {
     <div className="auth-page">
       <div className="auth-card">
         <div className="auth-logo">
-          {branding.logo_url ? <img src={branding.logo_url} alt={branding.name} /> : <span className="logo-fallback big">{branding.app_name[0]}</span>}
+          {branding.logo_url ? <img src={branding.logo_url} alt={branding.name} /> : <EmbMark size={68} />}
           <h1>{branding.app_name}</h1>
         </div>
         <div className="tabs">
@@ -24,7 +25,7 @@ export default function Login() {
         {mode === "staff" ? <PinLogin /> : <OtpLogin />}
         <DeviceFooter />
       </div>
-      {branding.show_powered_by && <footer className="powered">Powered by Wise</footer>}
+      {branding.show_powered_by && <PoweredBy />}
     </div>
   );
 }

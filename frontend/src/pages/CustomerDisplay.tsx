@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { api } from "../api";
 import { chime, unlockAudio, usePolling, startedByScreenFile } from "../hooks";
 import type { Display } from "../types";
+import { PoweredBy } from "../components/Brand";
 
 /** TV at the counter: "Preparing" and "Ready" token numbers. Opened by a secret link, no login. */
 export default function CustomerDisplay({ displayKey }: { displayKey: string }) {
@@ -61,7 +62,7 @@ export default function CustomerDisplay({ displayKey }: { displayKey: string }) 
           </div>
         </section>
       </main>
-      {data.show_powered_by && <footer className="tv-foot">Powered by Wise</footer>}
+      {data.show_powered_by && <PoweredBy className="tv-foot" />}
     </div>
   );
 }

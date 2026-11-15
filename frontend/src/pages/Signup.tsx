@@ -5,6 +5,7 @@ import { useSession } from "../session";
 import type { TokenOut } from "../types";
 import { Button, ErrorText, Field, Input, useAction } from "../ui";
 import { ServicePicker } from "./Services";
+import { EmbLogo } from "../components/Brand";
 
 export default function Signup() {
   const { signedIn } = useSession();
@@ -29,6 +30,7 @@ export default function Signup() {
   if (sent) {
     return (
       <div className="auth-page"><div className="auth-card">
+        <div className="auth-brand"><EmbLogo height={52} /></div>
         <h1>Verify your mobile</h1>
         <p className="muted">We sent a 6-digit code to {sent.sent_to}. Check WhatsApp.</p>
         {sent.dev_otp && <p className="dev-note">Development mode code: <strong>{sent.dev_otp}</strong></p>}
@@ -50,6 +52,7 @@ export default function Signup() {
 
   return (
     <div className="auth-page"><div className="auth-card">
+      <div className="auth-brand"><EmbLogo height={52} /></div>
       <h1>Start free</h1>
       <p className="muted">Pick what you need. It's ready in a minute, no one has to set it up for you. 14-day free trial; switch services on or off any time.</p>
       <form onSubmit={(e) => {

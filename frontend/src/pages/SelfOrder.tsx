@@ -6,6 +6,7 @@ import { QrImage } from "../qr";
 import type { OutletMenu, OutletMenuItem, OutletMenuVariant, SelfOrderStatus } from "../types";
 import { Button, ErrorText, FoodDot, Input } from "../ui";
 import { ItemArt } from "../art";
+import { PoweredBy } from "../components/Brand";
 
 interface Info {
   outlet_name: string; app_name: string; logo_url: string | null; primary_color: string; table?: string | null;
@@ -250,7 +251,7 @@ export default function SelfOrder({ mode, outletKey }: { mode: "qr" | "kiosk"; o
         </div>
       )}
       {picking && <Picker item={picking} onClose={() => setPicking(null)} onPick={(v, a) => { add(picking, v, a); setPicking(null); }} />}
-      {info.show_powered_by && <footer className="powered">Powered by Wise</footer>}
+      {info.show_powered_by && <PoweredBy />}
     </div>
   );
 }

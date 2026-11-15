@@ -25,10 +25,10 @@ export default function InstallApp({ full = false }: { full?: boolean }) {
     window.addEventListener("wise-installable", on);
     return () => window.removeEventListener("wise-installable", on);
   }, []);
-  if (installed()) return full ? <p className="muted small">Wise is installed on this device. It opens from its own icon.</p> : null;
+  if (installed()) return full ? <p className="muted small">Ease My Bill is installed on this device. It opens from its own icon.</p> : null;
   const ios = isIos();
   if (!ready && !ios) {
-    return full ? <p className="muted small">Open this page in Chrome or Edge to install it. If you don't see an install option, Wise may already be installed, or the browser menu ⋮ has "Install app" / "Add to Home screen".</p> : null;
+    return full ? <p className="muted small">Open this page in Chrome or Edge to install it. If you don't see an install option, Ease My Bill may already be installed, or the browser menu ⋮ has "Install app" / "Add to Home screen".</p> : null;
   }
   const go = async () => {
     if (ios) { setIosHelp(true); return; }

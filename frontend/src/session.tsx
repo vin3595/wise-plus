@@ -28,7 +28,7 @@ function applyBranding(b: PublicBranding | null) {
   const root = document.documentElement;
   root.style.setProperty("--brand", b?.primary_color || "#138996");
   root.dataset.theme = b?.ui_theme || "ease";
-  document.title = b?.app_name || "Wise";
+  document.title = b?.app_name || "Ease My Bill";
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", b?.primary_color || "#138996");
   const manifest = document.getElementById("app-manifest");
   manifest?.setAttribute("href", b ? `/api/public/tenants/${b.login_id}/manifest.webmanifest` : "/manifest.webmanifest");

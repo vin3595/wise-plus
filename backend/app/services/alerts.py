@@ -55,7 +55,7 @@ def raise_alert(db: Session, tenant_id: uuid.UUID, outlet_id: uuid.UUID | None, 
         return True
     outlet = db.get(Outlet, outlet_id) if outlet_id else None
     for phone in recipients(db, tenant_id):
-        sms.enqueue(db, tenant_id, "alert", phone, {"outlet": outlet.name if outlet else "Wise", "what": text[:160]},
+        sms.enqueue(db, tenant_id, "alert", phone, {"outlet": outlet.name if outlet else "Ease My Bill", "what": text[:160]},
                     ref=f"{kind}:{ref}:{phone}"[:80], outlet_id=outlet_id)
     return True
 

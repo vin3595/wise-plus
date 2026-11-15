@@ -3,6 +3,7 @@ import { BellRing, CheckCircle2, Droplets, ReceiptText, UtensilsCrossed } from "
 import { api } from "../api";
 import { formatPaise } from "../money";
 import SelfOrder from "./SelfOrder";
+import { PoweredBy } from "../components/Brand";
 
 interface Req { id: string; kind: "water" | "waiter" | "bill"; status: "open" | "done"; since: string; times_asked: number; note: string | null }
 interface Page {
@@ -96,6 +97,7 @@ export default function TableService({ outletKey, table }: { outletKey: string; 
         </section>
       )}
       <p className="ts-foot">Tap a button and the staff get it at once.</p>
+      <PoweredBy />
     </div>
   );
 }

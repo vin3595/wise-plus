@@ -47,6 +47,7 @@ import Services from "./pages/Services";
 import Sheets from "./pages/Sheets";
 import Reports from "./pages/Reports";
 import GettingStarted from "./pages/GettingStarted";
+import { EmbMark, PoweredBy } from "./components/Brand";
 
 const ICONS: Record<string, LucideIcon> = {
   "Home": LayoutDashboard, "Orders": ClipboardList, "Kitchen display": ChefHat, "Bills": Receipt,
@@ -123,10 +124,10 @@ function Shell({ children }: { children: ReactNode }) {
     for (const e of list) { const g = out.find(([n]) => n === e.section); if (g) g[1].push(e); else out.push([e.section, [e]]); }
     return out;
   };
-  const appName = branding?.app_name || "Wise";
+  const appName = branding?.app_name || "Ease My Bill";
   const logo = (size: "sm" | "md") => branding?.logo_url
     ? <img className={`brand-logo ${size}`} src={branding.logo_url} alt="" />
-    : <span className={`logo-fallback ${size}`}>{appName[0]}</span>;
+    : <EmbMark size={size === "md" ? 38 : 30} className={size} />;
   const who = (
     <div className="side-who">
       <span className="avatar" aria-hidden>{(me?.user.name || "U")[0].toUpperCase()}</span>
@@ -189,7 +190,7 @@ function Shell({ children }: { children: ReactNode }) {
           )}
           <main className="main" key={current?.label || path}><TrialBanner />{children}</main>
           {has("pos") && can("kot.send") && (me?.outlet_id || deviceOutletId) && path !== "/floor" && <TableAlerts outletId={(me?.outlet_id || deviceOutletId)!} />}
-          {branding?.show_powered_by !== false && <footer className="powered">Powered by Wise</footer>}
+          {branding?.show_powered_by !== false && <PoweredBy />}
         </div>
       </div>
       <div className={`drawer-back ${drawer ? "open" : ""}`} onClick={() => setDrawer(false)} aria-hidden={!drawer} />

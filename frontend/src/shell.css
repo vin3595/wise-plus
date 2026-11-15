@@ -304,3 +304,10 @@ details.spot summary { cursor: pointer; }
 .ta-full .ta-table { font-size: 2rem; }
 .ta-full .ta-done { padding: 0.9rem 1.2rem; font-size: 1.05rem; }
 .ta-done-list { padding: 0.4rem 0.3rem; border-top: 1px solid var(--line); margin-top: 0.4rem; }
+/* Ease My Bill brand (fallback when a business has no logo of its own) */
+.emb-mark { object-fit: contain; flex: none; border-radius: 8px; background: #fff; }
+.auth-brand { display: flex; justify-content: center; margin-bottom: 0.4rem; }
+.emb-logo { width: auto; max-width: 100%; }
+.powered-emb a { display: inline-flex; align-items: center; gap: 0.4rem; color: inherit; text-decoration: none; }
+.powered-emb img { height: 18px; width: auto; }
+.tv-foot.powered-emb img { height: 22px; }
