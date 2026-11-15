@@ -102,8 +102,9 @@ function Sheet({ id, onBack }: { id: string; onBack: () => void }) {
           <label key={den} className="sheet-den"><span>{den} ×</span>
             <Input inputMode="numeric" value={String(c[`d${den}` as keyof Cash] ?? 0)} onChange={(e) => setCash(k, `d${den}` as keyof Cash, e.target.value)} /></label>))}
         <label className="sheet-den"><span>Coins ₹</span><Input inputMode="decimal" value={String(c.coins ?? 0)} onChange={(e) => setCash(k, "coins", e.target.value)} /></label>
-        <label className="sheet-den"><span>Total written</span><Input inputMode="decimal" value={String(c.total ?? 0)} onChange={(e) => setCash(k, "total", e.target.value)} /></label>
-        <p className={`small ${c.total && Math.abs(c.total - sum) > 1 ? "warn-text" : "muted"}`}>Notes and coins add up to {rupees(sum)}{c.total && Math.abs(c.total - sum) > 1 ? " ⚠️ doesn't match" : ""}</p>
+        <p className="sheet-total"><span>Total</span><strong>{rupees(sum)}</strong></p>
+        <label className="sheet-den"><span>Total on sheet</span><Input inputMode="decimal" placeholder="Not written" value={c.total ? String(c.total) : ""} onChange={(e) => setCash(k, "total", e.target.value)} /></label>
+        {c.total > 0 && Math.abs(c.total - sum) > 1 && <p className="small warn-text">⚠️ The sheet says {rupees(c.total)}, but the notes and coins add up to {rupees(sum)}.</p>}
       </div>);
   };
   const named = (label: string, k: "vijay_ras_bhandar" | "expenses" | "vijay_ras" | "advances" | "dues", hideZero = true) => {

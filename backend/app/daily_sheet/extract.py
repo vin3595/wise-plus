@@ -83,7 +83,7 @@ exactly (numbers, no currency symbols; sum any "a+b" expressions):
 Cash In/Out rows are "denomination × count" (e.g. "500 × 12" means twelve
 500-rupee notes). Copy the count for d500/d200/d100/d50/d20/d10, the total
 rupee value written next to COINS for "coins", and the SIGN/TOTAL number for
-"total". If total is blank compute it as sum(denom*count)+coins.
+"total". If no total is written on the sheet, put 0. Never work it out yourself.
 
 Fixed item lists you MUST include (with amount 0 if blank on sheet):
 - Vijay Ras Bhandar: {VIJAY_RAS_BHANDAR_ITEMS}
@@ -296,13 +296,13 @@ def _normalize_cash(sec: dict | None) -> dict:
     Guarantees:
       - Every d500..d10 key exists as an int (0 if missing).
       - ``coins`` is a float.
-      - ``total`` is computed from parts when the sheet's field is blank.
+      - ``total`` is only what is written on the sheet (0 when blank); the app adds up the notes itself.
     """
     c = sec or {}
     out = {f"d{k}": _num(c.get(f"d{k}"), True) for k in DENOMS}
     out["coins"] = _num(c.get("coins"))
     stated_total = _num(c.get("total"))
-    out["total"] = stated_total if stated_total else _cash_total(out)
+    out["total"] = stated_total
     return out
 
 

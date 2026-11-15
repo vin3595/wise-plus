@@ -194,3 +194,5 @@ td.num.paid { color: var(--mint); }
 .warn-text { color: var(--amber); }
 .warn-badge { margin-left: 0.5rem; background: color-mix(in srgb, var(--amber) 15%, white); color: #92400e; border-color: color-mix(in srgb, var(--amber) 35%, white); }
 .row.between { justify-content: space-between; align-items: center; }
+.sheet-total { display: grid; grid-template-columns: 6.5rem 1fr; gap: 0.5rem; margin: 0.4rem 0; font-size: 0.95rem; }
+.sheet-total strong { font-variant-numeric: tabular-nums; }
