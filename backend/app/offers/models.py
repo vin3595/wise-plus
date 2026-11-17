@@ -28,6 +28,7 @@ class Offer(Base):
     daily_limit: Mapped[int | None] = mapped_column(Integer)                   # codes given out per day (None = no limit)
     message: Mapped[str | None] = mapped_column(String(300))                   # extra line in the WhatsApp reply
     require_otp: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)  # cashier checks the customer
+    prepaid: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)  # pay online first, then the QR
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     __table_args__ = (UniqueConstraint("keyword", name="uq_offer_keyword"),)
@@ -43,6 +44,9 @@ class OfferCode(Base):
     cust_name: Mapped[str | None] = mapped_column(String(60))                  # their WhatsApp name (or the name on their bills)
     item_name: Mapped[str | None] = mapped_column(String(120))                 # what the code was for, as it was then
     price_paise: Mapped[int | None] = mapped_column(Integer)                   # the offer price it was given at
+    regular_paise: Mapped[int | None] = mapped_column(Integer)                 # the item's usual price then (for the offer's ROI)
+    prepaid_ref: Mapped[str | None] = mapped_column(String(40))                # Razorpay payment id when it was paid online first
+    prepaid_paise: Mapped[int | None] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(8), default="issued", nullable=False)   # issued | used
     expires_on: Mapped[date] = mapped_column(Date, nullable=False)
     issued_on: Mapped[date] = mapped_column(Date, nullable=False)
@@ -68,3 +72,26 @@ class Broadcast(Base):
     credits: Mapped[int] = mapped_column(Integer, default=0, nullable=False)          # message credits it used
     created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class OfferPayment(Base):
+    """A prepaid offer: the payment link sent on WhatsApp. Once paid, the customer gets their QR (code_id)."""
+    __tablename__ = "offer_payments"
+    id: Mapped[uuid.UUID] = pk()
+    tenant_id: Mapped[uuid.UUID] = tenant_fk()
+    offer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("offers.id", ondelete="CASCADE"), nullable=False)
+    phone10: Mapped[str] = mapped_column(String(10), nullable=False)
+    cust_name: Mapped[str | None] = mapped_column(String(60))
+    amount_paise: Mapped[int] = mapped_column(Integer, nullable=False)
+    provider: Mapped[str] = mapped_column(String(10), nullable=False)             # razorpay | test
+    link_id: Mapped[str | None] = mapped_column(String(40))
+    short_url: Mapped[str | None] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(8), default="created", nullable=False)  # created | paid | expired | problem
+    payment_id: Mapped[str | None] = mapped_column(String(40))
+    fee_paise: Mapped[int | None] = mapped_column(Integer)                        # Razorpay's fee + GST on it
+    problem: Mapped[str | None] = mapped_column(String(200))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    code_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("offer_codes.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    __table_args__ = (Index("ix_offer_payments_link", "link_id"), Index("ix_offer_payments_phone", "offer_id", "phone10"))

@@ -389,3 +389,9 @@ tr.sub-row td { background: color-mix(in srgb, var(--line) 30%, transparent); }
 .wa-preview p { margin: 0 0 0.3rem; }
 .wa-btn { border-top: 1px solid rgba(0, 0, 0, 0.08); text-align: center; color: #0a7cff; padding: 0.4rem 0; font-size: 0.9rem; }
 .deleted-why { color: var(--berry); margin: 0.3rem 0 0; }
+.paid-online { color: var(--ok, #047857); font-weight: 700; }
+.cart-prepaid { display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--ok, #047857); padding: 0.2rem 0; }
+.roi h3 { margin: 1rem 0 0.3rem; font-size: 0.95rem; }
+.roi-row { display: flex; justify-content: space-between; padding: 0.25rem 0; border-bottom: 1px solid var(--line, #eee); }
+.roi-row.grand { font-weight: 700; border-bottom: 0; }
+.roi-big { font-size: 1.25rem; font-weight: 700; margin: 0.6rem 0 0.2rem; }

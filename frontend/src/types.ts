@@ -370,6 +370,7 @@ export interface BillPreview {
   total_paise: number;
   tax_summary: TaxRow[];
   needs_approval: string[];
+  prepaid_paise?: number;   // already paid online for a WhatsApp offer
 }
 
 export interface Bill extends BillPreview {

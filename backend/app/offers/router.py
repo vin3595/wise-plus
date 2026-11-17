@@ -4,9 +4,10 @@ from __future__ import annotations
 import random
 import re
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -15,13 +16,14 @@ from sqlalchemy.orm import Session
 from ..core.permissions import Perm
 from ..db import system_session
 from ..deps import Auth, ensure_outlet_access, get_db, require
-from ..models import Item, Outlet, StockItem, Variant
+from ..models import Item, Outlet, StockItem, Tenant, Variant
 from ..services import audit
 from . import service as osv
 from .models import Offer, OfferCode
 
 router = APIRouter(tags=["offers", "barcodes"])
 public = APIRouter(prefix="/public/offer-qr", tags=["offers"])
+pay_public = APIRouter(prefix="/public/offer-pay", tags=["offers"])
 
 
 # ------------------------------------------------------------------ offers
@@ -39,6 +41,7 @@ class OfferIn(BaseModel):
     daily_limit: int | None = Field(default=None, ge=1, le=100000)
     message: str | None = Field(default=None, max_length=300)
     require_otp: bool = False
+    prepaid: bool = False          # customer pays online (Razorpay link) before getting the QR
     is_active: bool = True
 
 
@@ -51,7 +54,14 @@ def _out(db: Session, o: Offer) -> dict:
             "regular_paise": v.price_paise if v else None, "price_paise": o.price_paise, "outlet_ids": o.outlet_ids,
             "valid_from": o.valid_from, "valid_to": o.valid_to, "per_phone": o.per_phone, "code_days": o.code_days,
             "daily_limit": o.daily_limit, "message": o.message, "is_active": o.is_active, "require_otp": o.require_otp,
-            "issued": sum(counts.values()), "used": counts.get("used", 0)}
+            "prepaid": o.prepaid, "issued": sum(counts.values()), "used": counts.get("used", 0),
+            **({"links": _links(db, o)} if o.prepaid else {})}
+
+
+def _links(db: Session, o: Offer) -> dict:
+    from .models import OfferPayment
+    rows = dict(db.execute(select(OfferPayment.status, func.count()).where(OfferPayment.offer_id == o.id).group_by(OfferPayment.status)).all())
+    return {"sent": sum(rows.values()), "paid": rows.get("paid", 0)}
 
 
 def _apply(db: Session, o: Offer, body: OfferIn) -> None:
@@ -70,6 +80,9 @@ def _apply(db: Session, o: Offer, body: OfferIn) -> None:
     o.valid_from, o.valid_to, o.per_phone, o.code_days = body.valid_from, body.valid_to, body.per_phone, body.code_days
     o.daily_limit, o.message, o.is_active = body.daily_limit, (body.message or "").strip() or None, body.is_active
     o.require_otp = body.require_otp
+    if body.prepaid and body.price_paise < 100:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "A pay-first offer needs a price of at least ₹1")
+    o.prepaid = body.prepaid
 
 
 def _keyword_free(kw: str, mine: uuid.UUID | None) -> bool:
@@ -82,7 +95,10 @@ def _keyword_free(kw: str, mine: uuid.UUID | None) -> bool:
 def list_offers(db: Session = Depends(get_db), auth: Auth = Depends(require(Perm.menu_view))) -> dict:
     from ..config import get_settings
     rows = db.scalars(select(Offer).order_by(Offer.created_at.desc())).all()
-    return {"offers": [_out(db, o) for o in rows], "whatsapp_number": get_settings().wa_display_number or None}
+    from ..models import PaymentSettings
+    from .prepay import provider
+    return {"offers": [_out(db, o) for o in rows], "whatsapp_number": get_settings().wa_display_number or None,
+            "online_payments": provider(db.get(PaymentSettings, auth.tenant_id))}
 
 
 @router.post("/offers", status_code=201)
@@ -119,6 +135,17 @@ def offer_codes(offer_id: uuid.UUID, db: Session = Depends(get_db), auth: Auth =
     return [{"code": c.code, "name": c.cust_name, "phone": c.phone10, "item": c.item_name,
              "price_paise": c.price_paise if c.price_paise is not None else (o.price_paise if o else None),
              "status": c.status, "issued_on": c.issued_on, "expires_on": c.expires_on, "used_at": c.used_at} for c in rows]
+
+
+@router.get("/offers/{offer_id}/roi")
+def offer_roi(offer_id: uuid.UUID, d1: date | None = None, d2: date | None = None, db: Session = Depends(get_db),
+              auth: Auth = Depends(require(Perm.reports_view))) -> dict:
+    """What the offer cost (discounts, Razorpay fees, broadcasts) against what it brought in."""
+    from .roi import report
+    o = db.get(Offer, offer_id)
+    if o is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Offer not found")
+    return report(db, o, d1, d2)
 
 
 class OtpIn(BaseModel):
@@ -218,7 +245,7 @@ def lookup(code: str, outlet_id: uuid.UUID, db: Session = Depends(get_db), auth:
         return {"kind": "offer", "code": c.code, "offer": o.name, "variant_id": str(o.variant_id), "item_id": str(v.item_id),
                 "price_paise": o.price_paise, "regular_paise": v.price_paise, "expires_on": c.expires_on,
                 "needs_otp": osv.needs_otp(db, c), "phone": c.phone10, "cust_name": c.cust_name,
-                "item": c.item_name, "offer_price_paise": c.price_paise}
+                "item": c.item_name, "offer_price_paise": c.price_paise, "prepaid_paise": c.prepaid_paise if c.prepaid_ref else 0}
     bc = re.sub(r"\s+", "", raw)
     v = db.scalar(select(Variant).where(Variant.barcode == bc))
     if v is not None:
@@ -389,3 +416,51 @@ def broadcasts(db: Session = Depends(get_db), auth: Auth = Depends(require(Perm.
         out.append({"id": str(b.id), "name": b.name, "text": b.text, "recipients": b.recipients, "credits": b.credits, "created_at": b.created_at,
                     "sent": st.get("sent", 0), "waiting": st.get("queued", 0), "failed": st.get("failed", 0), "offer_codes": claimed})
     return out
+
+
+# ------------------------------------------------------------------ practice payment page (Payments in test mode)
+
+def _practice(op_id: uuid.UUID):
+    from .models import OfferPayment
+    with system_session() as db:
+        op = db.get(OfferPayment, op_id)
+        if op is None or op.provider != "test":
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+        o = db.get(Offer, op.offer_id)
+        t = db.get(Tenant, op.tenant_id)
+        return {"status": op.status, "amount": osv.rupees(op.amount_paise), "offer": o.name if o else "",
+                "brand": (t.app_name or t.name) if t else "", "expired": op.expires_at < datetime.now(timezone.utc)}
+
+
+@pay_public.get("/{op_id}", response_class=HTMLResponse)
+def practice_page(op_id: uuid.UUID) -> HTMLResponse:
+    import html
+    x = _practice(op_id)
+    e = html.escape
+    if x["status"] == "paid":
+        body = "<h2>Paid ✓</h2><p>Your QR has been sent on WhatsApp.</p>"
+    elif x["expired"]:
+        body = "<h2>This link has expired</h2><p>Send the keyword again on WhatsApp for a new one.</p>"
+    else:
+        body = (f"<p class='amt'>{e(x['amount'])}</p><form method='post'><button>Pay {e(x['amount'])} (practice)</button></form>"
+                "<p class='note'>Practice payment: no real money moves. Real links open Razorpay once Payments is set up.</p>")
+    return HTMLResponse(f"""<!doctype html><html><head><meta name=viewport content="width=device-width,initial-scale=1"><title>Pay</title>
+<style>body{{font-family:system-ui,sans-serif;max-width:420px;margin:40px auto;padding:0 20px;text-align:center;color:#111827}}
+.amt{{font-size:2.6rem;font-weight:700;margin:.4rem 0}}button{{background:#0f766e;color:#fff;border:0;border-radius:12px;padding:16px 28px;font-size:1.1rem;width:100%}}
+.note{{color:#6b7280;font-size:.85rem;margin-top:1rem}}.tag{{display:inline-block;background:#fef3c7;color:#92400e;border-radius:99px;padding:2px 10px;font-size:.8rem}}</style></head>
+<body><span class=tag>PRACTICE</span><h1>{e(x['brand'])}</h1><p>{e(x['offer'])}</p>{body}</body></html>""", headers={"Cache-Control": "no-store"})
+
+
+@pay_public.post("/{op_id}", response_class=HTMLResponse)
+def practice_pay(op_id: uuid.UUID) -> HTMLResponse:
+    from . import prepay
+    from .models import OfferPayment
+    x = _practice(op_id)
+    if x["status"] == "created" and not x["expired"]:
+        with system_session() as db:
+            op = db.scalar(select(OfferPayment).where(OfferPayment.id == op_id).with_for_update())
+            code = prepay.paid(db, op, f"test_{uuid.uuid4().hex[:16]}", op.amount_paise)
+            phone, code_id = op.phone10, (code.id if code else None)
+        if code_id:
+            prepay.send_qr(phone, code_id)
+    return practice_page(op_id)

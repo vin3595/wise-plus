@@ -38,7 +38,7 @@ interface CartLine {
   variant: OutletMenuVariant;
   addonIds: string[];
   qty: number;
-  offer?: { code: string; name: string; price_paise: number; needsOtp?: boolean; phone?: string; cust?: string | null };   // a scanned WhatsApp offer
+  offer?: { code: string; name: string; price_paise: number; needsOtp?: boolean; phone?: string; cust?: string | null; prepaid?: number };   // a scanned WhatsApp offer
 }
 
 const unitPrice = (l: CartLine) =>
@@ -164,13 +164,13 @@ export default function Orders() {
     const local = menu.items.flatMap((it) => it.variants.map((v) => ({ it, v }))).find(({ v }) => v.barcode === code);
     if (local) { addLine(local.it, local.v); beep(true); return; }
     try {
-      const r = await api<{ kind: string; variant_id?: string; code?: string; offer?: string; price_paise?: number; name?: string; needs_otp?: boolean; phone?: string; cust_name?: string | null }>(
+      const r = await api<{ kind: string; variant_id?: string; code?: string; offer?: string; price_paise?: number; name?: string; needs_otp?: boolean; phone?: string; cust_name?: string | null; prepaid_paise?: number }>(
         `/barcodes/lookup?code=${encodeURIComponent(code)}&outlet_id=${outletId}`);
       const hit = r.variant_id ? find(r.variant_id) : null;
       if (r.kind === "offer" && hit) {
         if (cart.some((l) => l.offer?.code === r.code)) { setError("This offer code is already on the bill"); beep(false); return; }
         setSent(null);
-        setCart((c) => [...c, { key: `offer|${r.code}`, item: hit.it, variant: hit.v, addonIds: [], qty: 1, offer: { code: r.code!, name: r.offer!, price_paise: r.price_paise!, needsOtp: !!r.needs_otp, phone: r.phone, cust: r.cust_name } }]);
+        setCart((c) => [...c, { key: `offer|${r.code}`, item: hit.it, variant: hit.v, addonIds: [], qty: 1, offer: { code: r.code!, name: r.offer!, price_paise: r.price_paise!, needsOtp: !!r.needs_otp, phone: r.phone, cust: r.cust_name, prepaid: r.prepaid_paise || 0 } }]);
         if (r.phone && !phone && !declined) { setPhone(r.phone); if (r.cust_name && !customer) setCustomer(r.cust_name); }   // the bill goes to them
         beep(true);
       } else if (r.kind === "variant" && hit) { addLine(hit.it, hit.v); beep(true); }
@@ -274,7 +274,7 @@ export default function Orders() {
       try {
         const bill = await api<Bill>("/bills", { body: { id: newId(), order_id: order.id, loyalty,
           customer: { name: customer || null, phone: declined ? null : phone, declined },
-          payments: [{ mode, amount_paise: pv.total_paise, reference: null }] } });
+          payments: pv.total_paise - (pv.prepaid_paise || 0) > 0 ? [{ mode, amount_paise: pv.total_paise - (pv.prepaid_paise || 0), reference: null }] : [] } });
         resetCart();
         setPrinting(bill);
         setRefresh((n) => n + 1);
@@ -324,6 +324,7 @@ export default function Orders() {
   function saveAndPrint() {
     if (otpPending) { setError("Check the customer first: Send OTP on the offer item and enter the code they got"); return; }
     if (!cart.length || busy) return;
+    if (prepaid > 0) return settle(payMode);   // part (or all) paid online already: just the rest
     if (payMode === "upi" && upiAuto.enabled && off.online) return upiAutoPay();
     if (payMode === "card" && upiAuto.card_enabled && off.online && terminals.length) return cardAutoPay();
     settle(payMode);
@@ -340,7 +341,9 @@ export default function Orders() {
   }, []);
   const billed = (b: Bill) => { setBilling(null); setPrinting(b); setRefresh((n) => n + 1); };
 
-  const total = quote ?? subtotal;
+  const fullTotal = quote ?? subtotal;
+  const prepaid = Math.min(fullTotal, cart.reduce((s, l) => s + (l.offer?.prepaid || 0), 0));   // WhatsApp offers paid online
+  const total = fullTotal - prepaid;   // what's left to collect
   const given = inputToPaise(tendered || "0") ?? 0;
   const presets = [...new Set([total, Math.ceil(total / 10000) * 10000, 50000, 100000, 200000].filter((p) => p >= total))].slice(0, 4);
   const upiLink = outlet?.upi_vpa && total > 0
@@ -499,7 +502,8 @@ export default function Orders() {
             <li key={l.key}>
               <div className="grow">
                 <span className="cart-name">{l.item.name}</span>{short(l.variant.name) && <span className="cart-size"> {short(l.variant.name)}</span>}
-                {l.offer && <div className="offer-tag">🎁 {l.offer.name} · {l.offer.code} <s className="muted">{formatPaise(l.variant.price_paise)}</s></div>}
+                {l.offer && <div className="offer-tag">🎁 {l.offer.name} · {l.offer.code} <s className="muted">{formatPaise(l.variant.price_paise)}</s>
+                  {!!l.offer.prepaid && <span className="paid-online"> · Paid online ✓</span>}</div>}
                 {l.offer?.phone && <div className="offer-who">👤 {l.offer.cust || "Customer"} · {l.offer.phone.replace(/^(\d{5})(\d{5})$/, "$1 $2")}</div>}
                 {l.offer?.needsOtp && <OfferOtp code={l.offer.code} phone={l.offer.phone || ""} outletId={outletId} onDone={() => verified(l.offer!.code)} />}
                 {l.addonIds.length > 0 && <div className="muted small">+ {l.item.addon_groups.flatMap((g) => g.addons).filter((a) => a.id && l.addonIds.includes(a.id)).map((a) => a.name).join(", ")}</div>}
@@ -540,8 +544,9 @@ export default function Orders() {
           // the reward is worth at most the bill; the server checks again when billing
           setLoyAmount(u.points_paise + (u.use_reward ? Math.min(rewardOf.current, subtotal) : 0));
         }} />}
+        {prepaid > 0 && <div className="cart-prepaid"><span>Paid online (WhatsApp offer)</span><span>−{formatPaise(prepaid)}</span></div>}
         <div className="cart-total">
-          <span>{count ? `${count} item${count === 1 ? "" : "s"}` : "Total"}{count > 0 && <small>{quote !== null ? " incl. GST" : quoteFailed ? " + GST" : " adding GST…"}</small>}
+          <span>{prepaid > 0 ? "To collect" : null}{prepaid > 0 ? null : count ? `${count} item${count === 1 ? "" : "s"}` : "Total"}{count > 0 && <small>{quote !== null ? " incl. GST" : quoteFailed ? " + GST" : " adding GST…"}</small>}
             {count > 0 && quote === null && quoteFailed && <> <button className="link small" onClick={() => setQuoteTry((n) => n + 1)}>Try again</button></>}</span>
           <strong className={count > 0 && quote === null ? "pending-total" : ""}>{formatPaise(total)}</strong>
         </div>

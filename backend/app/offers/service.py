@@ -84,33 +84,52 @@ def remember(db: Session, offer: Offer, phone10: str, wa_name: str | None) -> st
     return (cu.name if cu is not None else None) or wa_name
 
 
-def issue(db: Session, offer: Offer, phone10: str, wa_name: str | None = None) -> tuple[OfferCode | None, str]:
-    """A code for this number (the same one again if it hasn't been used). Returns (code, message if none).
-    The code keeps the customer's name and number, the item and the offer price."""
+def blocked(db: Session, offer: Offer, phone10: str) -> str | None:
+    """Why this number can't get a new code now (None = it can)."""
     day = business_date()
-    wa_name = clean_name(wa_name)
     if not live(offer, day):
-        return None, "Sorry, this offer has ended."
-    have = db.scalars(select(OfferCode).where(OfferCode.offer_id == offer.id, OfferCode.phone10 == phone10)
-                      .order_by(OfferCode.created_at.desc())).all()
-    open_ = next((c for c in have if c.status == "issued" and c.expires_on >= day), None)
-    if open_ is not None:
-        if not open_.cust_name:
-            open_.cust_name = remember(db, offer, phone10, wa_name)
-        return open_, ""
-    if len(have) >= offer.per_phone:
-        return None, "You've already used this offer. Thank you! 🙏"
+        return "Sorry, this offer has ended."
+    n = db.scalar(select(func.count()).select_from(OfferCode).where(OfferCode.offer_id == offer.id, OfferCode.phone10 == phone10)) or 0
+    if n >= offer.per_phone:
+        return "You've already used this offer. Thank you! 🙏"
     if offer.daily_limit is not None:
         today = db.scalar(select(func.count()).select_from(OfferCode).where(OfferCode.offer_id == offer.id, OfferCode.issued_on == day)) or 0
         if today >= offer.daily_limit:
-            return None, "Today's codes for this offer are all taken. Try again tomorrow!"
+            return "Today's codes for this offer are all taken. Try again tomorrow!"
+    return None
+
+
+def open_code(db: Session, offer: Offer, phone10: str) -> OfferCode | None:
+    day = business_date()
+    return db.scalar(select(OfferCode).where(OfferCode.offer_id == offer.id, OfferCode.phone10 == phone10, OfferCode.status == "issued",
+                                             OfferCode.expires_on >= day).order_by(OfferCode.created_at.desc()))
+
+
+def issue(db: Session, offer: Offer, phone10: str, wa_name: str | None = None, prepaid_ref: str | None = None,
+          prepaid_paise: int | None = None) -> tuple[OfferCode | None, str]:
+    """A code for this number (the same one again if it hasn't been used). Returns (code, message if none).
+    The code keeps the customer's name and number, the item and the offer price. A prepaid code (paid online
+    already) is always made: the money is in."""
+    day = business_date()
+    wa_name = clean_name(wa_name)
+    if prepaid_ref is None:
+        open_ = open_code(db, offer, phone10)
+        if open_ is not None:
+            if not open_.cust_name:
+                open_.cust_name = remember(db, offer, phone10, wa_name)
+            return open_, ""
+        why = blocked(db, offer, phone10)
+        if why:
+            return None, why
     last = day + timedelta(days=max(offer.code_days, 1) - 1)
-    if offer.valid_to and last > offer.valid_to:
+    if offer.valid_to and last > offer.valid_to and not prepaid_ref:
         last = offer.valid_to
     name, item = remember(db, offer, phone10, wa_name), item_label(db, offer)
+    v = db.get(Variant, offer.variant_id)
     for _ in range(5):
         c = OfferCode(tenant_id=offer.tenant_id, offer_id=offer.id, code=new_code(), phone10=phone10, expires_on=last, issued_on=day,
-                      cust_name=name, item_name=item, price_paise=offer.price_paise)
+                      cust_name=name, item_name=item, price_paise=offer.price_paise, regular_paise=v.price_paise if v else None,
+                      prepaid_ref=prepaid_ref, prepaid_paise=prepaid_paise)
         db.add(c)
         try:
             with db.begin_nested():
@@ -130,6 +149,10 @@ def reply_text(db: Session, offer: Offer, code: OfferCode) -> str:
         names = [o.name for o in db.scalars(select(Outlet).where(Outlet.id.in_([uuid.UUID(x) for x in offer.outlet_ids])))]
         where = f"\nAt: {', '.join(names)}"
     hi = f"Hi {code.cust_name}! " if code.cust_name else ""
+    if code.prepaid_ref:
+        return (f"✅ {hi}Payment received. Your *{what}* is ready to collect at {t.app_name or t.name}.{where}\n\n"
+                f"Show this QR at the counter, nothing more to pay.\nCode: *{code.code}* · valid till {code.expires_on.day} {code.expires_on:%b}"
+                + (f"\n\n{offer.message}" if offer.message else ""))
     return (f"🎁 {hi}*{offer.name}*\n{what} for just *{rupees(price)}* at {t.app_name or t.name}.{where}\n\n"
             f"Show this QR at the counter.\nCode: *{code.code}* · valid till {code.expires_on.day} {code.expires_on:%b}"
             + (f"\n\n{offer.message}" if offer.message else ""))
@@ -195,7 +218,7 @@ def card_for(db: Session, c: OfferCode) -> dict:
     t = db.get(Tenant, c.tenant_id)
     price = c.price_paise if c.price_paise is not None else (o.price_paise if o else 0)
     return {"brand": (t.app_name or t.name) if t else "", "offer": o.name if o else "", "item": c.item_name or (item_label(db, o) if o else ""),
-            "price": rupees(price),
+            "price": "PAID ✓" if c.prepaid_ref else rupees(price),
             "valid": f"Valid till {c.expires_on.day} {c.expires_on:%b %Y}"}
 
 
@@ -212,7 +235,7 @@ def check(db: Session, raw: str, outlet_id, lock: bool = False) -> tuple[OfferCo
         raise OfferError("This code was already used" + (f" on {when.day} {when:%b} at {when:%I:%M %p}" if when else ""))
     if c.expires_on < day:
         raise OfferError(f"This code expired on {c.expires_on.day} {c.expires_on:%b}")
-    if o is None or not live(o, day):
+    if o is None or (not live(o, day) and not c.prepaid_ref):        # a paid-for code is honoured till it expires
         raise OfferError("This offer has ended")
     if o.outlet_ids and str(outlet_id) not in o.outlet_ids:
         raise OfferError("This offer isn't valid at this outlet")

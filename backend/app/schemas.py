@@ -713,7 +713,7 @@ class BillPreviewIn(BaseModel):
 class BillCreate(BillPreviewIn):
     id: uuid.UUID | None = None         # device-generated for safe retries
     customer: CustomerIn = CustomerIn()
-    payments: list[PaymentLineIn] = Field(min_length=1, max_length=4)
+    payments: list[PaymentLineIn] = Field(default_factory=list, max_length=4)   # may be empty when it was all paid online
     manager_pin: str | None = Field(default=None, min_length=4, max_length=4)
 
 
@@ -753,6 +753,7 @@ class BillPreviewOut(BaseModel):
     total_paise: int
     tax_summary: list[dict]
     needs_approval: list[str] = []      # reasons a manager PIN is needed
+    prepaid_paise: int = 0              # wise-plus: already paid online for a WhatsApp offer (added as UPI)
 
 
 class BillOut(BillPreviewOut):

@@ -18,7 +18,7 @@ from ..core.loyalty import check_use, reward
 from ..core import cash_purpose
 from ..models import Bill, CashMovement, Drawer, Kot, User, LoyaltySettings, Order, Outlet, Shift, Tenant
 from ..schemas import (
-    BillCreate, BillOut, BillPreviewIn, BillPreviewOut, CancelIn, CashMoveIn, OrderOut, ShiftClose, ShiftOpen,
+    BillCreate, BillOut, BillPreviewIn, BillPreviewOut, CancelIn, CashMoveIn, OrderOut, PaymentLineIn, ShiftClose, ShiftOpen,
     ShiftOut,
 )
 from ..services import alerts, audit, cash_alerts, loyalty, sms, stock
@@ -94,7 +94,9 @@ def bill_preview(body: BillPreviewIn, auth: Auth = Depends(require(Perm.billing)
     except ValueError as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e)) from None
     needs = [] if _is_manager(auth) or (body.loyalty and calc.discount_paise) else approval_reasons(tenant, calc, [])
-    return preview(rows, calc, needs)
+    out = preview(rows, calc, needs)
+    out.prepaid_paise = min(prepaid_on(db, order)[0], calc.total_paise)
+    return out
 
 
 @router.post("/bills", response_model=BillOut, status_code=201)
@@ -104,6 +106,32 @@ def create_bill(body: BillCreate, auth: Auth = Depends(require(Perm.billing)), d
     order = _live_order(db, auth, body.order_id)
     bill = issue_bill(db, auth, order, body)
     return bill_out(db, bill)
+
+
+def prepaid_on(db: Session, order: Order) -> tuple[int, list[str], str | None]:
+    """wise-plus: offer codes on this order that were paid online first (Razorpay): (amount, payment ids, phone)."""
+    from ..offers.models import OfferCode
+    codes = db.scalars(select(OfferCode).where(OfferCode.order_id == order.id, OfferCode.status == "used",
+                                               OfferCode.prepaid_ref.is_not(None))).all()
+    return sum(c.prepaid_paise or 0 for c in codes), [c.prepaid_ref for c in codes], (codes[0].phone10 if codes else None)
+
+
+def with_prepaid(payments: list, amount: int, refs: list[str]) -> list:
+    """The cashier's payments plus what was already paid online (as UPI, with the Razorpay payment id)."""
+    if amount <= 0:
+        return list(payments)
+    ref = ("Paid online " + ", ".join(refs))[:60]
+    out, merged = [], False
+    for p in payments:
+        if p.amount_paise <= 0:
+            continue
+        if p.mode == "upi":
+            p = PaymentLineIn(mode="upi", amount_paise=p.amount_paise + amount, reference=((p.reference + "; ") if p.reference else "") + ref)
+            merged = True
+        out.append(p)
+    if not merged:
+        out.append(PaymentLineIn(mode="upi", amount_paise=amount, reference=ref))
+    return out
 
 
 def issue_bill(db: Session, auth: Auth, order: Order, body: BillCreate) -> Bill:
@@ -117,6 +145,9 @@ def issue_bill(db: Session, auth: Auth, order: Order, body: BillCreate) -> Bill:
     outlet = db.get(Outlet, order.outlet_id)
 
     c = body.customer
+    pre_amt, pre_refs, pre_phone = prepaid_on(db, order)
+    if not c.phone and pre_phone:                    # paid online from their WhatsApp: the bill is theirs
+        c = c.model_copy(update={"phone": pre_phone, "declined": False, "name": c.name or order.customer_name})
     if not c.phone and not c.declined:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             "Ask for the customer's mobile number, or tap Declined if they don't want to share it")
@@ -130,7 +161,9 @@ def issue_bill(db: Session, auth: Auth, order: Order, body: BillCreate) -> Bill:
     disc, lp, lr, reason = _loyalty(db, auth.tenant_id, body.loyalty, body.discount, c.phone, rows, outlet.id)
     try:
         calc = compute_bill([r.line for r in rows], disc)
-        validate_payments(calc.total_paise, [PaymentIn(p.mode, p.amount_paise) for p in body.payments])
+        pays = with_prepaid(body.payments, min(pre_amt, calc.total_paise), pre_refs)
+        validate_payments(calc.total_paise, [PaymentIn(p.mode, p.amount_paise) for p in pays])
+        modes = [p.mode for p in pays]
     except ValueError as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e)) from None
     if calc.discount_paise and not reason:
@@ -163,7 +196,7 @@ def issue_bill(db: Session, auth: Auth, order: Order, body: BillCreate) -> Bill:
         customer_name=(c.name or "").strip() or None, customer_phone=c.phone, customer_declined_phone=c.declined,
         customer_gstin=c.gstin, created_by=auth.user_id, approved_by=approver,
     )
-    save_bill(db, bill, rows, calc, [(p.mode, p.amount_paise, p.reference) for p in body.payments])
+    save_bill(db, bill, rows, calc, [(p.mode, p.amount_paise, p.reference) for p in pays])
     sms.on_bill_created(db, bill)
     from ..custwa.service import queue_bill   # wise-plus: the bill on WhatsApp, with feedback buttons
     queue_bill(db, bill)

@@ -93,6 +93,12 @@ def resolve_lines(db: Session, outlet: Outlet, lines: list[OrderLineIn], offers:
             if offer.variant_id != variant.id or line.qty != 1 or any(r.offer_code is code for r in out):
                 raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "An offer code is for one of its own item")
             price = offer.price_paise
+            if code.prepaid_ref and item.tax_group_id:       # paid online: what they paid is the final price, GST included
+                from ..models import TaxGroup
+                tg = db.get(TaxGroup, item.tax_group_id)
+                if tg and not tg.is_inclusive:
+                    rate = tg.cgst_bp + tg.sgst_bp + tg.igst_bp
+                    price = ((code.prepaid_paise or price) * 10000 * 2 + (10000 + rate)) // (2 * (10000 + rate))
         out.append(ResolvedLine(line, variant, item, price, addons, area, code))
     return out
 
@@ -118,7 +124,7 @@ def add_kots(db: Session, order: Order, lines: list[ResolvedLine]) -> list[Kot]:
                     use(db, r.offer_code, order.outlet_id, order.id, kot.id)
                 except OfferError as e:
                     raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from None
-                note = f"Offer {r.offer_code.code}" + (f" · {note}" if note else "")
+                note = f"Offer {r.offer_code.code}{' · PAID ONLINE' if r.offer_code.prepaid_ref else ''}" + (f" · {note}" if note else "")
                 if not order.customer_phone:            # the bill goes to the person the offer was sent to
                     order.customer_phone = r.offer_code.phone10
                     if not order.customer_name and r.offer_code.cust_name:

@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -72,7 +72,7 @@ def _settings_out(db: Session, cfg: PaymentSettings) -> dict:
     tenant = db.get(Tenant, cfg.tenant_id)
     return {"enabled": cfg.enabled, "provider": cfg.provider, "key_id": cfg.key_id, "has_key_secret": bool(cfg.key_secret),
             "has_webhook_secret": bool(cfg.webhook_secret),
-            "webhook_url": f"{app_base_url(tenant)}/api/public/razorpay/{cfg.webhook_key}", "webhook_event": "qr_code.credited",
+            "webhook_url": f"{app_base_url(tenant)}/api/public/razorpay/{cfg.webhook_key}", "webhook_event": "qr_code.credited, payment_link.paid",
             "pos_enabled": cfg.pos_enabled, "pos_provider": cfg.pos_provider, "pos_live": cfg.pos_live, "pos_username": cfg.pos_username,
             "has_pos_app_key": bool(cfg.pos_app_key),
             "paytm_mid": cfg.paytm_mid, "has_paytm_key": bool(cfg.paytm_key), "paytm_client_id": cfg.paytm_client_id,
@@ -479,7 +479,8 @@ async def paytm_callback(key: str, request: Request) -> dict:
 # ------------------------------------------------------------------ Razorpay webhook (no login: signed)
 
 @router.post("/public/razorpay/{key}")
-async def razorpay_webhook(key: str, request: Request, x_razorpay_signature: str | None = Header(default=None)) -> dict:
+async def razorpay_webhook(key: str, request: Request, background: BackgroundTasks,
+                           x_razorpay_signature: str | None = Header(default=None)) -> dict:
     raw = await request.body()
     with system_session() as sdb:   # only to find whose webhook this is
         cfg = sdb.scalar(select(PaymentSettings).where(PaymentSettings.webhook_key == key))
@@ -493,6 +494,20 @@ async def razorpay_webhook(key: str, request: Request, x_razorpay_signature: str
         event = json.loads(raw)
     except ValueError:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Bad body") from None
+    from ..offers import prepay
+    link = prepay.from_webhook(event)
+    if link:                                    # wise-plus: a prepaid WhatsApp offer was paid
+        from ..offers.models import OfferPayment
+        link_id, pay_id, amount, fee = link
+        code = None
+        with tenant_session(tenant_id) as db:
+            op = db.scalar(select(OfferPayment).where(OfferPayment.link_id == link_id).with_for_update())
+            if op is not None:
+                code = prepay.paid(db, op, pay_id, amount, fee)
+                phone, code_id = op.phone10, (code.id if code else None)
+        if code is not None:
+            background.add_task(prepay.send_qr, phone, code_id)
+        return {"ok": True}
     got = rz.from_webhook(event)
     if not got:
         return {"ok": True, "ignored": True}

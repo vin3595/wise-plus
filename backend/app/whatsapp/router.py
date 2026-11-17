@@ -321,10 +321,17 @@ def offer_reply(phone: str, text: str, name: str = "") -> bool:
         offer = osv.find_keyword(db, text)
         if offer is None:
             return False
-        code, why = osv.issue(db, offer, client.last10(phone), name)
-        if code is None:
-            client.send_text(phone, why)
-            return True
+        if offer.prepaid:                                # pay online first: the link, or the QR if already paid
+            from ..offers import prepay
+            text, code = prepay.start(db, offer, client.last10(phone), name)
+            if code is None:
+                client.send_text(phone, text)
+                return True
+        else:
+            code, why = osv.issue(db, offer, client.last10(phone), name)
+            if code is None:
+                client.send_text(phone, why)
+                return True
         body = osv.reply_text(db, offer, code)
         link = f"{get_settings().public_base_url.rstrip('/')}/api/public/offer-qr/{code.code}.png"
     try:

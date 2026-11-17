@@ -52,7 +52,8 @@ export default function BillDialog({ order, outlet, onClose, onBilled, upiAuto, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [order.id, discount?.kind, discount?.value, loy.points_paise, loy.use_reward]);
 
-  const total = preview?.total_paise ?? 0;
+  const prepaid = preview?.prepaid_paise ?? 0;            // WhatsApp offer paid online: added as UPI by the server
+  const total = (preview?.total_paise ?? 0) - prepaid;
   // A single payment row always takes the whole amount.
   const rows: PayRow[] = pays.length === 1 ? [{ ...pays[0], amount: paiseToInput(total) }] : pays;
   const paid = rows.reduce((s, r) => s + (inputToPaise(r.amount) ?? 0), 0);
@@ -70,7 +71,7 @@ export default function BillDialog({ order, outlet, onClose, onBilled, upiAuto, 
       const bill = await api<Bill>("/bills", { body: {
         id: billId, order_id: order.id, discount: usingLoyalty ? null : discount, loyalty: usingLoyalty ? loy : null,
         customer: { name: name || null, phone: declined ? null : phone || null, declined, gstin: showGst ? gstin || null : null },
-        payments: rows.map((r) => ({ mode: r.mode, amount_paise: inputToPaise(r.amount) ?? 0, reference: r.reference || null })),
+        payments: total <= 0 ? [] : rows.map((r) => ({ mode: r.mode, amount_paise: inputToPaise(r.amount) ?? 0, reference: r.reference || null })),
         manager_pin: needsPin ? pin || null : null,
       } });
       onBilled(bill);
@@ -108,6 +109,8 @@ export default function BillDialog({ order, outlet, onClose, onBilled, upiAuto, 
                 <div><span>CGST + SGST</span><span>{formatPaise(preview.cgst_paise + preview.sgst_paise + preview.igst_paise)}</span></div>
                 {preview.round_off_paise !== 0 && <div><span>Round off</span><span>{(preview.round_off_paise / 100).toFixed(2)}</span></div>}
                 <div className="grand"><span>Total</span><span>{formatPaise(preview.total_paise)}</span></div>
+                {prepaid > 0 && <><div><span>Paid online (WhatsApp offer)</span><span>−{formatPaise(prepaid)}</span></div>
+                  <div className="grand"><span>To collect</span><span>{formatPaise(total)}</span></div></>}
               </div>
             )}
             <ErrorText error={pv.error} />
@@ -197,7 +200,7 @@ export default function BillDialog({ order, outlet, onClose, onBilled, upiAuto, 
               </Field>
             )}
             <ErrorText error={save.error} />
-            {upiAuto && onUpiRequest && rows.length === 1 && rows[0].mode === "upi" && !discount ? (
+            {upiAuto && onUpiRequest && rows.length === 1 && rows[0].mode === "upi" && !discount && prepaid === 0 ? (
               <Button className="btn-block" disabled={save.busy || !preview} onClick={upiQr}>
                 UPI QR for {preview ? formatPaise(total) : ""} (bill prints when paid)
               </Button>
