@@ -113,8 +113,11 @@ def add_kots(db: Session, order: Order, lines: list[ResolvedLine]) -> list[Kot]:
         for r in group:
             note = (r.line.notes or "").strip() or None
             if r.offer_code is not None:
-                from ..offers.service import use
-                use(db, r.offer_code, order.outlet_id, order.id, kot.id)
+                from ..offers.service import OfferError, use
+                try:
+                    use(db, r.offer_code, order.outlet_id, order.id, kot.id)
+                except OfferError as e:
+                    raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from None
                 note = f"Offer {r.offer_code.code}" + (f" · {note}" if note else "")
             db.add(OrderItem(
                 tenant_id=order.tenant_id, order_id=order.id, kot_id=kot.id, variant_id=r.variant.id,

@@ -27,6 +27,7 @@ class Offer(Base):
     code_days: Mapped[int] = mapped_column(Integer, default=7, nullable=False)  # each code works for this many days
     daily_limit: Mapped[int | None] = mapped_column(Integer)                   # codes given out per day (None = no limit)
     message: Mapped[str | None] = mapped_column(String(300))                   # extra line in the WhatsApp reply
+    require_otp: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)  # cashier checks the customer
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     __table_args__ = (UniqueConstraint("keyword", name="uq_offer_keyword"),)
@@ -43,8 +44,24 @@ class OfferCode(Base):
     expires_on: Mapped[date] = mapped_column(Date, nullable=False)
     issued_on: Mapped[date] = mapped_column(Date, nullable=False)
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))   # the customer gave the OTP at the counter
     outlet_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("outlets.id"))
     order_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("orders.id", ondelete="SET NULL"))
     kot_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("kots.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     __table_args__ = (UniqueConstraint("code", name="uq_offer_code"), Index("ix_offer_codes_phone", "offer_id", "phone10"))
+
+
+class Broadcast(Base):
+    """A WhatsApp message to a chosen group of customers (marketing template, with a 'Get my offer' button)."""
+    __tablename__ = "broadcasts"
+    id: Mapped[uuid.UUID] = pk()
+    tenant_id: Mapped[uuid.UUID] = tenant_fk()
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    filters: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    text: Mapped[str] = mapped_column(String(700), nullable=False)
+    offer_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("offers.id", ondelete="SET NULL"))
+    recipients: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    credits: Mapped[int] = mapped_column(Integer, default=0, nullable=False)          # message credits it used
+    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

@@ -38,7 +38,7 @@ interface CartLine {
   variant: OutletMenuVariant;
   addonIds: string[];
   qty: number;
-  offer?: { code: string; name: string; price_paise: number };   // a scanned WhatsApp offer: this price, one only
+  offer?: { code: string; name: string; price_paise: number; needsOtp?: boolean; phone?: string };   // a scanned WhatsApp offer
 }
 
 const unitPrice = (l: CartLine) =>
@@ -164,13 +164,13 @@ export default function Orders() {
     const local = menu.items.flatMap((it) => it.variants.map((v) => ({ it, v }))).find(({ v }) => v.barcode === code);
     if (local) { addLine(local.it, local.v); beep(true); return; }
     try {
-      const r = await api<{ kind: string; variant_id?: string; code?: string; offer?: string; price_paise?: number; name?: string }>(
+      const r = await api<{ kind: string; variant_id?: string; code?: string; offer?: string; price_paise?: number; name?: string; needs_otp?: boolean; phone?: string }>(
         `/barcodes/lookup?code=${encodeURIComponent(code)}&outlet_id=${outletId}`);
       const hit = r.variant_id ? find(r.variant_id) : null;
       if (r.kind === "offer" && hit) {
         if (cart.some((l) => l.offer?.code === r.code)) { setError("This offer code is already on the bill"); beep(false); return; }
         setSent(null);
-        setCart((c) => [...c, { key: `offer|${r.code}`, item: hit.it, variant: hit.v, addonIds: [], qty: 1, offer: { code: r.code!, name: r.offer!, price_paise: r.price_paise! } }]);
+        setCart((c) => [...c, { key: `offer|${r.code}`, item: hit.it, variant: hit.v, addonIds: [], qty: 1, offer: { code: r.code!, name: r.offer!, price_paise: r.price_paise!, needsOtp: !!r.needs_otp, phone: r.phone } }]);
         beep(true);
       } else if (r.kind === "variant" && hit) { addLine(hit.it, hit.v); beep(true); }
       else if (r.kind === "stock") { setError(`${r.name} is a stock item, not on the menu`); beep(false); }
@@ -181,6 +181,8 @@ export default function Orders() {
     }
   }
   useHandScanner((c) => void scanned(c), !!menu && can("kot_send"));
+  const otpPending = cart.some((l) => l.offer?.needsOtp);
+  const verified = (code: string) => setCart((c) => c.map((l) => (l.offer?.code === code ? { ...l, offer: { ...l.offer, needsOtp: false } } : l)));
   // Total with GST for the pay buttons, refreshed as the cart changes.
   useEffect(() => {
     if (!cart.length || !outletId) { setQuote(null); return; }
@@ -232,6 +234,7 @@ export default function Orders() {
   }
 
   function send(thenBill = false) {
+    if (otpPending) { setError("Check the customer first: Send OTP on the offer item and enter the code they got"); return; }
     run(async () => {
       const order = await placeOrder();
       setSent(order);
@@ -318,6 +321,7 @@ export default function Orders() {
   }
   /** The second tap: kitchen slip, bill and print in one go with the payment picked below the total. */
   function saveAndPrint() {
+    if (otpPending) { setError("Check the customer first: Send OTP on the offer item and enter the code they got"); return; }
     if (!cart.length || busy) return;
     if (payMode === "upi" && upiAuto.enabled && off.online) return upiAutoPay();
     if (payMode === "card" && upiAuto.card_enabled && off.online && terminals.length) return cardAutoPay();
@@ -495,6 +499,7 @@ export default function Orders() {
               <div className="grow">
                 <span className="cart-name">{l.item.name}</span>{short(l.variant.name) && <span className="cart-size"> {short(l.variant.name)}</span>}
                 {l.offer && <div className="offer-tag">🎁 {l.offer.name} · {l.offer.code} <s className="muted">{formatPaise(l.variant.price_paise)}</s></div>}
+                {l.offer?.needsOtp && <OfferOtp code={l.offer.code} phone={l.offer.phone || ""} outletId={outletId} onDone={() => verified(l.offer!.code)} />}
                 {l.addonIds.length > 0 && <div className="muted small">+ {l.item.addon_groups.flatMap((g) => g.addons).filter((a) => a.id && l.addonIds.includes(a.id)).map((a) => a.name).join(", ")}</div>}
               </div>
               <div className="qty-ctl">
@@ -726,6 +731,35 @@ function ActiveOrders({ outletId, onAdd, onBill, tables }: { outletId: string; o
             setOrders((l) => l.filter((x) => x.id !== cancelling.id));
           }} />
       )}
+    </div>
+  );
+}
+
+
+/** An offer that needs the customer checked: a code goes to their WhatsApp, they read it out, the cashier types it. */
+function OfferOtp({ code, phone, outletId, onDone }: { code: string; phone: string; outletId: string; onDone: () => void }) {
+  const [sent, setSent] = useState(false);
+  const [otp, setOtp] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const go = async (path: string, body?: unknown) => {
+    setBusy(true); setErr(null);
+    try { await api(`/offers/codes/${code}/${path}?outlet_id=${outletId}`, body ? { body } : { method: "POST" }); return true; }
+    catch (e) { setErr(e instanceof Error ? e.message : "Try again"); return false; }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="offer-otp">
+      {!sent ? (
+        <button className="btn btn-small" disabled={busy} onClick={async () => { if (await go("otp")) setSent(true); }}>Send OTP to {phone}</button>
+      ) : (
+        <span className="row">
+          <input className="input otp-in" inputMode="numeric" maxLength={6} autoFocus value={otp} placeholder="OTP" aria-label="OTP the customer got"
+            onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))} onKeyDown={async (e) => { if (e.key === "Enter" && otp.length >= 4 && await go("verify", { otp })) onDone(); }} />
+          <button className="btn btn-small" disabled={busy || otp.length < 4} onClick={async () => { if (await go("verify", { otp })) onDone(); }}>Verify</button>
+          <button className="link small" disabled={busy} onClick={() => go("otp")}>Resend</button>
+        </span>)}
+      {err && <div className="error small">{err}</div>}
     </div>
   );
 }

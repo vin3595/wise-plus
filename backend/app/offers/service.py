@@ -126,7 +126,22 @@ def check(db: Session, raw: str, outlet_id, lock: bool = False) -> tuple[OfferCo
     return c, o
 
 
+VERIFY_MINUTES = 30
+
+
+def otp_ident(c: OfferCode) -> str:
+    return f"offer-{c.code}:{c.phone10}"         # the part after ':' is where the OTP goes
+
+
+def needs_otp(db: Session, c: OfferCode) -> bool:
+    o = db.get(Offer, c.offer_id)
+    fresh = c.verified_at is not None and c.verified_at > datetime.now(timezone.utc) - timedelta(minutes=VERIFY_MINUTES)
+    return bool(o and o.require_otp and not fresh)
+
+
 def use(db: Session, c: OfferCode, outlet_id, order_id, kot_id) -> None:
+    if needs_otp(db, c):
+        raise OfferError("Check the customer first: tap Send OTP and enter the code they got on WhatsApp")
     c.status, c.used_at, c.outlet_id, c.order_id, c.kot_id = "used", datetime.now(timezone.utc), outlet_id, order_id, kot_id
 
 

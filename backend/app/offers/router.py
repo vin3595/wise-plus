@@ -38,6 +38,7 @@ class OfferIn(BaseModel):
     code_days: int = Field(default=7, ge=1, le=365)
     daily_limit: int | None = Field(default=None, ge=1, le=100000)
     message: str | None = Field(default=None, max_length=300)
+    require_otp: bool = False
     is_active: bool = True
 
 
@@ -49,7 +50,7 @@ def _out(db: Session, o: Offer) -> dict:
             "item": f"{it.name}{'' if not v or v.name == 'Regular' else f' ({v.name})'}" if it else None,
             "regular_paise": v.price_paise if v else None, "price_paise": o.price_paise, "outlet_ids": o.outlet_ids,
             "valid_from": o.valid_from, "valid_to": o.valid_to, "per_phone": o.per_phone, "code_days": o.code_days,
-            "daily_limit": o.daily_limit, "message": o.message, "is_active": o.is_active,
+            "daily_limit": o.daily_limit, "message": o.message, "is_active": o.is_active, "require_otp": o.require_otp,
             "issued": sum(counts.values()), "used": counts.get("used", 0)}
 
 
@@ -68,6 +69,7 @@ def _apply(db: Session, o: Offer, body: OfferIn) -> None:
     o.outlet_ids = [str(x) for x in body.outlet_ids] if body.outlet_ids else None
     o.valid_from, o.valid_to, o.per_phone, o.code_days = body.valid_from, body.valid_to, body.per_phone, body.code_days
     o.daily_limit, o.message, o.is_active = body.daily_limit, (body.message or "").strip() or None, body.is_active
+    o.require_otp = body.require_otp
 
 
 def _keyword_free(kw: str, mine: uuid.UUID | None) -> bool:
@@ -115,6 +117,44 @@ def offer_codes(offer_id: uuid.UUID, db: Session = Depends(get_db), auth: Auth =
     rows = db.scalars(select(OfferCode).where(OfferCode.offer_id == offer_id).order_by(OfferCode.created_at.desc()).limit(500)).all()
     return [{"code": c.code, "phone": "…" + c.phone10[-4:], "status": c.status, "issued_on": c.issued_on, "expires_on": c.expires_on,
              "used_at": c.used_at} for c in rows]
+
+
+class OtpIn(BaseModel):
+    otp: str = Field(min_length=4, max_length=8)
+
+
+@router.post("/offers/codes/{code}/otp")
+def send_offer_otp(code: str, outlet_id: uuid.UUID, db: Session = Depends(get_db), auth: Auth = Depends(require(Perm.kot_send))) -> dict:
+    """The cashier checks it's really the customer: a one-time code goes to the WhatsApp the offer was sent to."""
+    from ..services import otp
+    ensure_outlet_access(db, auth, outlet_id)
+    try:
+        c, _o = osv.check(db, code, outlet_id)
+    except osv.OfferError as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from None
+    try:
+        otp.issue(db, osv.otp_ident(c), "offer")
+    except otp.OtpError as e:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, str(e)) from None
+    return {"sent_to": "…" + c.phone10[-4:]}
+
+
+@router.post("/offers/codes/{code}/verify")
+def verify_offer_otp(code: str, body: OtpIn, outlet_id: uuid.UUID, db: Session = Depends(get_db), auth: Auth = Depends(require(Perm.kot_send))) -> dict:
+    from datetime import datetime, timezone
+    from ..services import otp
+    ensure_outlet_access(db, auth, outlet_id)
+    try:
+        c, _o = osv.check(db, code, outlet_id, lock=True)
+    except osv.OfferError as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from None
+    try:
+        otp.verify(db, osv.otp_ident(c), "offer", body.otp.strip())
+    except otp.OtpError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e)) from None
+    c.verified_at = datetime.now(timezone.utc)
+    audit.record(db, auth.tenant_id, auth.user_id, "verify", "offer_code", c.id, after={"code": c.code})
+    return {"verified": True}
 
 
 @public.get("/{code}.png")
@@ -172,7 +212,8 @@ def lookup(code: str, outlet_id: uuid.UUID, db: Session = Depends(get_db), auth:
             raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from None
         v = db.get(Variant, o.variant_id)
         return {"kind": "offer", "code": c.code, "offer": o.name, "variant_id": str(o.variant_id), "item_id": str(v.item_id),
-                "price_paise": o.price_paise, "regular_paise": v.price_paise, "expires_on": c.expires_on}
+                "price_paise": o.price_paise, "regular_paise": v.price_paise, "expires_on": c.expires_on,
+                "needs_otp": osv.needs_otp(db, c), "phone": "…" + c.phone10[-4:]}
     bc = re.sub(r"\s+", "", raw)
     v = db.scalar(select(Variant).where(Variant.barcode == bc))
     if v is not None:
@@ -253,3 +294,93 @@ def all_barcodes(outlet_id: uuid.UUID | None = None, db: Session = Depends(get_d
     stock = [{"stock_item_id": str(s.id), "name": s.name, "unit": s.unit, "barcode": s.barcode}
              for s in db.scalars(select(StockItem).where(StockItem.is_active.is_(True)).order_by(StockItem.name))]
     return {"items": items, "stock": stock}
+
+
+# ------------------------------------------------------------------ broadcasts
+
+class FiltersIn(BaseModel):
+    active_days: int | None = Field(default=None, ge=1, le=3650)      # visited in the last N days
+    away_days: int | None = Field(default=None, ge=1, le=3650)        # not visited for N days or more
+    new_days: int | None = Field(default=None, ge=1, le=3650)         # first visit in the last N days
+    min_visits: int | None = Field(default=None, ge=1)
+    max_visits: int | None = Field(default=None, ge=1)
+    min_spend: int | None = Field(default=None, ge=0)                 # paise, all-time
+    max_spend: int | None = Field(default=None, ge=0)
+    min_avg: int | None = Field(default=None, ge=0)                   # paise, average bill
+    max_avg: int | None = Field(default=None, ge=0)
+    top_pct: int | None = Field(default=None, ge=1, le=100)           # biggest spenders
+    bottom_pct: int | None = Field(default=None, ge=1, le=100)
+    offers: str | None = Field(default=None, pattern=r"^(users|never)$")
+    outlet_ids: list[uuid.UUID] | None = None
+
+
+def _f(body: FiltersIn) -> dict:
+    d = body.model_dump(exclude_none=True)
+    if "outlet_ids" in d:
+        d["outlet_ids"] = [str(x) for x in d["outlet_ids"]]
+    return d
+
+
+@router.post("/broadcasts/preview")
+def preview(body: FiltersIn, db: Session = Depends(get_db), auth: Auth = Depends(require(Perm.loyalty_manage))) -> dict:
+    from ..billing.service import msgs
+    from ..models import Tenant
+    from . import broadcast as bc
+    rows = bc.people(db, _f(body))
+    m = msgs(db, db.get(Tenant, auth.tenant_id))
+    return {"count": len(rows), "credits": len(rows) * bc.CREDITS_EACH, "have": None if m["unlimited"] else m["bonus"],
+            "credits_each": bc.CREDITS_EACH,
+            "sample": [{"name": r["name"] or "—", "phone": bc.mask(r["p"]), "visits": r["visits"], "spend_paise": int(r["spend"]),
+                        "last_visit": r["last_visit"]} for r in sorted(rows, key=lambda r: -r["spend"])[:8]]}
+
+
+class BroadcastIn(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
+    text: str = Field(min_length=5, max_length=700)
+    offer_id: uuid.UUID | None = None
+    filters: FiltersIn
+
+
+@router.post("/broadcasts", status_code=201)
+def send_broadcast(body: BroadcastIn, db: Session = Depends(get_db), auth: Auth = Depends(require(Perm.loyalty_manage))) -> dict:
+    from ..billing.service import take_credits
+    from ..models import Tenant
+    from . import broadcast as bc
+    from .models import Broadcast
+    t = db.get(Tenant, auth.tenant_id)
+    keyword = None
+    if body.offer_id:
+        o = db.get(Offer, body.offer_id)
+        if o is None or not osv.live(o, osv.business_date()):
+            raise HTTPException(status.HTTP_409_CONFLICT, "That offer isn't on right now")
+        keyword = o.keyword
+    rows = bc.people(db, _f(body.filters))
+    if not rows:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "No customers match these filters")
+    credits = len(rows) * bc.CREDITS_EACH
+    if not take_credits(db, t, credits):
+        raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED,
+                            f"This needs {credits:,} message credits ({len(rows)} customers × {bc.CREDITS_EACH}). Buy a message pack in Settings › Billing.")
+    b = Broadcast(tenant_id=t.id, name=body.name.strip(), filters=_f(body.filters), text=bc.clean_text(body.text), offer_id=body.offer_id,
+                  recipients=len(rows), credits=credits, created_by=auth.user_id)
+    db.add(b)
+    db.flush()
+    bc.queue(db, t, b.id, rows, b.text, keyword)
+    audit.record(db, auth.tenant_id, auth.user_id, "create", "broadcast", b.id, after={"recipients": len(rows), "credits": credits})
+    return {"id": str(b.id), "recipients": len(rows), "credits": credits}
+
+
+@router.get("/broadcasts")
+def broadcasts(db: Session = Depends(get_db), auth: Auth = Depends(require(Perm.loyalty_manage))) -> list[dict]:
+    from sqlalchemy import text as sql
+    from .models import Broadcast
+    out = []
+    for b in db.scalars(select(Broadcast).order_by(Broadcast.created_at.desc()).limit(100)):
+        st = dict(db.execute(sql("select status, count(*) from wa_outbox where kind = 'promo' and ref like :r group by 1"),
+                             {"r": b.id.hex[:20] + "%"}).all())
+        claimed = 0
+        if b.offer_id:
+            claimed = db.scalar(select(func.count()).select_from(OfferCode).where(OfferCode.offer_id == b.offer_id, OfferCode.created_at >= b.created_at)) or 0
+        out.append({"id": str(b.id), "name": b.name, "text": b.text, "recipients": b.recipients, "credits": b.credits, "created_at": b.created_at,
+                    "sent": st.get("sent", 0), "waiting": st.get("queued", 0), "failed": st.get("failed", 0), "offer_codes": claimed})
+    return out

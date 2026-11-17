@@ -149,3 +149,14 @@ def take_msg(db: Session, tenant: Tenant) -> tuple[bool, str | None]:
         return True, (f"📨 {left} bill messages left this month ({s.msgs_used} used of {m['allowance']} free"
                       + (f", {s.bonus_msgs} bought" if s.bonus_msgs else "") + "). Buy a pack so bills keep going on WhatsApp.")
     return True, None
+
+
+def take_credits(db: Session, tenant: Tenant, credits: int) -> bool:
+    """Bulk messages (broadcasts) come out of bought message credits only, never the free monthly bill messages."""
+    if access(db, tenant)["state"] in ("house", "free"):
+        return True
+    s = db.scalar(select(Subscription).where(Subscription.tenant_id == tenant.id).with_for_update()) or sub_for(db, tenant.id, create=True)
+    if s.bonus_msgs < credits:
+        return False
+    s.bonus_msgs -= credits
+    return True

@@ -102,3 +102,120 @@ def test_whatsapp_offer_to_bill(client, monkeypatch):
     client.put(f"/api/offers/{offer['id']}", headers=h(tok), json={"name": "xx", "keyword": kw, "variant_id": v, "price_paise": 2900, "is_active": False})
     wr.handle("91" + "96" + str(uuid.uuid4().int)[:8], kw)
     assert "ended" in texts[-1]
+
+
+def test_offer_needs_otp(client, monkeypatch):
+    from app.config import get_settings
+    from app.services import otp as otpmod
+    from app.whatsapp import client as wa
+    from app.whatsapp import router as wr
+    s = setup(client)
+    tok, ck, v = s["tok"], s["ck"], s["v"]
+    monkeypatch.setattr(get_settings(), "public_base_url", "https://plus.example.com")
+    images, sent_otps = [], []
+    monkeypatch.setattr(wa, "send_image", lambda to, link, caption=None: images.append(link))
+    monkeypatch.setattr(wa, "send_text", lambda to, body: None)
+    monkeypatch.setattr(otpmod, "_deliver", lambda ident, code: sent_otps.append((ident, code)))
+    kw = "VIP" + uuid.uuid4().hex[:6].upper()
+    client.post("/api/offers", headers=h(tok), json={"name": "VIP shake ₹49", "keyword": kw, "variant_id": v, "price_paise": 4900, "require_otp": True})
+    cust = "95" + str(uuid.uuid4().int)[:8]
+    wr.handle("91" + cust, kw)
+    code = images[-1].rsplit("/", 1)[1].removesuffix(".png")
+    hit = client.get("/api/barcodes/lookup", headers=h(tok), params={"code": code, "outlet_id": ck}).json()
+    assert hit["needs_otp"] is True and hit["phone"] == "…" + cust[-4:]
+    line = {"variant_id": v, "qty": 1, "offer_code": code}
+    assert client.post("/api/orders/quote", headers=h(tok), json={"outlet_id": ck, "items": [line]}).status_code == 200   # the total still shows
+    blocked = client.post("/api/orders", headers=h(tok), json={"outlet_id": ck, "order_type": "takeaway", "items": [line]})
+    assert blocked.status_code == 409 and "Send OTP" in blocked.text
+    r = client.post(f"/api/offers/codes/{code}/otp", headers=h(tok), params={"outlet_id": ck})
+    assert r.status_code == 200 and r.json()["sent_to"] == "…" + cust[-4:]
+    ident, otp = sent_otps[-1]
+    assert ident.endswith(":" + cust)                                        # it goes to the number the offer was sent to
+    wrong = "0000" if otp != "0000" else "1111"
+    assert client.post(f"/api/offers/codes/{code}/verify", headers=h(tok), params={"outlet_id": ck}, json={"otp": wrong}).status_code == 422
+    ok = client.post(f"/api/offers/codes/{code}/verify", headers=h(tok), params={"outlet_id": ck}, json={"otp": otp})
+    assert ok.status_code == 200, ok.text
+    assert client.get("/api/barcodes/lookup", headers=h(tok), params={"code": code, "outlet_id": ck}).json()["needs_otp"] is False
+    od = client.post("/api/orders", headers=h(tok), json={"outlet_id": ck, "order_type": "takeaway", "items": [line]})
+    assert od.status_code in (200, 201), od.text
+
+
+def test_broadcast_filters_credits_optout(client, monkeypatch):
+    from datetime import date, timedelta
+
+    from app.config import get_settings
+    from app.custwa import service as cw
+    from app.db import system_session
+    from app.models import Bill, Tenant
+    from app.whatsapp import client as wa
+    from app.whatsapp import router as wr
+    from tests.test_banking import _bill
+    s = setup(client)
+    tok, ck, v = s["tok"], s["ck"], s["v"]
+    client.post("/api/users", headers=h(tok), json={"name": "Asha", "role": "cashier", "pin": "7419", "outlet_ids": [ck]})
+    asha = client.post("/api/auth/pin", json={"login_id": s["login"], "outlet_id": ck, "pin": "7419"}).json()["token"]
+    client.post("/api/shifts", headers=h(asha), json={"outlet_id": ck, "opening_cash_paise": 0})
+    phones = ["93" + str(uuid.uuid4().int)[:8] for _ in range(3)]
+    ids = []
+    for i, p in enumerate(phones):
+        for _ in range(i + 1):                                   # 1, 2 and 3 visits
+            b = _bill(client, asha, ck, v, "cash")
+            ids.append((b["id"], p))
+    with system_session() as db:
+        for bid, p in ids:
+            bb = db.get(Bill, uuid.UUID(bid))
+            bb.customer_phone = p
+            if p == phones[0]:
+                bb.business_date = date.today() - timedelta(days=120)          # hasn't come for 4 months
+        t = db.query(Tenant).filter(Tenant.login_id == s["login"]).one()
+    pv = lambda f: client.post("/api/broadcasts/preview", headers=h(tok), json=f).json()  # noqa: E731
+    assert pv({})["count"] == 3
+    assert pv({"away_days": 90})["count"] == 1 and pv({"active_days": 30})["count"] == 2
+    assert pv({"min_visits": 3})["count"] == 1
+    assert pv({"top_pct": 34})["count"] == 1 and pv({"top_pct": 34})["sample"][0]["phone"] == "…" + phones[2][-4:]
+    p = pv({})
+    assert p["credits"] == 18 and p["credits_each"] == 6
+    # With payments set up (not 'free'), credits come from bought packs only
+    monkeypatch.setattr(get_settings(), "billing_rz_key_id", "rzp_k")
+    monkeypatch.setattr(get_settings(), "billing_rz_key_secret", "sec")
+    with system_session() as db:
+        t = db.query(Tenant).filter(Tenant.login_id == s["login"]).one()
+        from datetime import datetime, timezone
+        t.trial_ends_at = datetime.now(timezone.utc) + timedelta(days=5)
+    no = client.post("/api/broadcasts", headers=h(tok), json={"name": "Come back", "text": "We miss you!\nFree topping this week", "filters": {}})
+    assert no.status_code == 402 and "18 message credits" in no.text
+    from app.billing.models import Subscription
+    from app.billing.service import sub_for
+    with system_session() as db:
+        sub = sub_for(db, t.id, create=True)
+        sub.bonus_msgs = 100
+    kw = "BACK" + uuid.uuid4().hex[:5].upper()
+    off = client.post("/api/offers", headers=h(tok), json={"name": "Free topping", "keyword": kw, "variant_id": v, "price_paise": 0}).json()
+    r = client.post("/api/broadcasts", headers=h(tok), json={"name": "Come back", "text": "We miss you!\nFree topping this week",
+                                                             "offer_id": off["id"], "filters": {"away_days": 90}})
+    assert r.status_code == 201 and r.json()["recipients"] == 1 and r.json()["credits"] == 6
+    with system_session() as db:
+        assert db.get(Subscription, t.id).bonus_msgs == 94
+    # it goes out as the marketing template, one line, with Get my offer + Stop offers
+    for k, val in {"wa_token": "t", "wa_phone_number_id": "123"}.items():
+        monkeypatch.setattr(get_settings(), k, val)
+    posts = []
+    monkeypatch.setattr(wa, "_post", lambda body: posts.append(body) or {"messages": [{"id": "x"}]})
+    cw.send_due()
+    promo = next(b for b in posts if b.get("template", {}).get("name") == "promo_offer")
+    body = promo["template"]["components"][0]["parameters"]
+    assert body[1]["text"] == "We miss you! · Free topping this week" and promo["to"].endswith(phones[0])
+    payloads = [c["parameters"][0]["payload"] for c in promo["template"]["components"][1:]]
+    assert payloads[0] == f"kw:{kw}" and payloads[1].startswith("stop:")
+    hist = client.get("/api/broadcasts", headers=h(tok)).json()[0]
+    assert hist["sent"] == 1 and hist["recipients"] == 1
+    # the customer taps 'Get my offer', then 'Stop offers'
+    images, texts = [], []
+    monkeypatch.setattr(wa, "send_image", lambda to, link, caption=None: images.append(link))
+    monkeypatch.setattr(wa, "send_text", lambda to, body: texts.append(body))
+    monkeypatch.setattr(get_settings(), "public_base_url", "https://plus.example.com")
+    wr.handle("91" + phones[0], payloads[0])
+    assert images and "/api/public/offer-qr/OF" in images[-1]
+    wr.handle("91" + phones[0], payloads[1])
+    assert "won't get offers" in texts[-1]
+    assert pv({})["count"] == 2                                   # never sent to again

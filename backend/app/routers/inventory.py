@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import Query, APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
@@ -366,6 +366,66 @@ def list_purchases(outlet_id: uuid.UUID, d1: date | None = None, d2: date | None
     if d2:
         q = q.where(Purchase.invoice_date <= d2)
     return [_purchase_out(db, p) for p in db.scalars(q.order_by(Purchase.invoice_date.desc(), Purchase.created_at.desc()).limit(300))]
+
+
+@router.get("/purchases/all")
+def all_purchases(outlet_id: uuid.UUID | None = None, d1: date | None = None, d2: date | None = None, supplier_id: uuid.UUID | None = None,
+                  q: str | None = None, status_: str = Query("posted", alias="status", pattern=r"^(posted|cancelled|all)$"),
+                  min_total: int | None = None, max_total: int | None = None,
+                  auth: Auth = Depends(require(Perm.inventory_manage)), db: Session = Depends(get_db)) -> dict:
+    """wise-plus: every purchase bill, all outlets, with filters and totals (like Ease My Bill's bill list)."""
+    from ..purchases_ai.models import ScannedBill
+    from ..services.training import is_training
+    if outlet_id:
+        ensure_outlet_access(db, auth, outlet_id)
+        outlets = [outlet_id]
+    else:
+        outlets = [o.id for o in db.scalars(select(Outlet).where(Outlet.is_active.is_(True)))
+                   if not is_training(db, o.id) and (not auth.outlet_id or o.id == auth.outlet_id)]
+    qq = select(Purchase).where(Purchase.outlet_id.in_(outlets))
+    if status_ != "all":
+        qq = qq.where(Purchase.status == status_)
+    if d1:
+        qq = qq.where(Purchase.invoice_date >= d1)
+    if d2:
+        qq = qq.where(Purchase.invoice_date <= d2)
+    if supplier_id:
+        qq = qq.where(Purchase.supplier_id == supplier_id)
+    if min_total is not None:
+        qq = qq.where(Purchase.total_paise >= min_total)
+    if max_total is not None:
+        qq = qq.where(Purchase.total_paise <= max_total)
+    rows = db.scalars(qq.order_by(Purchase.invoice_date.desc(), Purchase.created_at.desc()).limit(2000)).all()
+    if q and q.strip():
+        t = q.strip().lower()
+        sups = {s.id: s.name.lower() for s in db.scalars(select(Supplier))}
+        rows = [p for p in rows if t in (p.invoice_no or "").lower() or t in sups.get(p.supplier_id, "")
+                or any(t in (ln.get("name") or "").lower() for ln in p.lines) or t in (p.notes or "").lower()]
+    files = {sb.purchase_id: str(sb.id) for sb in db.scalars(select(ScannedBill).where(
+        ScannedBill.purchase_id.in_([p.id for p in rows] or [uuid.uuid4()]), ScannedBill.file_path.is_not(None)))}
+    names = {o.id: o.name for o in db.scalars(select(Outlet))}
+    out = [_purchase_out(db, p) | {"outlet": names.get(p.outlet_id), "file_id": files.get(p.id)} for p in rows]
+    live = [p for p in rows if p.status == "posted"]
+    return {"purchases": out, "count": len(out), "amount_paise": sum(p.amount_paise for p in live), "tax_paise": sum(p.tax_paise for p in live),
+            "total_paise": sum(p.total_paise for p in live)}
+
+
+class BulkDeleteIn(BaseModel):
+    ids: list[uuid.UUID] = Field(min_length=1, max_length=500)
+
+
+@router.post("/purchases/delete")
+def delete_purchases(body: BulkDeleteIn, auth: Auth = Depends(require(Perm.inventory_manage)), db: Session = Depends(get_db)) -> dict:
+    """Delete bills entered by mistake (several at once). Their stock comes back out and they leave supplier dues and
+    reports; each stays findable under 'Deleted' for the audit trail and can't be counted twice."""
+    done = 0
+    for pid in dict.fromkeys(body.ids):
+        p = db.get(Purchase, pid)
+        if p is None or p.status == "cancelled":
+            continue
+        cancel_purchase(pid, auth, db)
+        done += 1
+    return {"deleted": done}
 
 
 @router.post("/purchases/{purchase_id}/cancel")

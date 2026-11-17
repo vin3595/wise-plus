@@ -197,3 +197,36 @@ def test_whatsapp_statement(shop, monkeypatch, tmp_path):
     assert tir["balance_paise"] == 0 and tir["paid_paise"] == 4998200 and tir["opening_paise"] == 4998200
     post({"type": "document", "document": {"id": "m10", "mime_type": "application/pdf", "filename": "ACCOUNT_STATEMENT-15.pdf"}})
     assert "Added to supplier dues" not in sent[-1] and "New supplier" not in sent[-1]      # sending it twice adds nothing
+
+
+def test_all_purchase_bills_filter_and_delete(client):
+    s = setup(client)
+    tok, sp, ck, milk = s["tok"], s["sp"], s["ck"], s["milk"]
+    a = client.post("/api/inventory/suppliers", headers=h(tok), json={"name": "Amul Dairy"}).json()
+    b = client.post("/api/inventory/suppliers", headers=h(tok), json={"name": "Kanha Foods"}).json()
+
+    def buy(out, sup, no, d, rupees):
+        r = client.post("/api/inventory/purchases", headers=h(tok), json={"outlet_id": out, "supplier_id": sup, "invoice_no": no, "invoice_date": d,
+                        "lines": [{"stock_item_id": milk["id"], "qty_m": 1_000_000, "unit": "ml", "amount_paise": rupees * 100, "gst_bp": 0}]})
+        assert r.status_code == 201, r.text
+        return r.json()
+    base = client.get("/api/inventory/purchases/all", headers=h(tok)).json()       # setup() already bought something
+    p1 = buy(sp, a["id"], "AM-1", "2026-11-01", 1000)
+    p2 = buy(ck, a["id"], "AM-2", "2026-11-05", 2500)
+    p3 = buy(ck, b["id"], "KF-9", "2026-11-10", 400)
+    g = lambda **q: client.get("/api/inventory/purchases/all", headers=h(tok), params=q).json()  # noqa: E731
+    allp = g()
+    assert allp["count"] == base["count"] + 3 and allp["total_paise"] == base["total_paise"] + 390000
+    assert all(x["outlet"] for x in allp["purchases"])
+    assert g(supplier_id=a["id"])["count"] == 2 and g(q="kanha")["count"] == 1 and g(q="am-2")["count"] == 1
+    assert g(d1="2026-11-04", d2="2026-11-30", q="am")["count"] >= 1 and g(min_total=100000, supplier_id=a["id"])["count"] == 2
+    assert g(outlet_id=sp, supplier_id=a["id"])["count"] == 1
+    assert g(q="milk")["count"] >= 3                                          # item names too
+    r = client.post("/api/inventory/purchases/delete", headers=h(tok), json={"ids": [p1["id"], p3["id"], p3["id"]]}).json()
+    assert r["deleted"] == 2
+    left = g()
+    assert left["count"] == base["count"] + 1 and left["total_paise"] == base["total_paise"] + 250000
+    assert g(status="cancelled")["count"] == 2 and g(status="all")["count"] == base["count"] + 3
+    assert client.post("/api/inventory/purchases/delete", headers=h(tok), json={"ids": [p1["id"]]}).json()["deleted"] == 0
+    dues = client.get(f"/api/ledger/suppliers/{b['id']}", headers=h(tok)).json()
+    assert dues["balance_paise"] == 0                                        # a deleted bill isn't owed

@@ -334,6 +334,15 @@ def offer_reply(phone: str, text: str) -> bool:
 
 def handle(phone: str, text: str) -> None:
     try:
+        t = (text or "").strip()
+        if t.startswith("stop:"):                      # 'Stop offers' on a broadcast
+            from ..offers.broadcast import opt_out
+            msg = opt_out(phone, t[5:])
+            if msg:
+                client.send_text(phone, msg)
+            return
+        if t.startswith("kw:"):                        # 'Get my offer' on a broadcast
+            text = t[3:]
         if offer_reply(phone, text):
             return
         from ..custwa.service import handle_customer   # wise-plus: customers rating a visit

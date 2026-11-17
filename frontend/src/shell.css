@@ -204,7 +204,7 @@ td.num.paid { color: var(--mint); }
 .kpis span { font-size: 0.78rem; color: var(--ink-2); }
 .kpis strong { font-size: 1.15rem; font-variant-numeric: tabular-nums; }
 .trend-bars { width: 100%; height: 140px; display: block; margin-top: 0.4rem; }
-.trend-bars rect { fill: var(--primary, #138996); }
+.trend-bars rect { fill: var(--brand); }
 .trend-bars rect:hover { opacity: 0.75; }
 .trend-axis { display: flex; justify-content: space-between; margin-bottom: 0.5rem; }
 details.spot { border-top: 1px solid var(--line); padding: 0.45rem 0; }
@@ -216,8 +216,8 @@ details.spot summary { cursor: pointer; }
 .service strong { display: block; }
 .service small { display: block; color: var(--ink-2); font-size: 0.82rem; line-height: 1.35; margin-top: 0.1rem; }
 .service .tick { width: 1.5rem; height: 1.5rem; border-radius: 50%; border: 1.5px solid var(--line); display: grid; place-items: center; font-weight: 800; font-size: 0.85rem; }
-.service.on { border-color: var(--primary, #138996); background: color-mix(in srgb, var(--primary, #138996) 7%, var(--card, #fff)); }
-.service.on .tick { background: var(--primary, #138996); border-color: var(--primary, #138996); color: #fff; }
+.service.on { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 7%, var(--card, #fff)); }
+.service.on .tick { background: var(--brand); border-color: var(--brand); color: #fff; }
 .service:disabled { opacity: 0.6; cursor: progress; }
 /* Billing */
 .trial-banner { background: color-mix(in srgb, var(--amber, #d97706) 14%, var(--card, #fff)); border: 1px solid color-mix(in srgb, var(--amber, #d97706) 40%, transparent);
@@ -227,17 +227,17 @@ details.spot summary { cursor: pointer; }
 .founding .big { font-size: 1.6rem; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-bottom: 0.6rem; }
 .seg button { border: 0; background: transparent; padding: 0.45rem 0.8rem; font: inherit; cursor: pointer; color: inherit; }
-.seg button.on { background: var(--primary, #138996); color: #fff; }
+.seg button.on { background: var(--brand); color: #fff; }
 .plan-list { display: grid; gap: 0.35rem; margin-bottom: 0.6rem; }
 .plan-row { display: flex; gap: 0.6rem; align-items: center; border: 1px solid var(--line); border-radius: 10px; padding: 0.5rem 0.7rem; cursor: pointer; }
-.plan-row.on { border-color: var(--primary, #138996); }
+.plan-row.on { border-color: var(--brand); }
 .plan-total { margin: 0.4rem 0 0.8rem; }
-.svc-price { font-style: normal; font-weight: 600; font-size: 0.8rem; color: var(--primary, #138996); margin-left: 0.45rem; }
+.svc-price { font-style: normal; font-weight: 600; font-size: 0.8rem; color: var(--brand); margin-left: 0.45rem; }
 /* Bill keeper */
 .kept-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.7rem; }
 .kept-card { display: grid; grid-template-columns: 4.5rem 1fr; gap: 0.7rem; text-align: left; padding: 0.6rem; border: 1px solid var(--line);
   border-radius: 12px; background: var(--card, #fff); color: inherit; font: inherit; cursor: pointer; }
-.kept-card:hover { border-color: var(--primary, #138996); }
+.kept-card:hover { border-color: var(--brand); }
 .kept-thumb { width: 4.5rem; height: 6rem; border-radius: 8px; overflow: hidden; background: var(--bg); display: grid; place-items: center; color: var(--ink-2); }
 .kept-thumb img { width: 100%; height: 100%; object-fit: cover; }
 .kept-info { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
@@ -261,10 +261,10 @@ details.spot summary { cursor: pointer; }
 .ts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; }
 .ts-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.35rem; min-height: 8.5rem; padding: 0.8rem;
   border: 1.5px solid var(--line); border-radius: 18px; background: var(--card, #fff); color: var(--ink, #111); font: inherit; cursor: pointer; text-align: center; }
-.ts-tile svg { color: var(--primary, #138996); }
+.ts-tile svg { color: var(--brand); }
 .ts-tile strong { font-size: 1.1rem; }
 .ts-tile small { color: var(--ink-2); font-size: 0.78rem; min-height: 1.1em; }
-.ts-tile.order { grid-column: 1 / -1; min-height: 6.5rem; background: var(--primary, #138996); color: #fff; border-color: transparent; }
+.ts-tile.order { grid-column: 1 / -1; min-height: 6.5rem; background: var(--brand); color: #fff; border-color: transparent; }
 .ts-tile.order svg, .ts-tile.order small { color: #fff; }
 .ts-tile.waiting { border-color: var(--amber, #d97706); background: color-mix(in srgb, var(--amber, #d97706) 9%, var(--card, #fff)); }
 .ts-tile:active { transform: scale(0.98); }
@@ -276,8 +276,8 @@ details.spot summary { cursor: pointer; }
 .ts-sub { color: var(--ink-2); font-size: 0.92rem; }
 .ts-total { display: flex; justify-content: space-between; border-top: 1px solid var(--line); padding-top: 0.5rem; margin: 0; }
 .ts-btn { display: block; width: 100%; text-align: center; margin-top: 0.55rem; padding: 0.85rem; border-radius: 12px; border: 0; font: inherit; font-weight: 700;
-  background: var(--primary, #138996); color: #fff; text-decoration: none; cursor: pointer; }
-.ts-btn.ghost { background: transparent; color: var(--primary, #138996); border: 1.5px solid var(--primary, #138996); }
+  background: var(--brand); color: #fff; text-decoration: none; cursor: pointer; }
+.ts-btn.ghost { background: transparent; color: var(--brand); border: 1.5px solid var(--brand); }
 .ts-msg { color: #b91c1c; margin-top: 0.7rem; }
 .ts-foot { text-align: center; color: var(--ink-2); font-size: 0.82rem; margin-top: 1.5rem; }
 /* Table service: alerts on the POS / waiter phone */
@@ -289,7 +289,7 @@ details.spot summary { cursor: pointer; }
 .ta-head { display: flex; justify-content: space-between; align-items: center; padding: 0.2rem 0.3rem 0.5rem; }
 .ta-mute { border: 0; background: transparent; color: var(--ink-2); cursor: pointer; padding: 0.3rem; }
 .ta-card { display: grid; grid-template-columns: 3.4rem 1fr auto; gap: 0.6rem; align-items: center; padding: 0.55rem; border-radius: 12px; margin-bottom: 0.45rem;
-  background: var(--bg); border-left: 5px solid var(--primary, #138996); }
+  background: var(--bg); border-left: 5px solid var(--brand); }
 .ta-card.k-water { border-left-color: #0ea5e9; } .ta-card.k-waiter { border-left-color: #8b5cf6; } .ta-card.k-bill { border-left-color: #16a34a; }
 .ta-card.slow { background: color-mix(in srgb, var(--amber, #d97706) 12%, var(--bg)); }
 .ta-card.late { background: color-mix(in srgb, #dc2626 13%, var(--bg)); animation: ta-blink 1.2s ease-in-out infinite; }
@@ -299,7 +299,7 @@ details.spot summary { cursor: pointer; }
 .ta-kind { display: inline-flex; gap: 0.35rem; align-items: center; font-weight: 700; }
 .ta-kind em { font-style: normal; color: #b91c1c; font-weight: 600; }
 .ta-sub { font-size: 0.82rem; color: var(--ink-2); }
-.ta-done { border: 0; border-radius: 10px; padding: 0.65rem 0.9rem; font: inherit; font-weight: 700; background: var(--primary, #138996); color: #fff; cursor: pointer; }
+.ta-done { border: 0; border-radius: 10px; padding: 0.65rem 0.9rem; font: inherit; font-weight: 700; background: var(--brand); color: #fff; cursor: pointer; }
 .ta-full .ta-card { grid-template-columns: 4.2rem 1fr auto; padding: 0.8rem; }
 .ta-full .ta-table { font-size: 2rem; }
 .ta-full .ta-done { padding: 0.9rem 1.2rem; font-size: 1.05rem; }
@@ -324,7 +324,7 @@ td .warn, p.warn { color: #92400e; font-weight: 600; display: inline-flex; gap: 
 .bank-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: 0.6rem; }
 .bank-card { display: grid; gap: 0.2rem; text-align: left; padding: 0.8rem 0.9rem; border: 1px solid var(--line); border-radius: 12px;
   background: var(--card, #fff); font: inherit; color: inherit; cursor: pointer; }
-.bank-card.on { border-color: var(--primary, #138996); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary, #138996) 25%, transparent); }
+.bank-card.on { border-color: var(--brand); box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 25%, transparent); }
 .bank-card strong { font-size: 1.25rem; }
 .bank-name { font-weight: 600; }
 .bank-lines { list-style: none; padding: 0; margin: 0; display: grid; }
@@ -375,3 +375,15 @@ label.check { display: inline-flex; gap: 0.35rem; align-items: center; margin-ri
   .offer-poster { position: absolute; left: 50%; top: 10mm; transform: translateX(-50%); border: 0; }
   .no-print { display: none !important; }
 }
+.offer-otp { margin-top: 0.3rem; }
+.offer-otp .otp-in { width: 5.5rem; padding: 0.3rem 0.5rem; }
+.btn-small { padding: 0.3rem 0.65rem; font-size: 0.85rem; }
+tr.sub-row td { background: color-mix(in srgb, var(--line) 30%, transparent); }
+.chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.4rem; }
+.chip.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+.big-line { font-size: 1.1rem; margin: 0.6rem 0 0.2rem; }
+.ok-text { color: var(--mint); font-weight: 600; }
+.bad-text { color: var(--berry); }
+.wa-preview { background: #e9fbe5; border-radius: 12px; padding: 0.7rem 0.9rem; max-width: 22rem; margin: 0.4rem 0 0.8rem; color: #111; }
+.wa-preview p { margin: 0 0 0.3rem; }
+.wa-btn { border-top: 1px solid rgba(0, 0, 0, 0.08); text-align: center; color: #0a7cff; padding: 0.4rem 0; font-size: 0.9rem; }

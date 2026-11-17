@@ -38,6 +38,8 @@ import Cash from "./pages/Cash";
 import Dues from "./pages/Dues";
 import Banks from "./pages/Banks";
 import Offers from "./pages/Offers";
+import Broadcast from "./pages/Broadcast";
+import PurchaseBills from "./pages/PurchaseBills";
 import Barcodes from "./pages/Barcodes";
 import Floor from "./pages/Floor";
 import TableService from "./pages/TableService";
@@ -74,12 +76,13 @@ function Shell({ children }: { children: ReactNode }) {
     { label: "Bills", section: "Counter", pages: [["/bills", "Bills", pos && can("billing")]] },
     { label: "Cash", section: "Money", pages: [["/cash", "Cash", pos && can("cash.expected")], ["/day-close", "Day close", pos && can("day.close")]] },
     { label: "Daily sheets", section: "Money", pages: [["/sheets", "Daily sheets", has("sheets") && can("reports.view")]] },
-    { label: "Bill keeper", section: "Money", pages: [["/bill-keeper", "Bill keeper", has("bills") && can("inventory.manage")]] },
+    { label: "Bill keeper", section: "Money", pages: [["/purchase-bills", "Purchase bills", (has("stock") || has("bills")) && can("inventory.manage")],
+      ["/bill-keeper", "Bill keeper", has("bills") && can("inventory.manage")]] },
     { label: "Supplier dues", section: "Money", pages: [["/dues", "Supplier dues", has("bills") && can("reports.view")]] },
     { label: "Banks", section: "Money", pages: [["/banks", "Banks", can("banks.manage")]] },
     { label: "Reports", section: "Money", pages: [["/reports", "Reports", can("reports.view")], ["/accounts", "Accounts and Tally", can("reports.view")]] },
     { label: has("stock") ? "Stock" : "Purchases", section: "Stock and customers", pages: [["/stock", has("stock") ? "Stock" : "Purchases", (has("stock") || has("bills")) && can("stock.count")]] },
-    { label: "Customers", section: "Stock and customers", pages: [["/customers", "Customers", pos && can("loyalty.manage")], ["/feedback", "Feedback", pos && can("reports.view")], ["/offers", "WhatsApp offers", pos && can("menu.view")]] },
+    { label: "Customers", section: "Stock and customers", pages: [["/customers", "Customers", pos && can("loyalty.manage")], ["/feedback", "Feedback", pos && can("reports.view")], ["/offers", "WhatsApp offers", pos && can("menu.view")], ["/broadcast", "WhatsApp broadcast", pos && can("loyalty.manage")]] },
     { label: "Getting started", section: "Setup", pages: [["/start", "Getting started", can("tenant.settings")]] },
     { label: "Menu", section: "Setup", pages: [["/menu", "Items", (pos || has("stock")) && can("menu.manage")], ["/barcodes", "Barcodes", (pos || has("stock")) && can("menu.view")], ["/outlet-menu", "Outlet prices", pos && can("menu.override")],
       ["/tax", "Tax", pos && can("menu.manage")], ["/kitchen", "Kitchen and printers", pos && (can("menu.manage") || can("outlets.manage"))]] },
@@ -272,8 +275,10 @@ export default function App() {
         <Route path="/sheets" element={<Sheets />} />
         <Route path="/services" element={<Services />} />
         <Route path="/bill-keeper" element={<BillKeeper />} />
+        <Route path="/purchase-bills" element={<PurchaseBills />} />
         <Route path="/feedback" element={<Feedback />} />
         <Route path="/offers" element={<Offers />} />
+        <Route path="/broadcast" element={<Broadcast />} />
         <Route path="/barcodes" element={<Barcodes />} />
         <Route path="/floor" element={<Floor />} />
         <Route path="/billing" element={<Billing />} />

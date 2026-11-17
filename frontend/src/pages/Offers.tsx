@@ -8,7 +8,7 @@ import { Button, Card, ErrorText, Field, Input, Select, useAction } from "../ui"
 
 interface Offer { id: string; name: string; keyword: string; variant_id: string; item: string | null; regular_paise: number | null; price_paise: number;
   outlet_ids: string[] | null; valid_from: string | null; valid_to: string | null; per_phone: number; code_days: number; daily_limit: number | null;
-  message: string | null; is_active: boolean; issued: number; used: number }
+  message: string | null; is_active: boolean; require_otp: boolean; issued: number; used: number }
 interface Code { code: string; phone: string; status: string; issued_on: string; expires_on: string; used_at: string | null }
 
 const day = (d: string | null) => (d ? new Date(d + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "");
@@ -39,7 +39,7 @@ export default function Offers() {
             {o.regular_paise ? <s className="muted"> {formatPaise(o.regular_paise)}</s> : null}</p>
           <p className="muted small">
             {o.per_phone === 1 ? "One per number" : `${o.per_phone} per number`} · code valid {o.code_days} day{o.code_days === 1 ? "" : "s"}
-            {o.daily_limit ? ` · ${o.daily_limit} codes a day` : ""}{o.valid_from || o.valid_to ? ` · ${day(o.valid_from) || "now"} – ${day(o.valid_to) || "no end"}` : ""}
+            {o.daily_limit ? ` · ${o.daily_limit} codes a day` : ""}{o.require_otp ? " · OTP check at the counter" : ""}{o.valid_from || o.valid_to ? ` · ${day(o.valid_from) || "now"} – ${day(o.valid_to) || "no end"}` : ""}
           </p>
           <p><strong>{o.issued}</strong> codes sent · <strong>{o.used}</strong> used{o.issued ? ` (${Math.round((o.used / o.issued) * 100)}%)` : ""}</p>
           <div className="row wrap">
@@ -83,6 +83,7 @@ function OfferForm({ offer, onDone, onCancel }: { offer: Offer | null; onDone: (
     name: offer?.name || "", keyword: offer?.keyword || "", variant_id: offer?.variant_id || "", price: offer ? String(offer.price_paise / 100) : "",
     valid_from: offer?.valid_from || "", valid_to: offer?.valid_to || "", per_phone: String(offer?.per_phone ?? 1), code_days: String(offer?.code_days ?? 7),
     daily_limit: offer?.daily_limit ? String(offer.daily_limit) : "", message: offer?.message || "", is_active: offer?.is_active ?? true,
+    require_otp: offer?.require_otp ?? false,
     outlet_ids: offer?.outlet_ids || [] as string[],
   });
   const { run, busy, error } = useAction();
@@ -94,7 +95,7 @@ function OfferForm({ offer, onDone, onCancel }: { offer: Offer | null; onDone: (
   const save = async () => {
     const body = { name: f.name.trim(), keyword: f.keyword.trim(), variant_id: f.variant_id, price_paise: inputToPaise(f.price) ?? 0,
       valid_from: f.valid_from || null, valid_to: f.valid_to || null, per_phone: Number(f.per_phone) || 1, code_days: Number(f.code_days) || 7,
-      daily_limit: f.daily_limit ? Number(f.daily_limit) : null, message: f.message || null, is_active: f.is_active, outlet_ids: f.outlet_ids.length ? f.outlet_ids : null };
+      daily_limit: f.daily_limit ? Number(f.daily_limit) : null, message: f.message || null, is_active: f.is_active, require_otp: f.require_otp, outlet_ids: f.outlet_ids.length ? f.outlet_ids : null };
     const r = await run(() => (offer ? api(`/offers/${offer.id}`, { method: "PUT", body }) : api("/offers", { body })));
     if (r) onDone();
   };
@@ -124,6 +125,8 @@ function OfferForm({ offer, onDone, onCancel }: { offer: Offer | null; onDone: (
             <label key={o.id} className="check"><input type="checkbox" checked={f.outlet_ids.includes(o.id)}
               onChange={(e) => setF((x) => ({ ...x, outlet_ids: e.target.checked ? [...x.outlet_ids, o.id] : x.outlet_ids.filter((y) => y !== o.id) }))} /> {o.name}</label>))}
           </div></fieldset>)}
+      <label className="check"><input type="checkbox" checked={f.require_otp} onChange={(e) => setF((x) => ({ ...x, require_otp: e.target.checked }))} /> Validation (OTP):
+        the cashier taps Send OTP after scanning; the customer gets a code on WhatsApp and reads it out</label>
       <label className="check"><input type="checkbox" checked={f.is_active} onChange={(e) => setF((x) => ({ ...x, is_active: e.target.checked }))} /> Offer is on</label>
       <ErrorText error={error} />
       <div className="row">

@@ -806,6 +806,7 @@ class Customer(Base):
     stamps: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     first_visit: Mapped[date | None] = mapped_column(Date)
     last_visit: Mapped[date | None] = mapped_column(Date)
+    wa_optout: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)  # wise-plus: no offers
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     __table_args__ = (UniqueConstraint("tenant_id", "phone"),)
 

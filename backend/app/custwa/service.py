@@ -86,6 +86,9 @@ def send_due(limit: int = 20) -> int:
             try:
                 if r.kind == "bill":
                     send_bill(r.to_phone, r.payload)
+                elif r.kind == "promo":
+                    from ..offers.broadcast import send_promo
+                    send_promo(r.to_phone, r.payload)
                 r.status, r.error = "sent", None
                 sent += 1
             except Exception as e:  # noqa: BLE001
