@@ -307,8 +307,35 @@ def _release_held(phone: str, text: str) -> bool:
     return True
 
 
+def offer_reply(phone: str, text: str) -> bool:
+    """wise-plus: anyone sending an offer's keyword gets their own QR code (one WhatsApp number serves every business,
+    so keywords are unique across all of them). True = it was a keyword."""
+    if not text or len(text) > 40 or "\n" in text:
+        return False
+    from ..config import get_settings
+    from ..db import system_session
+    from ..offers import service as osv
+    with system_session() as db:
+        offer = osv.find_keyword(db, text)
+        if offer is None:
+            return False
+        code, why = osv.issue(db, offer, client.last10(phone))
+        if code is None:
+            client.send_text(phone, why)
+            return True
+        body = osv.reply_text(db, offer, code)
+        link = f"{get_settings().public_base_url.rstrip('/')}/api/public/offer-qr/{code.code}.png"
+    try:
+        client.send_image(phone, link, body)
+    except Exception:  # noqa: BLE001 - the picture couldn't be fetched: the code in words still works
+        client.send_text(phone, body)
+    return True
+
+
 def handle(phone: str, text: str) -> None:
     try:
+        if offer_reply(phone, text):
+            return
         from ..custwa.service import handle_customer   # wise-plus: customers rating a visit
         if (text or "").startswith("fb:") or not _who(client.last10(phone)):
             if handle_customer(phone, text):

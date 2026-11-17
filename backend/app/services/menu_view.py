@@ -46,7 +46,7 @@ def build_outlet_menu(db: Session, outlet: Outlet, include_unavailable: bool = F
             if available or include_unavailable:
                 variants.append(OutletMenuVariant(
                     variant_id=v.id, name=v.name, master_price_paise=v.price_paise, price_paise=price,
-                    available=available, overridden=ov is not None, sold_out=v.id in sold_out))
+                    available=available, overridden=ov is not None, sold_out=v.id in sold_out, barcode=v.barcode))
         if variants:
             items_out.append(OutletMenuItem(
                 item_id=item.id, category_id=item.category_id, name=item.name, short_code=item.short_code,

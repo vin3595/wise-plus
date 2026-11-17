@@ -232,6 +232,8 @@ def cancel_order(order_id: uuid.UUID, body: CancelIn, auth: Auth = Depends(requi
                                                                          body.manager_pin).id
     for k in db.scalars(select(Kot).where(Kot.order_id == order.id)):
         k.status = "cancelled"
+    from ..offers.service import release
+    release(db, order_id=order.id)          # wise-plus: an offer code on a cancelled order can be used again
     order.status = "cancelled"
     order.cancelled_at = _now()
     order.cancelled_by = auth.user_id

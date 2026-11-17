@@ -37,6 +37,8 @@ import Access from "./pages/Access";
 import Cash from "./pages/Cash";
 import Dues from "./pages/Dues";
 import Banks from "./pages/Banks";
+import Offers from "./pages/Offers";
+import Barcodes from "./pages/Barcodes";
 import Floor from "./pages/Floor";
 import TableService from "./pages/TableService";
 import TableAlerts from "./components/TableAlerts";
@@ -77,9 +79,9 @@ function Shell({ children }: { children: ReactNode }) {
     { label: "Banks", section: "Money", pages: [["/banks", "Banks", can("banks.manage")]] },
     { label: "Reports", section: "Money", pages: [["/reports", "Reports", can("reports.view")], ["/accounts", "Accounts and Tally", can("reports.view")]] },
     { label: has("stock") ? "Stock" : "Purchases", section: "Stock and customers", pages: [["/stock", has("stock") ? "Stock" : "Purchases", (has("stock") || has("bills")) && can("stock.count")]] },
-    { label: "Customers", section: "Stock and customers", pages: [["/customers", "Customers", pos && can("loyalty.manage")], ["/feedback", "Feedback", pos && can("reports.view")]] },
+    { label: "Customers", section: "Stock and customers", pages: [["/customers", "Customers", pos && can("loyalty.manage")], ["/feedback", "Feedback", pos && can("reports.view")], ["/offers", "WhatsApp offers", pos && can("menu.view")]] },
     { label: "Getting started", section: "Setup", pages: [["/start", "Getting started", can("tenant.settings")]] },
-    { label: "Menu", section: "Setup", pages: [["/menu", "Items", (pos || has("stock")) && can("menu.manage")], ["/outlet-menu", "Outlet prices", pos && can("menu.override")],
+    { label: "Menu", section: "Setup", pages: [["/menu", "Items", (pos || has("stock")) && can("menu.manage")], ["/barcodes", "Barcodes", (pos || has("stock")) && can("menu.view")], ["/outlet-menu", "Outlet prices", pos && can("menu.override")],
       ["/tax", "Tax", pos && can("menu.manage")], ["/kitchen", "Kitchen and printers", pos && (can("menu.manage") || can("outlets.manage"))]] },
     { label: "Outlets and screens", section: "Setup", pages: [["/outlets", "Outlets", can("outlets.manage")], ["/screens", "Screens", pos && can("outlets.manage")],
       ["/screen-ads", "Screen ads", pos && can("ads.manage")]] },
@@ -271,6 +273,8 @@ export default function App() {
         <Route path="/services" element={<Services />} />
         <Route path="/bill-keeper" element={<BillKeeper />} />
         <Route path="/feedback" element={<Feedback />} />
+        <Route path="/offers" element={<Offers />} />
+        <Route path="/barcodes" element={<Barcodes />} />
         <Route path="/floor" element={<Floor />} />
         <Route path="/billing" element={<Billing />} />
         <Route path="/menu" element={<MenuEditor />} />

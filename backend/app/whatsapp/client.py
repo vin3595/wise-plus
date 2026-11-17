@@ -53,6 +53,10 @@ def send_document(to: str, link: str, filename: str, caption: str | None = None)
                   "document": {"link": link, "filename": filename, **({"caption": caption} if caption else {})}})
 
 
+def send_image(to: str, link: str, caption: str | None = None) -> dict:
+    return _post({"to": to_wa(to), "type": "image", "image": {"link": link, **({"caption": caption[:1024]} if caption else {})}})
+
+
 def get_media(media_id: str) -> tuple[bytes, str]:
     """A photo or PDF someone sent us: (bytes, mime type). Meta gives a short-lived URL that needs the token."""
     s = get_settings()

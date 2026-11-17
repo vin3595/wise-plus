@@ -341,3 +341,37 @@ ul.plain { list-style: none; padding: 0; margin: 0.3rem 0; display: grid; gap: 0
 label.check { display: inline-flex; gap: 0.35rem; align-items: center; margin-right: 0.8rem; }
 .ok-ico { color: var(--mint); vertical-align: -3px; }
 @media (max-width: 560px) { .bank-line-top { grid-template-columns: 1fr auto; } .bank-line-top .small { grid-column: 1 / -1; } }
+
+/* Scanning: camera, offer lines, barcode labels */
+.scan-btn { margin-left: 0.25rem; }
+.cam-scan { position: fixed; inset: 0; z-index: 90; background: #000; display: grid; grid-template-rows: auto 1fr; }
+.cam-top { display: flex; justify-content: space-between; align-items: center; padding: 0.7rem 0.9rem; color: #fff; }
+.cam-top .icon-btn { color: #fff; }
+.cam-scan video { width: 100%; height: 100%; object-fit: cover; }
+.cam-frame { position: absolute; left: 12%; right: 12%; top: 32%; height: 28%; border: 3px solid rgba(255, 255, 255, 0.85); border-radius: 14px; pointer-events: none; }
+.cam-error { color: #fff; padding: 2rem; text-align: center; }
+.offer-tag { font-size: 0.8rem; color: var(--berry); font-weight: 600; }
+.offer-tag s { font-weight: 400; margin-left: 0.3rem; }
+.ean13 { width: 100%; height: auto; display: block; }
+.label-sheet { display: none; }
+.offer-poster-wrap { display: grid; gap: 0.8rem; justify-items: center; }
+.offer-poster { text-align: center; border: 2px dashed var(--line); border-radius: 16px; padding: 1.5rem 2rem; max-width: 26rem; }
+.offer-poster h2 { font-size: 1.7rem; margin: 0 0 0.3rem; }
+.offer-poster .big { font-size: 1.2rem; }
+@media print {
+  body:has(.label-sheet .label) * { visibility: hidden; }
+  body:has(.label-sheet .label) .label-sheet, body:has(.label-sheet .label) .label-sheet * { visibility: visible; }
+  .label-sheet { display: grid; position: absolute; left: 0; top: 0; }
+  .label { break-inside: avoid; overflow: hidden; display: grid; align-content: center; text-align: center; font-family: system-ui, sans-serif; }
+  .label-name { font-size: 9pt; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .label-price { font-size: 10pt; font-weight: 700; }
+  .lab-a4 { grid-template-columns: repeat(3, 64mm); grid-auto-rows: 34mm; column-gap: 2.5mm; padding: 10mm 6mm; }
+  .lab-a4 .label { padding: 2mm 4mm; }
+  .lab-roll { grid-template-columns: 50mm; grid-auto-rows: 25mm; }
+  .lab-roll .label, .lab-roll38 .label { padding: 1mm 2mm; break-after: page; }
+  .lab-roll38 { grid-template-columns: 38mm; grid-auto-rows: 25mm; }
+  body:has(.offer-poster) * { visibility: hidden; }
+  body:has(.offer-poster) .offer-poster, body:has(.offer-poster) .offer-poster * { visibility: visible; }
+  .offer-poster { position: absolute; left: 50%; top: 10mm; transform: translateX(-50%); border: 0; }
+  .no-print { display: none !important; }
+}

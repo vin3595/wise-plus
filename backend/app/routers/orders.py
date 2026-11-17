@@ -114,7 +114,7 @@ def quote_cart(body: QuoteIn, auth: Auth = Depends(require(Perm.kot_send)), db: 
     outlet = get_or_404(db, Outlet, body.outlet_id, "Outlet")
     ensure_outlet_access(db, auth, outlet.id)
     try:
-        calc = quote_lines(db, resolve_lines(db, outlet, body.items), body.discount_paise)
+        calc = quote_lines(db, resolve_lines(db, outlet, body.items, offers=True), body.discount_paise)
     except ValueError as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e)) from None
     return {"subtotal_paise": calc.gross_paise, "discount_paise": calc.discount_paise, "tax_paise": calc.tax_paise, "round_off_paise": calc.round_off_paise,
@@ -132,7 +132,7 @@ def add_items(order_id: uuid.UUID, body: AddItems, auth: Auth = Depends(require(
     if db.scalar(select(Bill.id).where(Bill.order_id == order.id, Bill.status == "paid")) is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "This order is already billed. Start a new order for more items.")
     outlet = db.get(Outlet, order.outlet_id)
-    kots = add_kots(db, order, resolve_lines(db, outlet, body.items))
+    kots = add_kots(db, order, resolve_lines(db, outlet, body.items, offers=True))
     refresh_order_status(db, order)
     audit.record(db, auth.tenant_id, auth.user_id, "add_items", "order", order.id,
                  after={"kots": [k.kot_no for k in kots]})

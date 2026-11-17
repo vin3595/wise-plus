@@ -45,10 +45,12 @@ class ResolvedLine:
     price_paise: int
     addons: list[dict]
     area: AreaKey | None
+    offer_code: object | None = None        # wise-plus: OfferCode to mark used when the KOT is made
 
 
-def resolve_lines(db: Session, outlet: Outlet, lines: list[OrderLineIn]) -> list[ResolvedLine]:
-    """Validate every line against this outlet's menu (availability, outlet price, allowed add-ons)."""
+def resolve_lines(db: Session, outlet: Outlet, lines: list[OrderLineIn], offers: bool = False) -> list[ResolvedLine]:
+    """Validate every line against this outlet's menu (availability, outlet price, allowed add-ons).
+    offers: the counter may use scanned offer codes (their item at the offer price, one each)."""
     areas = {a.id: a for a in db.scalars(select(PrepArea))}
     out: list[ResolvedLine] = []
     for line in lines:
@@ -79,7 +81,19 @@ def resolve_lines(db: Session, outlet: Outlet, lines: list[OrderLineIn]) -> list
         if item.prep_area_id and item.prep_area_id in areas and areas[item.prep_area_id].is_active:
             a = areas[item.prep_area_id]
             area = AreaKey(str(a.id), a.name)
-        out.append(ResolvedLine(line, variant, item, price, addons, area))
+        code = None
+        if line.offer_code:
+            if not offers:
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Offer codes can only be used at the counter")
+            from ..offers.service import OfferError, check
+            try:
+                code, offer = check(db, line.offer_code, outlet.id, lock=True)
+            except OfferError as e:
+                raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from None
+            if offer.variant_id != variant.id or line.qty != 1 or any(r.offer_code is code for r in out):
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "An offer code is for one of its own item")
+            price = offer.price_paise
+        out.append(ResolvedLine(line, variant, item, price, addons, area, code))
     return out
 
 
@@ -97,11 +111,16 @@ def add_kots(db: Session, order: Order, lines: list[ResolvedLine]) -> list[Kot]:
         db.add(kot)
         db.flush()
         for r in group:
+            note = (r.line.notes or "").strip() or None
+            if r.offer_code is not None:
+                from ..offers.service import use
+                use(db, r.offer_code, order.outlet_id, order.id, kot.id)
+                note = f"Offer {r.offer_code.code}" + (f" · {note}" if note else "")
             db.add(OrderItem(
                 tenant_id=order.tenant_id, order_id=order.id, kot_id=kot.id, variant_id=r.variant.id,
                 item_name=r.item.name, variant_name=r.variant.name, food_type=r.item.food_type,
                 unit_price_paise=r.price_paise, qty=r.line.qty, addons=r.addons or None,
-                notes=(r.line.notes or "").strip() or None,
+                notes=note[:120] if note else None,
             ))
         kots.append(kot)
     db.flush()
@@ -230,7 +249,7 @@ def place_order(db: Session, *, tenant_id: uuid.UUID, outlet: Outlet, order_type
                 source: str = "staff") -> tuple[Order, bool]:
     """Creates the order and its KOTs. Dine-in items for a table that already has an open,
     unbilled order are added to that order as a new KOT round. Returns (order, merged)."""
-    resolved = resolve_lines(db, outlet, lines)
+    resolved = resolve_lines(db, outlet, lines, offers=source == "staff")
     if order_type == "dine_in" and table:
         lock_table(db, outlet.id, table)
         existing = open_table_order(db, outlet.id, table)

@@ -215,6 +215,7 @@ export interface OutletMenuVariant {
   available: boolean;
   overridden: boolean;
   sold_out?: boolean;     // for the rest of today (tapped at the counter or in the kitchen)
+  barcode?: string | null;
 }
 
 export interface OutletMenu {

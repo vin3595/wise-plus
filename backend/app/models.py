@@ -273,11 +273,13 @@ class Variant(Base, Timestamps):
         UUID(as_uuid=True), ForeignKey("items.id", ondelete="CASCADE"), index=True, nullable=False)
     name: Mapped[str] = mapped_column(String(60), nullable=False)
     sku: Mapped[str | None] = mapped_column(String(40))
+    barcode: Mapped[str | None] = mapped_column(String(32))     # wise-plus: printed on our label, or the maker's EAN
     price_paise: Mapped[int] = mapped_column(Integer, nullable=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     __table_args__ = (
         UniqueConstraint("item_id", "name"),
+        UniqueConstraint("tenant_id", "barcode", name="uq_variant_barcode"),
         CheckConstraint("price_paise >= 0", name="ck_variant_price"),
     )
 
@@ -546,6 +548,7 @@ class StockItem(Base, Timestamps):
     id: Mapped[uuid.UUID] = pk()
     tenant_id: Mapped[uuid.UUID] = tenant_fk()
     name: Mapped[str] = mapped_column(String(120), nullable=False)
+    barcode: Mapped[str | None] = mapped_column(String(32))     # wise-plus: scan to count, receive or move stock
     kind: Mapped[str] = mapped_column(String(4), default="raw", nullable=False)       # raw | prep
     unit: Mapped[str] = mapped_column(String(2), nullable=False)                      # g | ml | pc
     category: Mapped[str | None] = mapped_column(String(40))
@@ -563,7 +566,7 @@ class StockItem(Base, Timestamps):
     order_daily: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     last_cost_k: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)   # latest purchase price
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    __table_args__ = (UniqueConstraint("tenant_id", "name"),
+    __table_args__ = (UniqueConstraint("tenant_id", "name"), UniqueConstraint("tenant_id", "barcode", name="uq_stock_item_barcode"),
                       CheckConstraint("unit in ('g','ml','pc')", name="ck_stock_unit"),
                       CheckConstraint("kind in ('raw','prep')", name="ck_stock_kind"))
 

@@ -459,6 +459,7 @@ class OutletMenuVariant(BaseModel):
     available: bool
     overridden: bool
     sold_out: bool = False
+    barcode: str | None = None          # wise-plus: scanned at the counter, even offline
 
 
 class OutletMenuItem(BaseModel):
@@ -504,6 +505,7 @@ class OrderLineIn(BaseModel):
     qty: int = Field(default=1, ge=1, le=999)
     addon_ids: list[uuid.UUID] = []
     notes: str | None = Field(default=None, max_length=120)
+    offer_code: str | None = Field(default=None, max_length=16)   # wise-plus: a scanned WhatsApp offer code (counter only)
 
 
 class OrderCreate(BaseModel):

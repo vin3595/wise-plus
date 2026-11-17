@@ -18,6 +18,19 @@ import SplitMove from "../components/SplitMove";
 import { cleanMobile, openCustomerScreen, useCounterScreen, type ScreenState } from "../counterScreen";
 import CardAuto, { type CardReq } from "../components/CardAuto";
 import { LoyaltyBox, type LoyaltyUse } from "../components/Loyalty";
+import { CameraScan, looksScanned, useHandScanner } from "../barcode";
+import { ScanLine } from "lucide-react";
+
+/** A short beep: good scan / not found (the counter is noisy, eyes are on the customer). */
+function beep(ok: boolean) {
+  try {
+    const ctx = new AudioContext();
+    const o = ctx.createOscillator(); const g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.frequency.value = ok ? 1200 : 300; g.gain.value = 0.15;
+    o.start(); o.stop(ctx.currentTime + (ok ? 0.08 : 0.35));
+  } catch { /* no sound */ }
+}
 
 interface CartLine {
   key: string;
@@ -25,10 +38,11 @@ interface CartLine {
   variant: OutletMenuVariant;
   addonIds: string[];
   qty: number;
+  offer?: { code: string; name: string; price_paise: number };   // a scanned WhatsApp offer: this price, one only
 }
 
 const unitPrice = (l: CartLine) =>
-  l.variant.price_paise + l.item.addon_groups.flatMap((g) => g.addons).filter((a) => a.id && l.addonIds.includes(a.id))
+  (l.offer ? l.offer.price_paise : l.variant.price_paise) + l.item.addon_groups.flatMap((g) => g.addons).filter((a) => a.id && l.addonIds.includes(a.id))
     .reduce((s, a) => s + a.price_paise, 0);
 const short = (v: string) => v.replace(/\s*ML$/i, " ml").replace(/^Regular$/, "");
 type PayMode = "cash" | "upi" | "card";
@@ -135,7 +149,38 @@ export default function Orders() {
     return () => window.removeEventListener("keydown", k);
   }, []);
 
-  const lines = () => cart.map((l) => ({ variant_id: l.variant.variant_id, qty: l.qty, addon_ids: l.addonIds }));
+  const lines = () => cart.map((l) => ({ variant_id: l.variant.variant_id, qty: l.qty, addon_ids: l.addonIds, ...(l.offer ? { offer_code: l.offer.code } : {}) }));
+
+  /** A hand scanner, the camera, or a code typed into search: an item's barcode, or a customer's WhatsApp offer QR. */
+  const [camera, setCamera] = useState(false);
+  async function scanned(raw: string) {
+    const code = raw.trim();
+    if (!code || !menu) return;
+    setError(null);
+    const find = (variantId: string) => {
+      for (const it of menu.items) { const v = it.variants.find((x) => x.variant_id === variantId); if (v) return { it, v }; }
+      return null;
+    };
+    const local = menu.items.flatMap((it) => it.variants.map((v) => ({ it, v }))).find(({ v }) => v.barcode === code);
+    if (local) { addLine(local.it, local.v); beep(true); return; }
+    try {
+      const r = await api<{ kind: string; variant_id?: string; code?: string; offer?: string; price_paise?: number; name?: string }>(
+        `/barcodes/lookup?code=${encodeURIComponent(code)}&outlet_id=${outletId}`);
+      const hit = r.variant_id ? find(r.variant_id) : null;
+      if (r.kind === "offer" && hit) {
+        if (cart.some((l) => l.offer?.code === r.code)) { setError("This offer code is already on the bill"); beep(false); return; }
+        setSent(null);
+        setCart((c) => [...c, { key: `offer|${r.code}`, item: hit.it, variant: hit.v, addonIds: [], qty: 1, offer: { code: r.code!, name: r.offer!, price_paise: r.price_paise! } }]);
+        beep(true);
+      } else if (r.kind === "variant" && hit) { addLine(hit.it, hit.v); beep(true); }
+      else if (r.kind === "stock") { setError(`${r.name} is a stock item, not on the menu`); beep(false); }
+      else { setError("That item isn't on this outlet's menu"); beep(false); }
+    } catch (e) {
+      setError(isOffline(e) ? "Offer codes need the internet. Item barcodes still work offline." : e instanceof Error ? e.message : "Couldn't read that code");
+      beep(false);
+    }
+  }
+  useHandScanner((c) => void scanned(c), !!menu && can("kot_send"));
   // Total with GST for the pay buttons, refreshed as the cart changes.
   useEffect(() => {
     if (!cart.length || !outletId) { setQuote(null); return; }
@@ -169,7 +214,8 @@ export default function Orders() {
       return hit ? c.map((l) => (l.key === key ? { ...l, qty: l.qty + 1 } : l)) : [...c, { key, item, variant, addonIds, qty: 1 }];
     });
   }
-  const setQty = (key: string, qty: number) => setCart((c) => (qty <= 0 ? c.filter((l) => l.key !== key) : c.map((l) => (l.key === key ? { ...l, qty } : l))));
+  const setQty = (key: string, qty: number) => setCart((c) => (qty <= 0 ? c.filter((l) => l.key !== key)
+    : c.map((l) => (l.key === key ? { ...l, qty: l.offer ? 1 : qty } : l))));
   const subtotal = cart.reduce((s, l) => s + unitPrice(l) * l.qty, 0);
   const count = cart.reduce((s, l) => s + l.qty, 0);
 
@@ -197,6 +243,7 @@ export default function Orders() {
   /** One tap: send to the kitchen and settle the whole bill in cash / UPI / card. */
   /** The box didn't answer: bill on this counter, print the bill and kitchen slips here, upload later. */
   function settleOffline(mode: PayMode, triedOrderId: string | null) {
+    if (cart.some((l) => l.offer)) { setError("Offer codes can't be checked without the internet. Remove the offer item to bill offline."); return; }
     const r = billOffline({ cart, madeBy: { id: me!.user.id, name: me!.user.name }, orderType, table: orderType === "dine_in" ? table || null : null,
       car: orderType === "takeaway" ? car || null : null, customerName: customer || null, notes: notes || null, phone: phone || null,
       declined, mode, triedOrderId });
@@ -349,16 +396,19 @@ export default function Orders() {
               {outlets.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
             </Select>
           )}
-          <input ref={searchRef} className="input search" placeholder="Search item or short code, Enter adds it" value={search}
+          <input ref={searchRef} className="input search" placeholder="Search, short code, or scan" value={search} data-scan="self"
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => {
+              if (e.key === "Enter" && looksScanned(search)) { void scanned(search); setSearch(""); return; }
               if (e.key === "Enter" && shown[0]) { addLine(shown[0], shown[0].variants[0]); setSearch(""); }
               if (e.key === "Escape") setSearch("");
             }} />
           <kbd className="hint">/</kbd>
+          <button className="icon-btn scan-btn" onClick={() => setCamera(true)} aria-label="Scan with the camera" title="Scan a barcode or a customer's offer QR"><ScanLine size={20} /></button>
           {off.online && <button className={`choice sold-toggle ${soldMode ? "on" : ""}`} aria-pressed={soldMode} onClick={() => setSoldMode(!soldMode)}
             title="Tap items to mark them sold out for today">{soldMode ? "Done" : "Sold out"}</button>}
         </div>
+        {camera && <CameraScan onClose={() => setCamera(false)} onScan={(c) => { setCamera(false); void scanned(c); }} />}
         {soldMode && <p className="sold-hint">Tap an item (or size) to mark it sold out for today. Tap again to bring it back. Kiosk and QR menu update at once.</p>}
         <div className="pos-cats">
           {menu?.categories.map((c) => (
@@ -444,6 +494,7 @@ export default function Orders() {
             <li key={l.key}>
               <div className="grow">
                 <span className="cart-name">{l.item.name}</span>{short(l.variant.name) && <span className="cart-size"> {short(l.variant.name)}</span>}
+                {l.offer && <div className="offer-tag">🎁 {l.offer.name} · {l.offer.code} <s className="muted">{formatPaise(l.variant.price_paise)}</s></div>}
                 {l.addonIds.length > 0 && <div className="muted small">+ {l.item.addon_groups.flatMap((g) => g.addons).filter((a) => a.id && l.addonIds.includes(a.id)).map((a) => a.name).join(", ")}</div>}
               </div>
               <div className="qty-ctl">
