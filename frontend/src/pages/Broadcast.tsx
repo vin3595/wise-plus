@@ -107,8 +107,9 @@ export default function Broadcast() {
             <option value="">No offer</option>{offers.map((o) => <option key={o.id} value={o.id}>{o.name} ({o.keyword})</option>)}</Select>
         </Field>
         <div className="wa-preview" aria-label="Preview">
-          <p>Hi {pv?.sample[0]?.name?.split(" ")[0] || "Ravi"}, {text.trim().replace(/\s*\n+\s*/g, " · ") || "your message"}</p>
-          <p className="muted small">— your business name</p>
+          <p>Hi {pv?.sample[0]?.name?.split(" ")[0] || "Ravi"}, here's an update from your business:</p>
+          <p>{text.trim().replace(/\s*\n+\s*/g, " · ") || "your message"}</p>
+          <p className="muted small">Tap a button below to reply. You can stop these messages anytime.</p>
           {offerId && <div className="wa-btn">Get my offer</div>}<div className="wa-btn">Stop offers</div>
         </div>
         <ErrorText error={error} />

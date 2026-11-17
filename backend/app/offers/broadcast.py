@@ -103,12 +103,13 @@ def queue(db: Session, tenant, bid: uuid.UUID, rows: list[dict], text_: str, key
 
 
 def send_promo(to: str, p: dict) -> None:
-    """The approved marketing template: 'Hi {{1}}, {{2}} — {{3}}' with 'Get my offer' (offer) and 'Stop offers'."""
+    """The approved marketing template: 'Hi {{1}}, here's an update from {{2}}: {{3}} …' with 'Get my offer' (when there's
+    an offer) and 'Stop offers'."""
     from ..config import get_settings
     from ..whatsapp import client
     s = get_settings()
     name = s.wa_promo_offer_template if p.get("keyword") else s.wa_promo_template
-    comps = [{"type": "body", "parameters": [{"type": "text", "text": str(p[k])} for k in ("name", "text", "brand")]}]
+    comps = [{"type": "body", "parameters": [{"type": "text", "text": str(p[k])} for k in ("name", "brand", "text")]}]
     btns = ([f"kw:{p['keyword']}"] if p.get("keyword") else []) + [f"stop:{p['tenant_id']}"]
     comps += [{"type": "button", "sub_type": "quick_reply", "index": str(i), "parameters": [{"type": "payload", "payload": b}]} for i, b in enumerate(btns)]
     client._post({"to": client.to_wa(to), "type": "template", "template": {"name": name, "language": {"code": "en"}, "components": comps}})

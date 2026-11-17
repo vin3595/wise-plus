@@ -204,7 +204,7 @@ def test_broadcast_filters_credits_optout(client, monkeypatch):
     cw.send_due()
     promo = next(b for b in posts if b.get("template", {}).get("name") == "promo_offer")
     body = promo["template"]["components"][0]["parameters"]
-    assert body[1]["text"] == "We miss you! · Free topping this week" and promo["to"].endswith(phones[0])
+    assert body[2]["text"] == "We miss you! · Free topping this week" and promo["to"].endswith(phones[0])
     payloads = [c["parameters"][0]["payload"] for c in promo["template"]["components"][1:]]
     assert payloads[0] == f"kw:{kw}" and payloads[1].startswith("stop:")
     hist = client.get("/api/broadcasts", headers=h(tok)).json()[0]
