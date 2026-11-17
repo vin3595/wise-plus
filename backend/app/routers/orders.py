@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from ..core.kds import TransitionError, business_date, car_matches, check_transition, normalize_car_number
@@ -146,7 +146,9 @@ def list_orders(outlet_id: uuid.UUID, active: bool = True, car: str | None = Non
     ensure_outlet_access(db, auth, outlet_id)
     q = select(Order).where(Order.outlet_id == outlet_id, Order.business_date == business_date())
     if active:
-        q = q.where(Order.status.notin_(("completed", "cancelled", "pending")))
+        # served but not paid yet stays on the list, or it could never be billed
+        billed = select(Bill.order_id).where(Bill.order_id == Order.id, Bill.status == "paid").exists()
+        q = q.where(Order.status.notin_(("cancelled", "pending")), or_(Order.status != "completed", ~billed))
     if token is not None:
         q = q.where(Order.token_no == token)
     orders = list(db.scalars(q.order_by(Order.token_no.desc()).limit(200)))

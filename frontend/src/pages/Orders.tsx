@@ -706,7 +706,7 @@ function ActiveOrders({ outletId, onAdd, onBill, tables }: { outletId: string; o
               {o.order_type === "dine_in" ? `Table ${o.table_label}` : o.car_number ? `Car ${o.car_number}` : ORDER_TYPE_LABEL[o.order_type]}
               <span className="muted small"> · {o.kots.map((k) => `${k.prep_area_name}: ${k.status}`).join(" · ")}</span>
             </span>
-            <span className={`status-pill st-${o.status}`}>{STATUS_LABEL[o.status]}</span>
+            <span className={`status-pill st-${o.status}`}>{o.status === "completed" && !o.invoice_no ? "Served · not billed" : STATUS_LABEL[o.status]}</span>
             {o.invoice_no ? <span className="badge">Billed</span> : <>
               <button className="link" onClick={() => onAdd(o)}>Add</button>
               {onBill && <button className="link" onClick={() => onBill(o)}>Bill</button>}
@@ -717,7 +717,7 @@ function ActiveOrders({ outletId, onAdd, onBill, tables }: { outletId: string; o
             {o.status === "ready" && (
               <button className="link" onClick={() => run(async () => {
                 await api(`/orders/${o.id}/complete`, { method: "POST" });
-                setOrders((list) => list.filter((x) => x.id !== o.id));
+                setOrders((list) => (o.invoice_no ? list.filter((x) => x.id !== o.id) : list.map((x) => (x.id === o.id ? { ...x, status: "completed" } : x))));
               })}>{o.order_type === "dine_in" ? "Served" : "Handed over"}</button>
             )}
           </li>

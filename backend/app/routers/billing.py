@@ -226,8 +226,6 @@ def cancel_order(order_id: uuid.UUID, body: CancelIn, auth: Auth = Depends(requi
     order = _live_order(db, auth, order_id)
     if db.scalar(select(Bill.id).where(Bill.order_id == order.id, Bill.status == "paid")) is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Cancel the bill first, then the order")
-    if order.status == "completed":
-        raise HTTPException(status.HTTP_409_CONFLICT, "This order was already served")
     approver = auth.user_id if _is_manager(auth) else verify_manager_pin(db, auth.tenant_id, order.outlet_id,
                                                                          body.manager_pin).id
     for k in db.scalars(select(Kot).where(Kot.order_id == order.id)):
