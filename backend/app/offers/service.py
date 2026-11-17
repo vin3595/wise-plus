@@ -143,7 +143,8 @@ _FONTS = __import__("pathlib").Path(__file__).parent / "fonts"
 
 
 def qr_png(code: str, card: dict | None = None) -> bytes:
-    """The QR alone, or (card) a picture with the business, the customer's name and number, the item and price."""
+    """The QR alone, or (card) a picture with the business, the item and price. The customer's name and number aren't
+    printed: they're kept with the code, so the counter sees them when it's scanned."""
     import segno
     buf = io.BytesIO()
     segno.make(code, error="m", micro=False).save(buf, kind="png", scale=12, border=3)
@@ -155,7 +156,7 @@ def qr_png(code: str, card: dict | None = None) -> bytes:
     qr = qr.resize((520, 520), Image.NEAREST)
     bold = lambda n: ImageFont.truetype(str(_FONTS / "DejaVuSans-Bold.ttf"), n)  # noqa: E731
     reg = lambda n: ImageFont.truetype(str(_FONTS / "DejaVuSans.ttf"), n)  # noqa: E731
-    img = Image.new("RGB", (W, 1130), "white")
+    img = Image.new("RGB", (W, 1010), "white")
     d = ImageDraw.Draw(img)
     d.rectangle([0, 0, W, 120], fill=(17, 24, 39))
 
@@ -178,11 +179,7 @@ def qr_png(code: str, card: dict | None = None) -> bytes:
     y += 62
     d.line([60, y, W - 60, y], fill=(229, 231, 235), width=2)
     y += 24
-    who = card.get("name") or "Customer"
-    center(y, who, fit(who, bold, 34, W - 60))
-    y += 50
-    center(y, card.get("phone") or "", reg(30), (75, 85, 99))
-    y += 64
+    y += 4
     center(y, f"Code {code}", bold(28), (75, 85, 99))
     y += 44
     center(y, card.get("valid") or "", reg(24), (107, 114, 128))
@@ -198,7 +195,7 @@ def card_for(db: Session, c: OfferCode) -> dict:
     t = db.get(Tenant, c.tenant_id)
     price = c.price_paise if c.price_paise is not None else (o.price_paise if o else 0)
     return {"brand": (t.app_name or t.name) if t else "", "offer": o.name if o else "", "item": c.item_name or (item_label(db, o) if o else ""),
-            "price": rupees(price), "name": re.sub(r"[^\u0000-\uffff]", "", c.cust_name or "").strip() or None, "phone": phone_fmt(c.phone10),
+            "price": rupees(price),
             "valid": f"Valid till {c.expires_on.day} {c.expires_on:%b %Y}"}
 
 
