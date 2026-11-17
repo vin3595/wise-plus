@@ -172,3 +172,54 @@ def test_house_account(client, rzp, monkeypatch):
     expire_trial(login)
     assert client.post("/api/inventory/suppliers", headers=h(tok), json={"name": "Metro"}).status_code == 201
     assert client.post("/api/billing/subscribe", headers=h(tok), json={"modules": ["pos"], "period": "monthly"}).status_code == 409
+
+
+def test_bill_messages_allowance_and_packs(client, rzp, monkeypatch):
+    """500 free bill messages per outlet a month, an alert at 80%, then they stop until a pack is bought."""
+    from app.billing.models import Subscription
+    from app.billing.service import msgs, take_msg
+    from app.db import system_session
+    from app.models import Tenant
+    login = "msg" + uuid.uuid4().hex[:6]
+    tok = signup(client, login, "93" + str(uuid.uuid4().int)[:8])["token"]
+    b = client.get("/api/billing", headers=h(tok)).json()
+    assert b["messages"]["allowance"] == 500 and b["messages"]["left"] == 500 and not b["messages"]["unlimited"]
+    assert [p["key"] for p in b["msg_packs"]] == ["m1000", "m5000"]
+    with system_session() as db:
+        t = db.query(Tenant).filter(Tenant.login_id == login).one()
+        for _ in range(399):
+            assert take_msg(db, t) == (True, None)
+        ok, alert = take_msg(db, t)                       # the 400th: 100 left = 20% of the free ones
+        assert ok and alert and "100 bill messages left" in alert
+        s = db.get(Subscription, t.id)
+        s.msgs_used = 500
+        db.flush()
+        ok, alert = take_msg(db, t)
+        assert not ok and "stopped" in alert
+        assert take_msg(db, t) == (False, None)          # told once, not on every bill
+    order = client.post("/api/billing/packs/m1000/order", headers=h(tok)).json()
+    assert order["messages"] == 1000 and order["amount_paise"] == 19900
+    rzp["notes"][order["order_id"]] = {"tenant_id": str(t.id), "pack": "m1000"}
+    v = client.post("/api/billing/packs/verify", headers=h(tok), json={"razorpay_order_id": order["order_id"], "razorpay_payment_id": "pay_m",
+                    "razorpay_signature": sig(f"{order['order_id']}|pay_m")}).json()
+    assert v["messages"]["bonus"] == 1000 and v["messages"]["left"] == 1000
+    with system_session() as db:
+        t = db.query(Tenant).filter(Tenant.login_id == login).one()
+        assert take_msg(db, t) == (True, None)
+        assert msgs(db, t)["bonus"] == 999
+        assert db.get(Subscription, t.id).bonus_scans == 0           # a message pack isn't scans
+
+
+def test_house_messages_unlimited(client, rzp, monkeypatch):
+    from app.billing.service import msgs, take_msg
+    from app.config import get_settings
+    from app.db import system_session
+    from app.models import Tenant
+    login = "hsm" + uuid.uuid4().hex[:6]
+    monkeypatch.setattr(get_settings(), "house_tenants", login)
+    signup(client, login, "94" + str(uuid.uuid4().int)[:8])
+    with system_session() as db:
+        t = db.query(Tenant).filter(Tenant.login_id == login).one()
+        for _ in range(600):
+            assert take_msg(db, t)[0]
+        assert msgs(db, t)["unlimited"] and msgs(db, t)["left"] is None

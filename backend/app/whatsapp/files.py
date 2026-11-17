@@ -34,7 +34,26 @@ def period(words: list[str], today: date) -> tuple[date, date, str]:
     return b.replace(day=1), b, f"{b:%B %Y}"
 
 
+MSGS = {"messages", "buy messages", "message pack", "msgs", "whatsapp bills"}
+
+
+def messages(db: Session, tenant_id) -> Reply:
+    from ..billing.service import msgs
+    from ..models import Tenant
+    from ..services.sms import app_base_url
+    t = db.get(Tenant, uuid.UUID(tenant_id))
+    m = msgs(db, t)
+    if m["unlimited"]:
+        return Reply(f"📨 Bills on WhatsApp this month: {m['used']}. No limit on this account.")
+    return Reply(f"📨 Bills on WhatsApp this month: {m['used']} of {m['allowance']} free ({m['per_outlet']} per outlet)"
+                 + (f" + {m['bonus']} bought" if m["bonus"] else "") + f".\nLeft: *{m['left']}*.\n\n"
+                 "More: 1,000 for ₹199 · 5,000 for ₹799 (never expire).\n"
+                 f"Buy: {app_base_url(t)}/billing")
+
+
 def handle(db: Session, chosen: tuple, word: str) -> Reply | None:
+    if word in MSGS:
+        return messages(db, chosen[0])
     words = word.split()
     if not words or (words[0] not in TALLY and word not in TALLY and word not in BACKUP):
         return None

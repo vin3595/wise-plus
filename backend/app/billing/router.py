@@ -19,8 +19,8 @@ from ..models import Tenant
 from ..services import audit
 from . import rz
 from .models import RzPlan, Subscription
-from .plans import BUNDLE, FOUNDING_PAISE, FOUNDING_SLOTS, PACKS, PAID, PRICES, SCANS_PER_MONTH, price
-from .service import access, house, scans, sub_for
+from .plans import ALL_PACKS, BUNDLE, FOUNDING_PAISE, FOUNDING_SLOTS, MSG_PACKS, PACKS, PAID, PRICES, SCANS_PER_MONTH, price
+from .service import msgs, access, house, scans, sub_for
 
 log = logging.getLogger("wise.billing")
 router = APIRouter(prefix="/billing", tags=["billing"])
@@ -77,6 +77,7 @@ def billing(auth: Auth = Depends(get_auth), db: Session = Depends(get_db)) -> di
         "founding": {"price_paise": FOUNDING_PAISE, "left": _founding_left(db), "slots": FOUNDING_SLOTS, "member": bool(s and s.founding)},
         "scans": scans(db, t) | {"per_month": SCANS_PER_MONTH},
         "packs": [{"key": k, **v} for k, v in PACKS.items()],
+        "messages": msgs(db, t), "msg_packs": [{"key": k, **v} for k, v in MSG_PACKS.items()],
         "ready": rz.configured(), "key_id": rz.get_settings().billing_rz_key_id or None,
     }
 
@@ -195,15 +196,16 @@ def cancel(auth: Auth = Depends(require(Perm.tenant_settings)), db: Session = De
 
 @router.post("/packs/{pack}/order")
 def buy_pack(pack: str, auth: Auth = Depends(require(Perm.tenant_settings)), db: Session = Depends(get_db)) -> dict:
-    p = PACKS.get(pack)
+    p = ALL_PACKS.get(pack)
     if not p:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such pack")
     if not rz.configured():
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Payments aren't set up yet. Try again later.")
     t = _tenant(db, auth)
-    o = rz.call("POST", "/orders", {"amount": p["paise"], "currency": "INR", "receipt": f"scan-{uuid.uuid4().hex[:12]}",
+    o = rz.call("POST", "/orders", {"amount": p["paise"], "currency": "INR", "receipt": f"{'msg' if 'messages' in p else 'scan'}-{uuid.uuid4().hex[:12]}",
                                     "notes": {"tenant_id": str(t.id), "pack": pack}})
-    return {"order_id": o["id"], "key_id": rz.get_settings().billing_rz_key_id, "amount_paise": p["paise"], "scans": p["scans"],
+    return {"order_id": o["id"], "key_id": rz.get_settings().billing_rz_key_id, "amount_paise": p["paise"], "scans": p.get("scans"),
+            "messages": p.get("messages"),
             "name": t.name, "email": t.owner_email, "phone": t.owner_phone}
 
 
@@ -212,9 +214,13 @@ def _credit_pack(db: Session, tenant_id, order_id: str, payment_id: str, pack: s
     done = s.packs or []
     if any(x["order_id"] == order_id for x in done):
         return False
-    n = PACKS[pack]["scans"]
-    s.bonus_scans += n
-    s.packs = done + [{"order_id": order_id, "payment_id": payment_id, "scans": n, "at": _now().isoformat()}]
+    p = ALL_PACKS[pack]
+    if "messages" in p:
+        s.bonus_msgs += p["messages"]
+        s.msg_alert = None
+    else:
+        s.bonus_scans += p["scans"]
+    s.packs = done + [{"order_id": order_id, "payment_id": payment_id, **{k: v for k, v in p.items() if k != "paise"}, "at": _now().isoformat()}]
     db.flush()
     return True
 
@@ -226,7 +232,7 @@ def verify_pack(body: PackVerifyIn, auth: Auth = Depends(require(Perm.tenant_set
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Payment couldn't be verified")
     o = rz.call("GET", f"/orders/{body.razorpay_order_id}")
     notes = o.get("notes") or {}
-    if notes.get("tenant_id") != str(auth.tenant_id) or notes.get("pack") not in PACKS:
+    if notes.get("tenant_id") != str(auth.tenant_id) or notes.get("pack") not in ALL_PACKS:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "That payment isn't for this account")
     _credit_pack(db, auth.tenant_id, body.razorpay_order_id, body.razorpay_payment_id, notes["pack"])
     return billing(auth, db)
@@ -264,7 +270,7 @@ async def webhook(request: Request) -> dict:
         elif kind in ("order.paid", "payment.captured"):
             pay = (pl.get("payment") or {}).get("entity") or {}
             notes = pay.get("notes") or ((pl.get("order") or {}).get("entity") or {}).get("notes") or {}
-            if notes.get("pack") in PACKS and notes.get("tenant_id") and pay.get("order_id"):
+            if notes.get("pack") in ALL_PACKS and notes.get("tenant_id") and pay.get("order_id"):
                 _credit_pack(db, uuid.UUID(notes["tenant_id"]), pay["order_id"], pay.get("id", ""), notes["pack"])
     return {"ok": True}
 

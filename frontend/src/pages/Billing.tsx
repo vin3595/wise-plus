@@ -14,6 +14,8 @@ export interface BillingInfo {
   founding: { price_paise: number; left: number; slots: number; member: boolean };
   scans: { used: number; limit: number | null; bonus: number; per_month: number };
   packs: { key: string; scans: number; paise: number }[];
+  messages: { used: number; allowance: number; bonus: number; left: number | null; per_outlet: number; unlimited: boolean };
+  msg_packs: { key: string; messages: number; paise: number }[];
   ready: boolean;
   key_id: string | null;
 }
@@ -74,11 +76,12 @@ export default function Billing() {
   });
   const buyPack = (key: string) => run(async () => {
     setMsg(null);
-    const o = await api<{ order_id: string; key_id: string; amount_paise: number; scans: number; name: string; email: string; phone: string }>(`/billing/packs/${key}/order`, { method: "POST" });
-    const r = await pay({ key: o.key_id, order_id: o.order_id, amount: o.amount_paise, currency: "INR", name: "wise-plus", description: `${o.scans} bill scans`,
+    const o = await api<{ order_id: string; key_id: string; amount_paise: number; scans: number | null; messages: number | null; name: string; email: string; phone: string }>(`/billing/packs/${key}/order`, { method: "POST" });
+    const what = o.messages ? `${o.messages} WhatsApp bill messages` : `${o.scans} bill scans`;
+    const r = await pay({ key: o.key_id, order_id: o.order_id, amount: o.amount_paise, currency: "INR", name: "Ease My Bill", description: what,
       prefill: { name: o.name, email: o.email, contact: o.phone } });
     setB(await api<BillingInfo>("/billing/packs/verify", { body: r }));
-    setMsg(`${o.scans} scans added.`);
+    setMsg(`${what} added.`);
   });
   const cancel = () => run(async () => { setB(await api<BillingInfo>("/billing/cancel", { method: "POST" })); setMsg("Your plan won't renew. Everything works until the paid time ends."); });
 
@@ -144,6 +147,16 @@ export default function Billing() {
           <p className="muted small">Extra scans never expire and are used after the month's {b.scans.per_month}.</p>
         </Card>
       )}
+      <Card title="Bills on WhatsApp">
+        <p>{b.messages.unlimited ? `${b.messages.used} sent this month (no limit on this account).`
+          : `${b.messages.used} of ${b.messages.allowance} free messages used this month`}{!b.messages.unlimited && b.messages.bonus ? ` · ${b.messages.bonus} bought messages left` : ""}</p>
+        {!b.messages.unlimited && b.messages.left !== null && b.messages.left <= b.messages.allowance / 5 && (
+          <p className="warn-text">{b.messages.left === 0 ? "Bills have stopped going on WhatsApp. Customers still get the printed bill." : `Only ${b.messages.left} left.`}</p>)}
+        {!b.house && b.ready && <div className="row">
+          {b.msg_packs.map((p) => <Button key={p.key} variant="ghost" disabled={busy} onClick={() => buyPack(p.key)}>{p.messages.toLocaleString("en-IN")} messages · {formatPaise(p.paise)}</Button>)}
+        </div>}
+        <p className="muted small">{b.messages.per_outlet} free each month for every outlet. Bought messages never expire and are used after the free ones. Messages to you (reports, dues, bank) are always free.</p>
+      </Card>
       <YourData />
     </div>
   );

@@ -101,3 +101,51 @@ def scan_or_402(db: Session, tenant: Tenant) -> None:
         check_scan(db, tenant)
     except ScanLimit as e:
         raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, str(e)) from None
+
+
+# ------------------------------------------------------------------ bill messages to customers (WhatsApp)
+
+def outlets_paid(db: Session, tenant_id) -> int:
+    from ..models import Outlet
+    from sqlalchemy import func
+    return int(db.scalar(select(func.count()).select_from(Outlet).where(
+        Outlet.tenant_id == tenant_id, Outlet.is_active.is_(True), Outlet.is_training.is_(False))) or 0) or 1
+
+
+def msgs(db: Session, tenant: Tenant) -> dict:
+    """{used, allowance, bonus, left, unlimited}. House accounts, and servers without payments set up, aren't limited."""
+    from .plans import MSGS_PER_OUTLET
+    s = db.get(Subscription, tenant.id)
+    used = s.msgs_used if s and s.msg_month == _month() else 0
+    allowance = MSGS_PER_OUTLET * outlets_paid(db, tenant.id)
+    bonus = s.bonus_msgs if s else 0
+    unlimited = access(db, tenant)["state"] in ("house", "free")
+    return {"used": used, "allowance": allowance, "bonus": bonus, "per_outlet": MSGS_PER_OUTLET,
+            "left": None if unlimited else max(allowance - used, 0) + bonus, "unlimited": unlimited}
+
+
+def take_msg(db: Session, tenant: Tenant) -> tuple[bool, str | None]:
+    """Use one bill message. Returns (may send, alert for the owner or None)."""
+    m = msgs(db, tenant)
+    s = db.scalar(select(Subscription).where(Subscription.tenant_id == tenant.id).with_for_update()) or sub_for(db, tenant.id, create=True)
+    if s.msg_month != _month():
+        s.msg_month, s.msgs_used, s.msg_alert = _month(), 0, None
+    if m["unlimited"]:
+        s.msgs_used += 1
+        return True, None
+    if s.msgs_used < m["allowance"]:
+        s.msgs_used += 1
+    elif s.bonus_msgs > 0:
+        s.bonus_msgs -= 1
+    else:
+        if s.msg_alert != f"{_month()}:0":
+            s.msg_alert = f"{_month()}:0"
+            return False, ("📵 Bills on WhatsApp have stopped: this month's free messages and bought packs are used up. "
+                           "Customers still get printed bills. Buy more under Settings › Billing.")
+        return False, None
+    left = max(m["allowance"] - s.msgs_used, 0) + s.bonus_msgs
+    if s.msg_alert is None and left <= m["allowance"] // 5:      # 80% of the month's free messages gone, little bought
+        s.msg_alert = f"{_month()}:80"
+        return True, (f"📨 {left} bill messages left this month ({s.msgs_used} used of {m['allowance']} free"
+                      + (f", {s.bonus_msgs} bought" if s.bonus_msgs else "") + "). Buy a pack so bills keep going on WhatsApp.")
+    return True, None

@@ -51,6 +51,12 @@ def queue_bill(db: Session, bill: Bill) -> None:
         return
     from ..services.sms import app_base_url, ensure_share_key
     tenant = db.get(Tenant, bill.tenant_id)
+    from ..billing.service import take_msg
+    ok, alert = take_msg(db, tenant)          # free allowance per outlet, then bought packs
+    if alert:
+        _tell_owner(db, bill.tenant_id, alert)
+    if not ok:
+        return
     payload = {"brand": tenant.app_name or tenant.name, "invoice": bill.invoice_no, "amount": rupees(bill.total_paise),
                "link": f"{app_base_url(tenant)}/b/{ensure_share_key(bill)}", "bill_id": str(bill.id)}
     db.execute(text("insert into wa_outbox (id, tenant_id, kind, ref, to_phone, payload, status, tries, next_try_at, created_at) "
@@ -108,6 +114,16 @@ async def sender() -> None:
 def _reply(phone: str, body: str) -> None:
     from ..whatsapp import client
     client.send_text(phone, body)
+
+
+def _tell_owner(db: Session, tenant_id, msg: str) -> None:
+    """A note to the owner (a reply if they've messaged in the last 24 hours; otherwise it's on the Billing page)."""
+    from ..whatsapp import client
+    for p in set(db.scalars(select(User.phone).where(User.tenant_id == tenant_id, User.role == "owner", User.phone.is_not(None))).all()):
+        try:
+            client.send_options(p, msg, [("buy messages", "Buy more")])
+        except Exception:  # noqa: BLE001
+            log.info("custwa: note to owner …%s not sent", str(p)[-4:])
 
 
 def _alert_owner(db: Session, tenant_id, outlet: Outlet, bill: Bill, fb: BillFeedback) -> None:
