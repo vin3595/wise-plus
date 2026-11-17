@@ -115,8 +115,10 @@ def edit_offer(offer_id: uuid.UUID, body: OfferIn, db: Session = Depends(get_db)
 @router.get("/offers/{offer_id}/codes")
 def offer_codes(offer_id: uuid.UUID, db: Session = Depends(get_db), auth: Auth = Depends(require(Perm.menu_view))) -> list[dict]:
     rows = db.scalars(select(OfferCode).where(OfferCode.offer_id == offer_id).order_by(OfferCode.created_at.desc()).limit(500)).all()
-    return [{"code": c.code, "phone": "…" + c.phone10[-4:], "status": c.status, "issued_on": c.issued_on, "expires_on": c.expires_on,
-             "used_at": c.used_at} for c in rows]
+    o = db.get(Offer, offer_id)
+    return [{"code": c.code, "name": c.cust_name, "phone": c.phone10, "item": c.item_name,
+             "price_paise": c.price_paise if c.price_paise is not None else (o.price_paise if o else None),
+             "status": c.status, "issued_on": c.issued_on, "expires_on": c.expires_on, "used_at": c.used_at} for c in rows]
 
 
 class OtpIn(BaseModel):
@@ -164,9 +166,11 @@ def qr_picture(code: str) -> Response:
     if not osv.is_code(c):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
     with system_session() as db:
-        if db.scalar(select(OfferCode.id).where(OfferCode.code == c)) is None:
+        row = db.scalar(select(OfferCode).where(OfferCode.code == c))
+        if row is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
-    return Response(osv.qr_png(c), media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
+        card = osv.card_for(db, row)
+    return Response(osv.qr_png(c, card), media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
 
 
 # ------------------------------------------------------------------ barcodes
@@ -213,7 +217,8 @@ def lookup(code: str, outlet_id: uuid.UUID, db: Session = Depends(get_db), auth:
         v = db.get(Variant, o.variant_id)
         return {"kind": "offer", "code": c.code, "offer": o.name, "variant_id": str(o.variant_id), "item_id": str(v.item_id),
                 "price_paise": o.price_paise, "regular_paise": v.price_paise, "expires_on": c.expires_on,
-                "needs_otp": osv.needs_otp(db, c), "phone": "…" + c.phone10[-4:]}
+                "needs_otp": osv.needs_otp(db, c), "phone": c.phone10, "cust_name": c.cust_name,
+                "item": c.item_name, "offer_price_paise": c.price_paise}
     bc = re.sub(r"\s+", "", raw)
     v = db.scalar(select(Variant).where(Variant.barcode == bc))
     if v is not None:

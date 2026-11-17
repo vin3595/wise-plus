@@ -222,11 +222,23 @@ def test_all_purchase_bills_filter_and_delete(client):
     assert g(d1="2026-11-04", d2="2026-11-30", q="am")["count"] >= 1 and g(min_total=100000, supplier_id=a["id"])["count"] == 2
     assert g(outlet_id=sp, supplier_id=a["id"])["count"] == 1
     assert g(q="milk")["count"] >= 3                                          # item names too
-    r = client.post("/api/inventory/purchases/delete", headers=h(tok), json={"ids": [p1["id"], p3["id"], p3["id"]]}).json()
+    dl = lambda ids, **kw: client.post("/api/inventory/purchases/delete", headers=h(tok), json={"ids": ids} | kw)  # noqa: E731
+    assert dl([p1["id"]]).status_code == 422                                   # needs a reason and a PIN
+    assert dl([p1["id"]], reason="Entered twice").status_code == 422
+    client.post("/api/users", headers=h(tok), json={"name": "Mohan", "role": "manager", "pin": "8899", "outlet_ids": [ck], "phone": "9" + "2" * 9})
+    assert dl([p1["id"]], reason="Entered twice", manager_pin="1234").status_code == 403   # wrong PIN
+    assert dl([p1["id"], p3["id"]], reason="Entered twice", manager_pin="8899").status_code == 403   # Mohan isn't at that outlet
+    assert g()["count"] == base["count"] + 3                                    # nothing went
+    client.post("/api/users", headers=h(tok), json={"name": "Ravi", "role": "manager", "pin": "5522", "outlet_ids": [ck, sp], "phone": "9" + "3" * 9})
+    r = dl([p1["id"], p3["id"], p3["id"]], reason="Entered twice", manager_pin="5522").json()
     assert r["deleted"] == 2
+    gone = {x["id"]: x for x in g(status="cancelled")["purchases"]}[p3["id"]]
+    assert gone["cancel_reason"] == "Entered twice" and gone["cancel_approved_by"] == "Ravi" and gone["cancelled_at"]
+    one = client.post(f"/api/inventory/purchases/{p2['id']}/cancel", headers=h(tok), json={"reason": "x"})
+    assert one.status_code == 422
     left = g()
     assert left["count"] == base["count"] + 1 and left["total_paise"] == base["total_paise"] + 250000
     assert g(status="cancelled")["count"] == 2 and g(status="all")["count"] == base["count"] + 3
-    assert client.post("/api/inventory/purchases/delete", headers=h(tok), json={"ids": [p1["id"]]}).json()["deleted"] == 0
+    assert dl([p1["id"]], reason="Again", manager_pin="5522").json()["deleted"] == 0
     dues = client.get(f"/api/ledger/suppliers/{b['id']}", headers=h(tok)).json()
     assert dues["balance_paise"] == 0                                        # a deleted bill isn't owed

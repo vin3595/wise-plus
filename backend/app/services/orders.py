@@ -119,6 +119,10 @@ def add_kots(db: Session, order: Order, lines: list[ResolvedLine]) -> list[Kot]:
                 except OfferError as e:
                     raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from None
                 note = f"Offer {r.offer_code.code}" + (f" · {note}" if note else "")
+                if not order.customer_phone:            # the bill goes to the person the offer was sent to
+                    order.customer_phone = r.offer_code.phone10
+                    if not order.customer_name and r.offer_code.cust_name:
+                        order.customer_name = r.offer_code.cust_name
             db.add(OrderItem(
                 tenant_id=order.tenant_id, order_id=order.id, kot_id=kot.id, variant_id=r.variant.id,
                 item_name=r.item.name, variant_name=r.variant.name, food_type=r.item.food_type,

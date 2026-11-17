@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..core.kds import business_date
-from ..models import Item, Outlet, Tenant, Variant
+from ..models import Customer, Item, Outlet, Tenant, Variant
 from .models import Offer, OfferCode
 
 ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"          # no 0/O, 1/I/L: easy to read out or type
@@ -54,15 +54,49 @@ def find_keyword(db: Session, text: str) -> Offer | None:
     return db.scalar(select(Offer).where(Offer.keyword == k))
 
 
-def issue(db: Session, offer: Offer, phone10: str) -> tuple[OfferCode | None, str]:
-    """A code for this number (the same one again if it hasn't been used). Returns (code, message if none)."""
+def item_label(db: Session, offer: Offer) -> str:
+    v = db.get(Variant, offer.variant_id)
+    it = db.get(Item, v.item_id) if v else None
+    if it is None:
+        return offer.name
+    return (f"{it.name}{'' if v.name in ('Regular', '') else f' ({v.name})'}")[:120]
+
+
+def clean_name(raw: str | None) -> str | None:
+    n = re.sub(r"[\x00-\x1f<>]", "", (raw or "")).strip()
+    n = re.sub(r"\s+", " ", n)[:60]
+    return n or None
+
+
+def remember(db: Session, offer: Offer, phone10: str, wa_name: str | None) -> str | None:
+    """db: system session. The customer goes into this business's customers (name from their bills, else WhatsApp)."""
+    cu = db.scalar(select(Customer).where(Customer.tenant_id == offer.tenant_id, Customer.phone == phone10))
+    if cu is None:
+        cu = Customer(tenant_id=offer.tenant_id, phone=phone10, name=wa_name, points_paise=0, stamps=0)
+        db.add(cu)
+        try:
+            with db.begin_nested():
+                db.flush()
+        except Exception:  # noqa: BLE001 - added at the same moment elsewhere
+            cu = db.scalar(select(Customer).where(Customer.tenant_id == offer.tenant_id, Customer.phone == phone10))
+    elif wa_name and not cu.name:
+        cu.name = wa_name
+    return (cu.name if cu is not None else None) or wa_name
+
+
+def issue(db: Session, offer: Offer, phone10: str, wa_name: str | None = None) -> tuple[OfferCode | None, str]:
+    """A code for this number (the same one again if it hasn't been used). Returns (code, message if none).
+    The code keeps the customer's name and number, the item and the offer price."""
     day = business_date()
+    wa_name = clean_name(wa_name)
     if not live(offer, day):
         return None, "Sorry, this offer has ended."
     have = db.scalars(select(OfferCode).where(OfferCode.offer_id == offer.id, OfferCode.phone10 == phone10)
                       .order_by(OfferCode.created_at.desc())).all()
     open_ = next((c for c in have if c.status == "issued" and c.expires_on >= day), None)
     if open_ is not None:
+        if not open_.cust_name:
+            open_.cust_name = remember(db, offer, phone10, wa_name)
         return open_, ""
     if len(have) >= offer.per_phone:
         return None, "You've already used this offer. Thank you! 🙏"
@@ -73,8 +107,10 @@ def issue(db: Session, offer: Offer, phone10: str) -> tuple[OfferCode | None, st
     last = day + timedelta(days=max(offer.code_days, 1) - 1)
     if offer.valid_to and last > offer.valid_to:
         last = offer.valid_to
+    name, item = remember(db, offer, phone10, wa_name), item_label(db, offer)
     for _ in range(5):
-        c = OfferCode(tenant_id=offer.tenant_id, offer_id=offer.id, code=new_code(), phone10=phone10, expires_on=last, issued_on=day)
+        c = OfferCode(tenant_id=offer.tenant_id, offer_id=offer.id, code=new_code(), phone10=phone10, expires_on=last, issued_on=day,
+                      cust_name=name, item_name=item, price_paise=offer.price_paise)
         db.add(c)
         try:
             with db.begin_nested():
@@ -87,23 +123,83 @@ def issue(db: Session, offer: Offer, phone10: str) -> tuple[OfferCode | None, st
 
 def reply_text(db: Session, offer: Offer, code: OfferCode) -> str:
     t = db.get(Tenant, offer.tenant_id)
-    v = db.get(Variant, offer.variant_id)
-    it = db.get(Item, v.item_id) if v else None
-    what = f"{it.name}{'' if not v or v.name in ('Regular', '') else f' ({v.name})'}" if it else offer.name
+    what = code.item_name or item_label(db, offer)
+    price = code.price_paise if code.price_paise is not None else offer.price_paise
     where = ""
     if offer.outlet_ids:
         names = [o.name for o in db.scalars(select(Outlet).where(Outlet.id.in_([uuid.UUID(x) for x in offer.outlet_ids])))]
         where = f"\nAt: {', '.join(names)}"
-    return (f"🎁 *{offer.name}*\n{what} for just *{rupees(offer.price_paise)}* at {t.app_name or t.name}.{where}\n\n"
+    hi = f"Hi {code.cust_name}! " if code.cust_name else ""
+    return (f"🎁 {hi}*{offer.name}*\n{what} for just *{rupees(price)}* at {t.app_name or t.name}.{where}\n\n"
             f"Show this QR at the counter.\nCode: *{code.code}* · valid till {code.expires_on.day} {code.expires_on:%b}"
             + (f"\n\n{offer.message}" if offer.message else ""))
 
 
-def qr_png(code: str) -> bytes:
+def phone_fmt(p10: str) -> str:
+    return f"+91 {p10[:5]} {p10[5:]}" if len(p10) == 10 else p10
+
+
+_FONTS = __import__("pathlib").Path(__file__).parent / "fonts"
+
+
+def qr_png(code: str, card: dict | None = None) -> bytes:
+    """The QR alone, or (card) a picture with the business, the customer's name and number, the item and price."""
     import segno
     buf = io.BytesIO()
     segno.make(code, error="m", micro=False).save(buf, kind="png", scale=12, border=3)
-    return buf.getvalue()
+    if not card:
+        return buf.getvalue()
+    from PIL import Image, ImageDraw, ImageFont
+    qr = Image.open(io.BytesIO(buf.getvalue())).convert("RGB")
+    W = 720
+    qr = qr.resize((520, 520), Image.NEAREST)
+    bold = lambda n: ImageFont.truetype(str(_FONTS / "DejaVuSans-Bold.ttf"), n)  # noqa: E731
+    reg = lambda n: ImageFont.truetype(str(_FONTS / "DejaVuSans.ttf"), n)  # noqa: E731
+    img = Image.new("RGB", (W, 1130), "white")
+    d = ImageDraw.Draw(img)
+    d.rectangle([0, 0, W, 120], fill=(17, 24, 39))
+
+    def fit(text: str, font_fn, size: int, width: int):
+        while size > 16 and d.textlength(text, font=font_fn(size)) > width:
+            size -= 2
+        return font_fn(size)
+
+    def center(y: int, text: str, font, fill=(17, 24, 39)):
+        d.text(((W - d.textlength(text, font=font)) / 2, y), text, font=font, fill=fill)
+
+    brand = card.get("brand") or ""
+    center(36, brand, fit(brand, bold, 40, W - 60), (255, 255, 255))
+    title = card.get("offer") or ""
+    center(150, title, fit(title, bold, 36, W - 60))
+    img.paste(qr, ((W - 520) // 2, 205))
+    y = 745
+    item = f"{card.get('item') or ''}  ·  {card.get('price') or ''}"
+    center(y, item, fit(item, bold, 34, W - 60), (190, 18, 60))
+    y += 62
+    d.line([60, y, W - 60, y], fill=(229, 231, 235), width=2)
+    y += 24
+    who = card.get("name") or "Customer"
+    center(y, who, fit(who, bold, 34, W - 60))
+    y += 50
+    center(y, card.get("phone") or "", reg(30), (75, 85, 99))
+    y += 64
+    center(y, f"Code {code}", bold(28), (75, 85, 99))
+    y += 44
+    center(y, card.get("valid") or "", reg(24), (107, 114, 128))
+    y += 40
+    center(y, "Show this at the counter · one use only", reg(22), (156, 163, 175))
+    out = io.BytesIO()
+    img.save(out, format="PNG", optimize=True)
+    return out.getvalue()
+
+
+def card_for(db: Session, c: OfferCode) -> dict:
+    o = db.get(Offer, c.offer_id)
+    t = db.get(Tenant, c.tenant_id)
+    price = c.price_paise if c.price_paise is not None else (o.price_paise if o else 0)
+    return {"brand": (t.app_name or t.name) if t else "", "offer": o.name if o else "", "item": c.item_name or (item_label(db, o) if o else ""),
+            "price": rupees(price), "name": re.sub(r"[^\u0000-\uffff]", "", c.cust_name or "").strip() or None, "phone": phone_fmt(c.phone10),
+            "valid": f"Valid till {c.expires_on.day} {c.expires_on:%b %Y}"}
 
 
 def check(db: Session, raw: str, outlet_id, lock: bool = False) -> tuple[OfferCode, Offer]:

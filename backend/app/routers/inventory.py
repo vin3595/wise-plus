@@ -22,10 +22,11 @@ from ..core.stock import (BASE_UNITS, STANDARD_UNITS, M, finds_loop, margin_bp, 
 from ..deps import Auth, ensure_outlet_access, get_db, require
 from ..models import (
     Addon, AddonGroup, Item, Outlet, OutletVariantOverride, Purchase, RecipeLine, StockCount, StockItem, StockLevel,
-    StockMove, Supplier, TaxGroup, Variant,
+    StockMove, Supplier, TaxGroup, User, Variant,
 )
 from ..services import audit
 from ..services import stock as st
+from ..services.approval import verify_manager_pin
 from .common import get_or_404
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
@@ -313,7 +314,14 @@ def _purchase_out(db: Session, p: Purchase) -> dict:
     return {"id": str(p.id), "outlet_id": str(p.outlet_id), "supplier": sup.name if sup else None, "supplier_id": str(p.supplier_id) if p.supplier_id else None,
             "supplier_gstin": sup.gstin if sup else None, "invoice_no": p.invoice_no, "invoice_date": str(p.invoice_date),
             "amount_paise": p.amount_paise, "tax_paise": p.tax_paise, "total_paise": p.total_paise, "lines": p.lines,
-            "notes": p.notes, "status": p.status, "created_at": p.created_at.isoformat() if p.created_at else None}
+            "notes": p.notes, "status": p.status, "created_at": p.created_at.isoformat() if p.created_at else None,
+            **(_deleted(db, p) if p.status == "cancelled" else {})}
+
+
+def _deleted(db: Session, p: Purchase) -> dict:
+    who = lambda uid: (u.name if uid and (u := db.get(User, uid)) else None)  # noqa: E731
+    return {"cancel_reason": p.cancel_reason, "cancelled_by": who(p.cancelled_by), "cancel_approved_by": who(p.cancel_approved_by),
+            "cancelled_at": p.cancelled_at.isoformat() if p.cancelled_at else None}
 
 
 @router.post("/purchases", status_code=201)
@@ -412,37 +420,63 @@ def all_purchases(outlet_id: uuid.UUID | None = None, d1: date | None = None, d2
 
 class BulkDeleteIn(BaseModel):
     ids: list[uuid.UUID] = Field(min_length=1, max_length=500)
+    reason: str = Field(min_length=3, max_length=200)
+    manager_pin: str = Field(min_length=4, max_length=8)
+
+
+class CancelIn(BaseModel):
+    reason: str = Field(min_length=3, max_length=200)
+    manager_pin: str = Field(min_length=4, max_length=8)
+
+
+def _approver(db: Session, auth: Auth, outlet_id: uuid.UUID, pin: str, seen: dict) -> uuid.UUID:
+    """Deleting a supplier bill always takes an owner's or manager's PIN (even when they're the one logged in)."""
+    if outlet_id not in seen:
+        seen[outlet_id] = verify_manager_pin(db, auth.tenant_id, outlet_id, pin).id
+    return seen[outlet_id]
+
+
+def _cancel(db: Session, p: Purchase, auth: Auth, reason: str, approver: uuid.UUID) -> None:
+    for ln in sorted(p.lines, key=lambda x: x["stock_item_id"]):
+        it = db.get(StockItem, uuid.UUID(ln["stock_item_id"]))
+        if it:
+            st.post(db, tenant_id=p.tenant_id, outlet_id=p.outlet_id, item=it, qty_m=-ln["base_m"], kind="purchase",
+                    ref_kind="purchase", ref_id=p.id, user_id=auth.user_id, note=f"purchase deleted: {reason}"[:200])
+    p.status, p.cancel_reason, p.cancelled_by, p.cancel_approved_by = "cancelled", reason, auth.user_id, approver
+    p.cancelled_at = datetime.now(timezone.utc)
+    db.flush()
+    audit.record(db, auth.tenant_id, auth.user_id, "cancel", "purchase", p.id,
+                 after={"reason": reason, "approved_by": str(approver), "invoice_no": p.invoice_no, "total_paise": p.total_paise})
 
 
 @router.post("/purchases/delete")
 def delete_purchases(body: BulkDeleteIn, auth: Auth = Depends(require(Perm.inventory_manage)), db: Session = Depends(get_db)) -> dict:
-    """Delete bills entered by mistake (several at once). Their stock comes back out and they leave supplier dues and
-    reports; each stays findable under 'Deleted' for the audit trail and can't be counted twice."""
-    done = 0
+    """Delete bills entered by mistake (several at once), with a manager PIN and a reason. Their stock comes back out
+    and they leave supplier dues and reports; each stays findable under 'Deleted' with who, why and when."""
+    reason, seen, done = body.reason.strip(), {}, 0
+    if len(reason) < 3:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Say why these bills are being deleted")
     for pid in dict.fromkeys(body.ids):
         p = db.get(Purchase, pid)
         if p is None or p.status == "cancelled":
             continue
-        cancel_purchase(pid, auth, db)
+        ensure_outlet_access(db, auth, p.outlet_id)
+        _cancel(db, p, auth, reason, _approver(db, auth, p.outlet_id, body.manager_pin, seen))
         done += 1
     return {"deleted": done}
 
 
 @router.post("/purchases/{purchase_id}/cancel")
-def cancel_purchase(purchase_id: uuid.UUID, auth: Auth = Depends(require(Perm.inventory_manage)), db: Session = Depends(get_db)) -> dict:
-    """Entered by mistake: the stock it added is taken back out. The entry stays, marked cancelled."""
+def cancel_purchase(purchase_id: uuid.UUID, body: CancelIn, auth: Auth = Depends(require(Perm.inventory_manage)), db: Session = Depends(get_db)) -> dict:
+    """Entered by mistake: the stock it added is taken back out. The entry stays, marked cancelled, with the reason."""
     p = get_or_404(db, Purchase, purchase_id, "Purchase")
     ensure_outlet_access(db, auth, p.outlet_id)
     if p.status == "cancelled":
         raise HTTPException(status.HTTP_409_CONFLICT, "Already cancelled")
-    for ln in sorted(p.lines, key=lambda x: x["stock_item_id"]):
-        it = db.get(StockItem, uuid.UUID(ln["stock_item_id"]))
-        if it:
-            st.post(db, tenant_id=p.tenant_id, outlet_id=p.outlet_id, item=it, qty_m=-ln["base_m"], kind="purchase",
-                    ref_kind="purchase", ref_id=p.id, user_id=auth.user_id, note="purchase cancelled")
-    p.status = "cancelled"
-    db.flush()
-    audit.record(db, auth.tenant_id, auth.user_id, "cancel", "purchase", p.id)
+    reason = body.reason.strip()
+    if len(reason) < 3:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Say why this bill is being deleted")
+    _cancel(db, p, auth, reason, _approver(db, auth, p.outlet_id, body.manager_pin, {}))
     return _purchase_out(db, p)
 
 

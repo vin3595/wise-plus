@@ -40,6 +40,9 @@ class OfferCode(Base):
     offer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("offers.id", ondelete="CASCADE"), nullable=False)
     code: Mapped[str] = mapped_column(String(12), nullable=False)              # "OF7KQ2M9XA" (in the QR and printed under it)
     phone10: Mapped[str] = mapped_column(String(10), nullable=False)
+    cust_name: Mapped[str | None] = mapped_column(String(60))                  # their WhatsApp name (or the name on their bills)
+    item_name: Mapped[str | None] = mapped_column(String(120))                 # what the code was for, as it was then
+    price_paise: Mapped[int | None] = mapped_column(Integer)                   # the offer price it was given at
     status: Mapped[str] = mapped_column(String(8), default="issued", nullable=False)   # issued | used
     expires_on: Mapped[date] = mapped_column(Date, nullable=False)
     issued_on: Mapped[date] = mapped_column(Date, nullable=False)

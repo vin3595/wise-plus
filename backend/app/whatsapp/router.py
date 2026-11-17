@@ -124,6 +124,8 @@ async def receive(request: Request, background: BackgroundTasks) -> dict:
         return {"ok": True}
     for entry in data.get("entry", []):
         for change in entry.get("changes", []):
+            names = {(ct.get("wa_id") or ""): ((ct.get("profile") or {}).get("name") or "")
+                     for ct in change.get("value", {}).get("contacts", []) or []}
             for m in change.get("value", {}).get("messages", []) or []:
                 mid = m.get("id", "")
                 if mid in _seen:
@@ -140,7 +142,7 @@ async def receive(request: Request, background: BackgroundTasks) -> dict:
                     background.add_task(handle_media, m["from"], media["id"], media.get("mime_type") or "",
                                         media.get("filename") or "bill", media.get("caption") or "")
                 elif m.get("from") and text:
-                    background.add_task(handle, m["from"], text)
+                    background.add_task(handle, m["from"], text, names.get(m["from"], ""))
                 if m.get("from"):                       # wise-plus: the 24-hour window for the nightly summary
                     background.add_task(_seen_now, m["from"])
     return {"ok": True}       # always 200 fast, or Meta keeps retrying
@@ -307,7 +309,7 @@ def _release_held(phone: str, text: str) -> bool:
     return True
 
 
-def offer_reply(phone: str, text: str) -> bool:
+def offer_reply(phone: str, text: str, name: str = "") -> bool:
     """wise-plus: anyone sending an offer's keyword gets their own QR code (one WhatsApp number serves every business,
     so keywords are unique across all of them). True = it was a keyword."""
     if not text or len(text) > 40 or "\n" in text:
@@ -319,7 +321,7 @@ def offer_reply(phone: str, text: str) -> bool:
         offer = osv.find_keyword(db, text)
         if offer is None:
             return False
-        code, why = osv.issue(db, offer, client.last10(phone))
+        code, why = osv.issue(db, offer, client.last10(phone), name)
         if code is None:
             client.send_text(phone, why)
             return True
@@ -332,7 +334,7 @@ def offer_reply(phone: str, text: str) -> bool:
     return True
 
 
-def handle(phone: str, text: str) -> None:
+def handle(phone: str, text: str, name: str = "") -> None:
     try:
         t = (text or "").strip()
         if t.startswith("stop:"):                      # 'Stop offers' on a broadcast
@@ -343,7 +345,7 @@ def handle(phone: str, text: str) -> None:
             return
         if t.startswith("kw:"):                        # 'Get my offer' on a broadcast
             text = t[3:]
-        if offer_reply(phone, text):
+        if offer_reply(phone, text, name):
             return
         from ..custwa.service import handle_customer   # wise-plus: customers rating a visit
         if (text or "").startswith("fb:") or not _who(client.last10(phone)):

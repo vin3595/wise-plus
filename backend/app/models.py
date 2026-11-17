@@ -637,6 +637,11 @@ class Purchase(Base):
     status: Mapped[str] = mapped_column(String(9), default="posted", nullable=False)   # posted | cancelled
     created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    # wise-plus: who deleted it, whose manager PIN allowed it, and why
+    cancel_reason: Mapped[str | None] = mapped_column(String(200))
+    cancelled_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
+    cancel_approved_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     __table_args__ = (Index("ix_purchases_outlet_date", "outlet_id", "invoice_date"),)
 
 

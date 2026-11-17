@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { DeleteBillsDialog } from "../components/DeleteBillsDialog";
 import { api, newId } from "../api";
 import { formatPaise, inputToPaise, paiseToInput } from "../money";
 import ReturnGoods from "../components/ReturnGoods";
@@ -249,6 +250,7 @@ interface PLine { key: string; item: StockItem | null; qty: string; unit: string
 function PurchasesTab({ outletId, items, suppliers, onChange }: { outletId: string; items: StockItem[]; suppliers: Supplier[]; onChange: () => void }) {
   const [list, setList] = useState<PurchaseRow[]>([]);
   const [returning, setReturning] = useState<PurchaseRow | null>(null);
+  const [deleting, setDeleting] = useState<{ id: string; invoice_no: string | null } | null>(null);
   const [supplierId, setSupplierId] = useState("");
   const [newSupplier, setNewSupplier] = useState("");
   const [invoice, setInvoice] = useState("");
@@ -406,12 +408,14 @@ function PurchasesTab({ outletId, items, suppliers, onChange }: { outletId: stri
                 <td className="num">{formatPaise(p.total_paise)}</td>
                 <td>{p.status === "cancelled" ? "Cancelled" : <>
                   {p.supplier && <button className="link" onClick={() => setReturning(p)}>Return goods</button>}{" "}
-                  <button className="link danger" onClick={() => { if (confirm("Cancel this purchase? Its stock will be taken back out.")) api(`/inventory/purchases/${p.id}/cancel`, { method: "POST" }).then(() => { load(); onChange(); }); }}>Cancel</button></>}</td>
+                  <button className="link danger" onClick={() => setDeleting(p)}>Delete</button></>}</td>
               </tr>
             ))}
             {list.length === 0 && <tr><td colSpan={6} className="muted">No purchases yet.</td></tr>}
           </tbody>
         </table>
+        {deleting && <DeleteBillsDialog ids={[deleting.id]} label={deleting.invoice_no ? `bill ${deleting.invoice_no}` : "this bill"} onClose={() => setDeleting(null)}
+          onDone={() => { setDeleting(null); load(); onChange(); }} />}
         {returning && <ReturnGoods purchase={returning} onClose={() => setReturning(null)} onDone={() => { load(); onChange(); }} />}
       </Card>
     </>

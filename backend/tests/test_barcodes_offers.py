@@ -63,8 +63,9 @@ def test_whatsapp_offer_to_bill(client, monkeypatch):
     assert client.post("/api/offers", headers=h(other["tok"]), json={"name": "xx", "keyword": kw, "variant_id": other["v"], "price_paise": 100}).status_code == 409
 
     cust = "97" + str(uuid.uuid4().int)[:8]
-    wr.handle("91" + cust, f" {kw.lower()} ")
+    wr.handle("91" + cust, f" {kw.lower()} ", "Riya 🌸")
     to, link, caption = images[-1]
+    assert "Hi Riya 🌸!" in caption
     code = link.rsplit("/", 1)[1].removesuffix(".png")
     assert link.startswith("https://plus.example.com/api/public/offer-qr/OF") and "₹29" in caption and code in caption
     wr.handle("91" + cust, kw)
@@ -76,6 +77,14 @@ def test_whatsapp_offer_to_bill(client, monkeypatch):
     # the counter scans it
     hit = client.get("/api/barcodes/lookup", headers=h(tok), params={"code": code, "outlet_id": ck}).json()
     assert hit["kind"] == "offer" and hit["price_paise"] == 2900 and hit["variant_id"] == v
+    assert hit["cust_name"] == "Riya 🌸" and hit["phone"] == cust and hit["item"] and hit["offer_price_paise"] == 2900
+    codes = client.get(f"/api/offers/{offer['id']}/codes", headers=h(tok)).json()
+    assert codes[0]["name"] == "Riya 🌸" and codes[0]["phone"] == cust and codes[0]["price_paise"] == 2900 and codes[0]["item"]
+    from sqlalchemy import select as _sel
+    from app.db import system_session
+    from app.models import Customer
+    with system_session() as sdb:                                             # saved as this business's customer
+        assert sdb.scalar(_sel(Customer.name).where(Customer.phone == cust, Customer.tenant_id == uuid.UUID(offer["tenant_id"]) if "tenant_id" in offer else Customer.phone == cust)) == "Riya 🌸"
     line = {"variant_id": v, "qty": 1, "offer_code": code}
     q = client.post("/api/orders/quote", headers=h(tok), json={"outlet_id": ck, "items": [line]}).json()
     assert q["subtotal_paise"] == 2900
@@ -83,6 +92,7 @@ def test_whatsapp_offer_to_bill(client, monkeypatch):
     od = client.post("/api/orders", headers=h(tok), json={"outlet_id": ck, "order_type": "takeaway", "items": [line]})
     assert od.status_code in (200, 201), od.text
     od = od.json()
+    assert od["customer_phone"] == cust and od["customer_name"] == "Riya 🌸"     # the bill goes to them
     again = client.post("/api/orders", headers=h(tok), json={"outlet_id": ck, "order_type": "takeaway", "items": [line]})
     assert again.status_code == 409 and "already used" in again.text
     # cancelled before billing: the customer can use it again
@@ -122,7 +132,7 @@ def test_offer_needs_otp(client, monkeypatch):
     wr.handle("91" + cust, kw)
     code = images[-1].rsplit("/", 1)[1].removesuffix(".png")
     hit = client.get("/api/barcodes/lookup", headers=h(tok), params={"code": code, "outlet_id": ck}).json()
-    assert hit["needs_otp"] is True and hit["phone"] == "…" + cust[-4:]
+    assert hit["needs_otp"] is True and hit["phone"] == cust
     line = {"variant_id": v, "qty": 1, "offer_code": code}
     assert client.post("/api/orders/quote", headers=h(tok), json={"outlet_id": ck, "items": [line]}).status_code == 200   # the total still shows
     blocked = client.post("/api/orders", headers=h(tok), json={"outlet_id": ck, "order_type": "takeaway", "items": [line]})

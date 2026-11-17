@@ -1,12 +1,14 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Download, FileText, Trash2 } from "lucide-react";
+import { DeleteBillsDialog } from "../components/DeleteBillsDialog";
 import { api, tokenStore } from "../api";
 import { formatPaise, inputToPaise } from "../money";
 import { Button, Card, ErrorText, Input, Select, useAction } from "../ui";
 
 interface Line { name: string; qty_m: number; unit: string; amount_paise: number; gst_bp: number }
 interface P { id: string; outlet: string | null; supplier: string | null; supplier_id: string | null; invoice_no: string | null; invoice_date: string;
-  amount_paise: number; tax_paise: number; total_paise: number; lines: Line[]; status: string; file_id: string | null; notes: string | null }
+  amount_paise: number; tax_paise: number; total_paise: number; lines: Line[]; status: string; file_id: string | null; notes: string | null;
+  cancel_reason?: string | null; cancelled_by?: string | null; cancel_approved_by?: string | null; cancelled_at?: string | null }
 interface Res { purchases: P[]; count: number; amount_paise: number; tax_paise: number; total_paise: number }
 
 const iso = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -36,7 +38,7 @@ export default function PurchaseBills() {
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [open, setOpen] = useState<string | null>(null);
   const [n, setN] = useState(0);
-  const { run, busy, error } = useAction();
+  const { busy, error } = useAction();
   useEffect(() => {
     api<{ id: string; name: string }[]>("/tenant/outlets").then(setOutlets).catch(() => setOutlets([]));
     api<{ id: string; name: string }[]>("/inventory/suppliers").then(setSups).catch(() => setSups([]));
@@ -61,10 +63,8 @@ export default function PurchaseBills() {
   const rows = res?.purchases || [];
   const live = rows.filter((p) => p.status === "posted");
   const toggle = (id: string) => setSel((s) => { const x = new Set(s); if (x.has(id)) x.delete(id); else x.add(id); return x; });
-  const del = () => {
-    if (!confirm(`Delete ${sel.size} bill${sel.size === 1 ? "" : "s"}? Their stock comes back out and they leave supplier dues. You'll still find them under "Deleted".`)) return;
-    run(async () => { await api("/inventory/purchases/delete", { body: { ids: [...sel] } }); setN((x) => x + 1); });
-  };
+  const [deleting, setDeleting] = useState(false);
+  const del = () => setDeleting(true);
   const viewFile = async (p: P) => {
     const r = await fetch(`/api/inventory/purchases/scan/kept/${p.file_id}/file`, { headers: { Authorization: `Bearer ${tokenStore.get()}` } });
     if (r.ok) window.open(URL.createObjectURL(await r.blob()), "_blank");
@@ -141,11 +141,15 @@ export default function PurchaseBills() {
                       <ul className="plain">{p.lines.map((l, i) => (
                         <li key={i}>{l.name} · {Number((l.qty_m / 1000).toFixed(3))} {l.unit} · {formatPaise(l.amount_paise)}{l.gst_bp ? ` + ${l.gst_bp / 100}% GST` : ""}</li>))}</ul>
                       <span className="muted small">Before GST {formatPaise(p.amount_paise)} · GST {formatPaise(p.tax_paise)}{p.notes ? ` · ${p.notes}` : ""}</span>
+                      {p.status === "cancelled" && <p className="small deleted-why">Deleted{p.cancelled_at ? ` ${new Date(p.cancelled_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}` : ""}
+                        {p.cancelled_by ? ` by ${p.cancelled_by}` : ""}{p.cancel_approved_by && p.cancel_approved_by !== p.cancelled_by ? ` (PIN: ${p.cancel_approved_by})` : ""}{p.cancel_reason ? ` · “${p.cancel_reason}”` : ""}</p>}
                     </td></tr>)}
                 </Fragment>))}
             </tbody>
           </table>)}
       </Card>
+      {deleting && <DeleteBillsDialog ids={[...sel]} label={`${sel.size} bill${sel.size === 1 ? "" : "s"}`} onClose={() => setDeleting(false)}
+        onDone={() => { setDeleting(false); setN((x) => x + 1); }} />}
     </div>
   );
 }

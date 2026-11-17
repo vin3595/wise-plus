@@ -9,7 +9,7 @@ import { Button, Card, ErrorText, Field, Input, Select, useAction } from "../ui"
 interface Offer { id: string; name: string; keyword: string; variant_id: string; item: string | null; regular_paise: number | null; price_paise: number;
   outlet_ids: string[] | null; valid_from: string | null; valid_to: string | null; per_phone: number; code_days: number; daily_limit: number | null;
   message: string | null; is_active: boolean; require_otp: boolean; issued: number; used: number }
-interface Code { code: string; phone: string; status: string; issued_on: string; expires_on: string; used_at: string | null }
+interface Code { code: string; name: string | null; phone: string; item: string | null; price_paise: number | null; status: string; issued_on: string; expires_on: string; used_at: string | null }
 
 const day = (d: string | null) => (d ? new Date(d + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "");
 
@@ -53,9 +53,10 @@ export default function Offers() {
         <Card title={`Codes · ${codes.offer.name}`} actions={<button className="link" onClick={() => setCodes(null)}>Close</button>}>
           {codes.rows.length === 0 ? <p className="muted">No codes sent yet.</p> : (
             <table className="table">
-              <thead><tr><th>Code</th><th>Number</th><th>Sent</th><th>Status</th></tr></thead>
+              <thead><tr><th>Customer</th><th>Number</th><th>Item</th><th className="num">Price</th><th>Code</th><th>Sent</th><th>Status</th></tr></thead>
               <tbody>{codes.rows.map((c) => (
-                <tr key={c.code}><td className="mono">{c.code}</td><td>{c.phone}</td><td>{day(c.issued_on)}</td>
+                <tr key={c.code}><td>{c.name || <span className="muted">—</span>}</td><td><a href={`tel:${c.phone}`}>{c.phone}</a></td><td>{c.item || "—"}</td>
+                  <td className="num">{c.price_paise != null ? formatPaise(c.price_paise) : ""}</td><td className="mono">{c.code}</td><td>{day(c.issued_on)}</td>
                   <td>{c.status === "used" ? `Used ${c.used_at ? new Date(c.used_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : ""}`
                     : new Date(c.expires_on + "T23:59:59") < new Date() ? "Expired" : `Valid till ${day(c.expires_on)}`}</td></tr>))}
               </tbody>
