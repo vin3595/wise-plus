@@ -406,3 +406,5 @@ tr.cancelled td .small { text-decoration: none; }
 .ok-text { color: var(--ok, #047857); font-weight: 600; }
 .error-text { color: var(--berry, #be123c); }
 .nowrap { white-space: nowrap; }
+.warn-row td { background: #fff7ed; }
+.table-wrap { overflow-x: auto; }

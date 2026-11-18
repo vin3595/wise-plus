@@ -78,6 +78,7 @@ def billing(auth: Auth = Depends(get_auth), db: Session = Depends(get_db)) -> di
         "scans": scans(db, t) | {"per_month": SCANS_PER_MONTH},
         "packs": [{"key": k, **v} for k, v in PACKS.items()],
         "messages": msgs(db, t), "msg_packs": [{"key": k, **v} for k, v in MSG_PACKS.items()],
+        "platform_admin": __import__("app.billing.platform", fromlist=["is_admin"]).is_admin(db, auth),
         "ready": rz.configured(), "key_id": rz.get_settings().billing_rz_key_id or None,
     }
 

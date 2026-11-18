@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, download } from "../api";
 import { formatPaise } from "../money";
 import { useSession } from "../session";
-import { Button, Card, ErrorText, useAction } from "../ui";
+import { Button, Card, ErrorText, Select, useAction } from "../ui";
 
 export interface BillingInfo {
   state: "house" | "trial" | "paid" | "locked" | "free";
@@ -15,6 +15,7 @@ export interface BillingInfo {
   scans: { used: number; limit: number | null; bonus: number; per_month: number };
   packs: { key: string; scans: number; paise: number }[];
   messages: { used: number; allowance: number; bonus: number; left: number | null; per_outlet: number; unlimited: boolean };
+  platform_admin?: boolean;
   msg_packs: { key: string; messages: number; paise: number }[];
   ready: boolean;
   key_id: string | null;
@@ -158,6 +159,7 @@ export default function Billing() {
         <p className="muted small">{b.messages.per_outlet} free each month for every outlet. Bought messages never expire and are used after the free ones. Messages to you (reports, dues, bank) are always free.</p>
       </Card>
       <YourData />
+      {b.platform_admin && <AllRestaurants />}
     </div>
   );
 }
@@ -174,6 +176,56 @@ function YourData() {
       <Button variant="ghost" disabled={busy} onClick={() => run(() => download("/tenant/backup", "backup.zip"))}>{busy ? "Packing…" : "Download all my data"}</Button>
       <p className="muted small">A copy is also kept safely off the server every month. On WhatsApp, send <strong>backup</strong>.</p>
       <ErrorText error={error} />
+    </Card>
+  );
+}
+
+
+interface PRow { tenant_id: string; name: string; login_id: string; state: string; outlets: number; bill_msgs_used: number; bill_msgs_free: number | null;
+  credits_left: number | null; left_this_month: number | null; sent: Record<string, number>; failed: number; meta_cost_paise: number;
+  scans_used: number; scans_free: number | null; scans_bought_left: number; packs_bought: number }
+interface PUsage { month: string; restaurants: PRow[]; total: { sent: number; meta_cost_paise: number; credits_left: number; restaurants: number; running_out: number } }
+
+/** Only you (the owner of your own businesses): every restaurant's WhatsApp messages, credits and scans. */
+function AllRestaurants() {
+  const now = new Date();
+  const ym = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  const [month, setMonth] = useState(ym(now));
+  const [u, setU] = useState<PUsage | null>(null);
+  const [sort, setSort] = useState<"sent" | "left" | "name">("sent");
+  useEffect(() => { api<PUsage>(`/platform/usage?month=${month}`).then(setU).catch(() => setU(null)); }, [month]);
+  const months = [0, 1, 2, 3, 4, 5].map((i) => ym(new Date(now.getFullYear(), now.getMonth() - i, 1)));
+  const total = (r: PRow) => Object.values(r.sent).reduce((a, b) => a + b, 0);
+  const low = (r: PRow) => r.left_this_month !== null && r.bill_msgs_free !== null && r.left_this_month <= Math.max(1, Math.floor(r.bill_msgs_free / 5));
+  const rows = [...(u?.restaurants || [])].sort((a, b) => sort === "name" ? a.name.localeCompare(b.name)
+    : sort === "left" ? (a.left_this_month ?? 1e9) - (b.left_this_month ?? 1e9) : total(b) - total(a));
+  return (
+    <Card title="All restaurants · WhatsApp and scans" actions={<Select value={month} onChange={(e) => setMonth(e.target.value)} aria-label="Month">
+      {months.map((m) => <option key={m} value={m}>{new Date(m + "-01T00:00:00").toLocaleDateString("en-IN", { month: "long", year: "numeric" })}</option>)}</Select>}>
+      {!u ? <p className="muted">Loading…</p> : <>
+        <p><strong>{u.total.sent.toLocaleString("en-IN")}</strong> messages sent · Meta cost <strong>{formatPaise(u.total.meta_cost_paise)}</strong> ·
+          {" "}<strong>{u.total.credits_left.toLocaleString("en-IN")}</strong> bought credits unused · {u.total.restaurants} restaurants
+          {u.total.running_out ? <strong className="error-text"> · {u.total.running_out} running out</strong> : null}</p>
+        <div className="row"><span className="muted small">Sort:</span>
+          {(["sent", "left", "name"] as const).map((k) => <button key={k} className={`chip${sort === k ? " on" : ""}`} onClick={() => setSort(k)}>
+            {k === "sent" ? "Most sent" : k === "left" ? "Least left" : "Name"}</button>)}</div>
+        <div className="table-wrap"><table className="table">
+          <thead><tr><th>Restaurant</th><th>Plan</th><th className="num">Free bill msgs used</th><th className="num">Bought credits left</th>
+            <th className="num">Sent (bills · broadcasts)</th><th className="num">Meta cost</th><th className="num">Scans</th></tr></thead>
+          <tbody>{rows.map((r) => (
+            <tr key={r.tenant_id} className={low(r) ? "warn-row" : ""}>
+              <td><strong>{r.name}</strong><div className="small muted">{r.login_id} · {r.outlets} outlet{r.outlets === 1 ? "" : "s"}</div></td>
+              <td>{r.state}</td>
+              <td className="num">{r.bill_msgs_free === null ? <span className="muted">unlimited</span> : <>{r.bill_msgs_used} / {r.bill_msgs_free}{low(r) && " ⚠️"}</>}</td>
+              <td className="num">{r.credits_left === null ? "—" : r.credits_left.toLocaleString("en-IN")}{r.packs_bought ? <div className="small muted">{r.packs_bought} pack{r.packs_bought === 1 ? "" : "s"} bought</div> : null}</td>
+              <td className="num">{(r.sent.bill || 0) + (r.sent.otp || 0)} · {r.sent.promo || 0}{r.failed ? <div className="small error-text">{r.failed} failed</div> : null}</td>
+              <td className="num">{formatPaise(r.meta_cost_paise)}</td>
+              <td className="num">{r.scans_used}{r.scans_free !== null ? ` / ${r.scans_free}` : ""}{r.scans_bought_left ? <div className="small muted">+{r.scans_bought_left} bought</div> : null}</td>
+            </tr>))}</tbody>
+        </table></div>
+        <p className="muted small">Only you see this (owner of your own businesses). Meta cost is at India's rate card: ₹0.115 a bill or OTP message, ₹0.86 a broadcast.
+          Offer replies and messages to owners aren't counted. On WhatsApp, send <strong>credits</strong> for the same list.</p>
+      </>}
     </Card>
   );
 }

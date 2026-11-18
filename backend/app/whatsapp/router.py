@@ -230,6 +230,10 @@ def reply_rich(phone: str, text: str) -> Reply | None:
         else:
             from . import petty as wpetty
             out = wpetty.handle(db, chosen, word, text or "")
+            if out is None and word in ("credits", "all credits", "credits all", "restaurants", "all restaurants"):
+                from ..billing import platform
+                if platform.admin_by_chosen(chosen):
+                    out = Reply(platform.whatsapp_text())
             from . import banks as wbanks
             if out is None and (word in wbanks.WORDS | wbanks.CHECK or word.startswith("bk ")):
                 from ..core.permissions import Perm, Role
