@@ -30,7 +30,7 @@ def test_lead_flow_followups_stop_and_admin(client, monkeypatch):
     boss = setup(client)
     monkeypatch.setattr(get_settings(), "house_tenants", boss["login"])
     info = client.get("/api/public/growth/info").json()
-    assert info["bundle_paise"] == 99900 and info["founding_left"] >= 0 and info["trial_days"] == 14
+    assert info["bundle_paise"] == 99900 and info["founding_left"] >= 0 and info["trial_days"] == get_settings().trial_days
     slots = client.get("/api/public/growth/demo-slots").json()["slots"]
     assert slots and all("T" in s for s in slots)
     phone = "9" + str(uuid.uuid4().int)[:9]
@@ -53,7 +53,7 @@ def test_lead_flow_followups_stop_and_admin(client, monkeypatch):
     n = len(sent)
     gs.run_leads()
     first = [t for p, t, m, _ in sent[n:] if p == phone]
-    assert first and "free for 14 days" in first[0].lower() and sent[n][2] is True                         # follow-up 1, marketing
+    assert first and f"free for {get_settings().trial_days} days" in first[0].lower() and sent[n][2] is True                         # follow-up 1, marketing
     gs.run_leads()
     assert len([1 for p, *_ in sent if p == phone]) == 2                         # not again until it's due
     assert gs.stop(phone)

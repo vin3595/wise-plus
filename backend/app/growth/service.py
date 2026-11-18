@@ -145,7 +145,7 @@ def welcome(ld: Lead) -> None:
     trial = f"{site()}/signup?phone={ld.phone10}" + (f"&ref={ld.ref_code}" if ld.ref_code else "")
     if ld.consent:
         _send(ld.phone10, f"Namaste {first}! 🙏 Thanks for your interest in *{BRAND}*: the restaurant POS with WhatsApp built in."
-              f"{demo}\n\nStart your 14-day free trial now (no card needed): {trial}\n\nReply here with any question.", True, "lead")
+              f"{demo}\n\nStart your {get_settings().trial_days}-day free trial now (no card needed): {trial}\n\nReply here with any question.", True, "lead")
     tell_me(f"🆕 Lead: *{ld.name}*{f' · {ld.restaurant}' if ld.restaurant else ''}{f' · {ld.city}' if ld.city else ''}"
             f"{f' · {ld.outlets} outlet(s)' if ld.outlets else ''}{f' · uses {ld.uses_now}' if ld.uses_now else ''}\n📞 +91 {ld.phone10}"
             + (f"\n📅 Demo {ld.demo_at.astimezone(IST):%a %d %b %I:%M %p}" if ld.demo_at else "")
@@ -155,7 +155,7 @@ def welcome(ld: Lead) -> None:
 FOLLOW = [
     lambda ld: (f"Hi {ld.name.split()[0]}, did you get a chance to try {BRAND}? Setting up takes about 10 minutes: add your menu "
                 f"(or send us a photo of it) and start billing. Bills go to your customers on WhatsApp automatically.\n\n"
-                f"Free for 14 days: {site()}/signup?phone={ld.phone10}"),
+                f"Free for {get_settings().trial_days} days: {site()}/signup?phone={ld.phone10}"),
     lambda ld: (f"At Shakewallah in Jodhpur, {BRAND} runs every outlet: bills on WhatsApp, offers by QR "
                 f"(customers send a keyword, scan at the counter), supplier bills read from a photo, stock and recipe costs, Tally for the CA. "
                 f"Want to see it on your own menu? Reply *demo* and we'll call you."),
@@ -374,4 +374,4 @@ def referral_info(tenant_id) -> dict:
     link = f"{site()}/start?ref={code}"
     return {"code": code, "link": link, "signed": len(rows), "rewarded": sum(1 for r in rows if r.status == "rewarded"),
             "share": f"I run my restaurant on {BRAND}: billing, bills on WhatsApp, offers, stock and Tally in one app. "
-                     f"Try it free for 14 days with my link and we both get a month free: {link}"}
+                     f"Try it free for {get_settings().trial_days} days with my link and we both get a month free: {link}"}
