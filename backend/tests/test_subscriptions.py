@@ -18,6 +18,9 @@ def test_prices():
     assert price(["pos"], "monthly")["amount_paise"] == 59900
     assert price(["stock", "bills"], "monthly")["amount_paise"] == 59800
     assert price(["pos", "stock", "bills"], "monthly")["amount_paise"] == 99900
+    three = price(["pos", "stock", "bills"], "monthly", outlets=3)                # per outlet
+    assert three["amount_paise"] == 3 * 99900 and three["per_outlet_paise"] == 99900 and three["outlets"] == 3
+    assert price([], "founding", outlets=2)["amount_paise"] == 2 * 499900
     y = price(["pos"], "yearly")
     assert y["amount_paise"] == 599000 and y["saving_paise"] == 119800              # pay 10, get 12
     b = price(["pos", "stock", "bills", "sheets"], "yearly")

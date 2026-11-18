@@ -114,7 +114,7 @@ export default function Landing() {
         <div className="lp-plans">
           <article className="lp-plan">
             <h3>Everything</h3>
-            <p className="lp-price">{rs(info?.bundle_paise ?? 99900)}<small>/month</small></p>
+            <p className="lp-price">{rs(info?.bundle_paise ?? 99900)}<small>/month per outlet</small></p>
             <ul><li>POS, stock and bill scanner</li><li>{(info?.msgs_per_outlet ?? 500).toLocaleString("en-IN")} WhatsApp bills a month per outlet</li>
               <li>Offers, QR and reports</li><li>Tally and GST exports</li><li>Help on WhatsApp</li></ul>
             <a href={trialHref} className="lp-btn ghost">Try free for {info?.trial_days ?? 14} days</a>
@@ -122,7 +122,7 @@ export default function Landing() {
           {(info?.founding_left ?? 1) > 0 && <article className="lp-plan hot">
             <span className="lp-tag">Founding offer</span>
             <h3>First {info?.founding_slots ?? 50} restaurants</h3>
-            <p className="lp-price">{rs(info?.founding_paise ?? 499900)}<small> for the whole first year</small></p>
+            <p className="lp-price">{rs(info?.founding_paise ?? 499900)}<small> per outlet, for the whole first year</small></p>
             <ul><li>Everything in the full plan</li><li>That's about {rs(Math.round((info?.founding_paise ?? 499900) / 12))} a month</li>
               <li>Price locked for year one</li>{info && <li><strong>{info.founding_left} of {info.founding_slots} places left</strong></li>}</ul>
             <a href={trialHref} className="lp-btn">Claim a founding place</a>

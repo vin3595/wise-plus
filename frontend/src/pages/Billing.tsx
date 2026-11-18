@@ -9,7 +9,8 @@ export interface BillingInfo {
   until: string | null;
   trial_ends_at: string | null;
   house: boolean;
-  plan: { modules: string[]; period: "monthly" | "yearly" | "founding"; amount_paise: number; status: string; paid_until: string | null } | null;
+  plan: { modules: string[]; period: "monthly" | "yearly" | "founding"; amount_paise: number; status: string; paid_until: string | null; outlets: number } | null;
+  outlets: number;
   prices: { services: { key: string; name: string; monthly_paise: number }[]; bundle_monthly_paise: number };
   founding: { price_paise: number; left: number; slots: number; member: boolean };
   scans: { used: number; limit: number | null; bonus: number; per_month: number };
@@ -20,7 +21,8 @@ export interface BillingInfo {
   ready: boolean;
   key_id: string | null;
 }
-interface Quote { modules: string[]; period: string; amount_paise: number; monthly_paise: number; saving_paise: number; bundle: boolean; months_paid: number }
+interface Quote { modules: string[]; period: string; amount_paise: number; monthly_paise: number; saving_paise: number; bundle: boolean; months_paid: number;
+  outlets: number; per_outlet_paise: number }
 
 const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "");
 export const daysLeft = (iso: string | null) => (iso ? Math.ceil((new Date(iso).getTime() - Date.now()) / 864e5) : 0);
@@ -97,7 +99,8 @@ export default function Billing() {
       <h1>Billing</h1>
       <Card>
         <p className={b.state === "locked" ? "error" : ""}><strong>{status}</strong></p>
-        {b.plan && <p className="small">Plan: {b.plan.period === "founding" ? "Founding member (everything)" : `${b.plan.modules.map(name).join(" + ")}, ${b.plan.period}`} · {formatPaise(b.plan.amount_paise)}{b.plan.status === "cancelled" ? " · won't renew" : ""}</p>}
+        {b.plan && <p className="small">Plan: {b.plan.period === "founding" ? "Founding member (everything)" : `${b.plan.modules.map(name).join(" + ")}, ${b.plan.period}`} · {formatPaise(b.plan.amount_paise)}{b.plan.outlets > 1 ? ` · ${b.plan.outlets} outlets` : ""}{b.plan.status === "cancelled" ? " · won't renew" : ""}</p>}
+        {b.plan && b.outlets > b.plan.outlets && <p className="small error-text">You now have {b.outlets} outlets; your plan pays for {b.plan.outlets}. Choose the plan again below to cover them all.</p>}
         {msg && <p className="ok">{msg}</p>}
         <ErrorText error={error} />
         {!b.ready && !b.house && <p className="muted small">Online payment isn't set up yet.</p>}
@@ -107,7 +110,7 @@ export default function Billing() {
         {b.founding.left > 0 && !b.founding.member && (
           <Card title="Founding member offer">
             <div className="founding">
-              <div><strong className="big">{formatPaise(b.founding.price_paise)}</strong> <span className="muted">for the first year</span></div>
+              <div><strong className="big">{formatPaise(b.founding.price_paise * b.outlets)}</strong> <span className="muted">for the first year{b.outlets > 1 ? ` (${formatPaise(b.founding.price_paise)} × ${b.outlets} outlets)` : ""}</span></div>
               <p>Everything: POS billing, Inventory and Bill scan. Regular price {formatPaise(b.prices.bundle_monthly_paise * 12)} a year.</p>
               <p className="small warn-text">Only {b.founding.left} of {b.founding.slots} places left.</p>
             </div>
@@ -131,6 +134,7 @@ export default function Billing() {
           </div>
           {q && <div className="plan-total">
             {q.bundle && <p className="small ok">All three together: {formatPaise(b.prices.bundle_monthly_paise)}/month{period === "yearly" ? ", and a year costs 9 months" : ""}.</p>}
+            {q.outlets > 1 && <p className="small muted">{formatPaise(q.per_outlet_paise)} per outlet × {q.outlets} outlets</p>}
             <p><strong>{formatPaise(q.amount_paise)}</strong> {period === "yearly" ? `a year (pay ${q.months_paid} months, get 12 · you save ${formatPaise(q.saving_paise)})` : "a month"}</p>
             {b.state === "trial" && <p className="muted small">Nothing is charged until your trial ends on {day(b.trial_ends_at)}.</p>}
           </div>}

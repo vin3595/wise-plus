@@ -20,7 +20,7 @@ from ..services import audit
 from . import rz
 from .models import RzPlan, Subscription
 from .plans import ALL_PACKS, BUNDLE, FOUNDING_PAISE, FOUNDING_SLOTS, MSG_PACKS, PACKS, PAID, PRICES, SCANS_PER_MONTH, price
-from .service import msgs, access, house, scans, sub_for
+from .service import msgs, access, house, outlets_paid, scans, sub_for
 
 log = logging.getLogger("wise.billing")
 router = APIRouter(prefix="/billing", tags=["billing"])
@@ -56,9 +56,9 @@ def _tenant(db: Session, auth: Auth) -> Tenant:
     return db.get(Tenant, auth.tenant_id)
 
 
-def _quote(body: PlanIn) -> dict:
+def _quote(body: PlanIn, outlets: int = 1) -> dict:
     try:
-        return price(body.modules, body.period)
+        return price(body.modules, body.period, outlets)
     except ValueError as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e)) from None
 
@@ -71,7 +71,8 @@ def billing(auth: Auth = Depends(get_auth), db: Session = Depends(get_db)) -> di
     return {
         "state": a["state"], "until": _ts(a["until"]), "trial_ends_at": _ts(t.trial_ends_at), "house": house(t.login_id),
         "plan": {"modules": s.modules, "period": s.period, "amount_paise": s.amount_paise, "status": s.status,
-                 "paid_until": _ts(s.paid_until)} if s and s.modules else None,
+                 "paid_until": _ts(s.paid_until), "outlets": s.outlets} if s and s.modules else None,
+        "outlets": outlets_paid(db, t.id),
         "prices": {"services": [{"key": k, "name": mods.MODULES[k], "monthly_paise": v} for k, v in PRICES.items()],
                    "bundle_monthly_paise": BUNDLE, "yearly": "Pay 10 months, get 12. Bundle: pay 9, get 12."},
         "founding": {"price_paise": FOUNDING_PAISE, "left": _founding_left(db), "slots": FOUNDING_SLOTS, "member": bool(s and s.founding)},
@@ -89,8 +90,8 @@ def _founding_left(db: Session) -> int:
 
 
 @router.post("/quote")
-def quote(body: PlanIn, auth: Auth = Depends(get_auth)) -> dict:
-    return _quote(body)
+def quote(body: PlanIn, auth: Auth = Depends(get_auth), db: Session = Depends(get_db)) -> dict:
+    return _quote(body, outlets_paid(db, auth.tenant_id))
 
 
 def _plan_id(amount: int, period: str, name: str) -> str:
@@ -116,13 +117,14 @@ def subscribe(body: PlanIn, auth: Auth = Depends(require(Perm.tenant_settings)),
         raise HTTPException(status.HTTP_409_CONFLICT, "This account is never billed")
     if not rz.configured():
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Payments aren't set up yet. Try again later.")
-    q = _quote(body)
+    q = _quote(body, outlets_paid(db, t.id))
     s = sub_for(db, t.id, create=True)
     if q["period"] == "founding" and _founding_left(db) <= 0 and not s.founding:
         raise HTTPException(status.HTTP_409_CONFLICT, "All 50 founding places are taken. The yearly bundle is the next best price.")
     names = " + ".join(mods.MODULES[m] for m in q["modules"])
     period = "yearly" if q["period"] == "founding" else q["period"]
-    plan = _plan_id(q["amount_paise"], period, f"wise-plus founding member · first year" if q["period"] == "founding" else f"wise-plus {period} · {names}")
+    per = f" · {q['outlets']} outlets" if q["outlets"] > 1 else ""
+    plan = _plan_id(q["amount_paise"], period, (f"wise-plus founding member · first year" if q["period"] == "founding" else f"wise-plus {period} · {names}") + per)
     now = _now()
     start = max([d for d in (t.trial_ends_at, s.paid_until if s.status in ("authenticated", "active") else None) if d and d > now + timedelta(minutes=5)],
                 default=None)
@@ -133,7 +135,7 @@ def subscribe(body: PlanIn, auth: Auth = Depends(require(Perm.tenant_settings)),
         req["start_at"] = int(start.timestamp())
     r = rz.call("POST", "/subscriptions", req)
     s.pending = {"subscription_id": r["id"], "modules": q["modules"], "period": q["period"], "amount_paise": q["amount_paise"],
-                 "start_at": _ts(start)}
+                 "start_at": _ts(start), "outlets": q["outlets"]}
     db.flush()
     return {"subscription_id": r["id"], "key_id": rz.get_settings().billing_rz_key_id, "quote": q, "starts": _ts(start),
             "name": t.name, "email": t.owner_email, "phone": t.owner_phone}
@@ -144,6 +146,7 @@ def _activate(db: Session, t: Tenant, s: Subscription, paid_until: datetime | No
     old = s.rz_subscription_id if s.rz_subscription_id != p.get("subscription_id") else None
     s.rz_subscription_id = p["subscription_id"]
     s.modules, s.period, s.amount_paise = p["modules"], p["period"], p["amount_paise"]
+    s.outlets = int(p.get("outlets") or 1)
     s.status = "authenticated"
     if s.period == "founding":
         db.execute(text("select pg_advisory_xact_lock(4999)"))     # 50 places, no more

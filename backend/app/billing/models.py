@@ -19,6 +19,7 @@ class Subscription(Base):
     period: Mapped[str | None] = mapped_column(String(8))        # monthly | yearly | founding (first 50: ₹4,999 first year)
     founding: Mapped[bool] = mapped_column(default=False, server_default="false", nullable=False)
     amount_paise: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    outlets: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)   # outlets the plan pays for
     rz_subscription_id: Mapped[str | None] = mapped_column(String(40), unique=True)
     # checkout started but not finished: {subscription_id, modules, period, amount_paise, start_at}
     pending: Mapped[dict | None] = mapped_column(JSONB)
