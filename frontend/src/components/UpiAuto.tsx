@@ -25,7 +25,7 @@ export default function UpiAuto({ request, onBilled, onClose, onLater }: { reque
       try {
         const x = await api<UpiReq>(`/upi/requests/${request.id}`);
         setR(x);
-        if (x.status === "billed" && x.bill && !done.current) { done.current = true; setTimeout(() => onBilled(x.bill!), 900); }
+        if (x.status === "billed" && x.bill && !done.current) { done.current = true; announce(x.amount_paise); setTimeout(() => onBilled(x.bill!), 900); }
       } catch { /* keep trying */ }
     }, 2000);
     return () => clearInterval(t);
@@ -65,6 +65,30 @@ export default function UpiAuto({ request, onBilled, onClose, onLater }: { reque
 }
 export type { UpiReq };
 
+/** A chime and "₹350 received" out loud, like a Paytm soundbox (sound can be switched off on this device). */
+export function announce(paise: number) {
+  try { if (localStorage.getItem("upi-sound") === "off") return; } catch { /* storage blocked: still announce */ }
+  try {
+    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const ctx = new Ctx();
+    [880, 1320].forEach((f, i) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.value = f; o.connect(g); g.connect(ctx.destination);
+      const t = ctx.currentTime + i * 0.18;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.3, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+      o.start(t); o.stop(t + 0.4);
+    });
+  } catch { /* no audio */ }
+  try {
+    const r = Math.round(paise / 100);
+    const u = new SpeechSynthesisUtterance(`${r} rupees received on UPI`);
+    const hi = speechSynthesis.getVoices().find((v) => v.lang === "en-IN" || v.lang === "hi-IN");
+    if (hi) u.voice = hi;
+    u.lang = hi?.lang || "en-IN";
+    setTimeout(() => speechSynthesis.speak(u), 500);
+  } catch { /* no voice */ }
+}
+
 /** QRs still out (printed on a bill, or a dialog the cashier moved on from). Pops up when one is paid,
  *  like the Paytm notification, and offers to print the tax invoice. */
 export function UpiWatcher({ outletId, hideId, onPrint }: { outletId: string; hideId?: string; onPrint: (b: Bill) => void }) {
@@ -83,6 +107,7 @@ export function UpiWatcher({ outletId, hideId, onPrint }: { outletId: string; hi
         const fresh = settled.filter((x) => !seen.current!.has(x.id));
         fresh.forEach((x) => seen.current!.add(x.id));
         if (fresh.length) setNews((n) => [...n, ...fresh.filter((x) => x.id !== hideId)]);
+        fresh.filter((x) => x.status === "billed").forEach((x) => announce(x.amount_paise));   // like a soundbox
         setList(xs.filter((x) => x.status === "waiting"));
       } catch { /* box busy: try again */ }
     };

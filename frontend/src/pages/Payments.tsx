@@ -66,6 +66,7 @@ export default function Payments() {
             <Input type="number" min={2} max={1440} value={String(s.qr_minutes)} onChange={(e) => set({ qr_minutes: Math.max(2, Math.min(1440, Number(e.target.value) || 10)) })} /></Field>
         </div>
         <Toggle checked={s.print_qr} onChange={(v) => set({ print_qr: v })} label="Print the QR on the bill as soon as UPI is picked (for tables, or counters without a screen the customer can see)" />
+        <SoundToggle />
         {s.provider === "test" && <p className="muted small">The counter shows a pretend QR with a "Customer paid (test)" button. Use it to train staff.</p>}
         {s.provider === "razorpay" && <>
           <ol className="small steps">
@@ -155,4 +156,15 @@ function PaytmCheck({ saved }: { saved: boolean; live: boolean }) {
       </div>}
     </div>
   );
+}
+
+
+/** This device: chime and "₹350 received" when a UPI payment lands (like a soundbox). */
+function SoundToggle() {
+  const [on, setOn] = useState(() => { try { return localStorage.getItem("upi-sound") !== "off"; } catch { return true; } });
+  return <label className="check"><input type="checkbox" checked={on} onChange={(e) => {
+    setOn(e.target.checked);
+    try { localStorage.setItem("upi-sound", e.target.checked ? "on" : "off"); } catch { /* storage blocked */ }
+    if (e.target.checked) import("../components/UpiAuto").then((m) => m.announce(35000));
+  }} /> Announce payments out loud on this device ("350 rupees received on UPI")</label>;
 }
