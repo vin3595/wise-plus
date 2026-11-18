@@ -389,6 +389,14 @@ def _handle(phone: str, text: str, name: str = "") -> None:
             return
         if t.startswith("kw:"):                        # 'Get my offer' on a broadcast
             text = t[3:]
+        if not _who(client.last10(phone)):              # wise-plus growth: a lead answering our follow-ups
+            from ..growth import service as gs
+            low = t.lower()
+            if low in ("lead-stop", "stop", "unsubscribe") and gs.stop(client.last10(phone)):
+                client.send_text(phone, "Done, no more messages from us. Thank you! 🙏")
+                return
+            if low in ("demo", "call me", "call") and gs.wants_demo(client.last10(phone)):
+                return
         if offer_reply(phone, text, name):
             return
         from ..custwa.service import handle_customer   # wise-plus: customers rating a visit

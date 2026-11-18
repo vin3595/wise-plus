@@ -155,6 +155,11 @@ def _activate(db: Session, t: Tenant, s: Subscription, paid_until: datetime | No
     s.pending = None
     t.modules = list(s.modules) + (["sheets"] if house(t.login_id) else [])
     t.plan = s.period[:20]
+    try:                                    # wise-plus growth: lead → paid; referral rewards (once)
+        from ..growth.service import on_first_payment
+        on_first_payment(db, t)
+    except Exception:  # noqa: BLE001
+        log.exception("growth: payment hook")
     if t.status == "read_only":
         t.status = "active"
     mods.forget(t.id)

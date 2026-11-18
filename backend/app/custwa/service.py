@@ -171,6 +171,11 @@ async def sender() -> None:
         except Exception:  # noqa: BLE001
             log.exception("custwa sender")
         try:
+            from ..growth.service import tick as growth_tick
+            await asyncio.to_thread(growth_tick)        # follow-ups to leads and restaurants on a trial
+        except Exception:  # noqa: BLE001
+            log.exception("growth")
+        try:
             await asyncio.to_thread(health.hourly)      # each number's quality, limit, token; failure spikes
         except Exception:  # noqa: BLE001
             log.exception("whatsapp health")

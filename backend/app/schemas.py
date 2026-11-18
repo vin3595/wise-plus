@@ -25,6 +25,7 @@ class SignupStart(BaseModel):
     email: str
     phone: str
     modules: list[str] | None = None      # wise-plus: services picked at sign-up; None = all
+    ref: str | None = Field(default=None, max_length=20)   # wise-plus: referral code from someone's link
 
     _v_login = field_validator("login_id")(lambda v: validate_login_id(v))
     _v_email = field_validator("email")(lambda v: normalize_email(v))

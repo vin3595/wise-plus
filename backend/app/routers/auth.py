@@ -1,6 +1,8 @@
 """Signup (new restaurant), owner/manager OTP login, staff PIN login."""
 from __future__ import annotations
 
+import logging
+
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, status
@@ -100,6 +102,14 @@ def signup_verify(body: SignupVerify) -> TokenOut:
     if error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error))
     assert result is not None
+    try:                                    # wise-plus growth: the lead becomes a trial; referral noted
+        from ..growth.service import on_signup
+        with system_session() as db:
+            tid = db.scalar(select(Tenant.id).where(Tenant.login_id == body.login_id))
+        if tid:
+            on_signup(tid, body.phone, body.ref)
+    except Exception:  # noqa: BLE001 - never block a sign-up on this
+        logging.getLogger("wise.growth").exception("growth: sign-up hook")
     return result
 
 

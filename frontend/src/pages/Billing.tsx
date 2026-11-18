@@ -158,6 +158,7 @@ export default function Billing() {
         </div>}
         <p className="muted small">{b.messages.per_outlet} free each month for every outlet. Bought messages never expire and are used after the free ones. Messages to you (reports, dues, bank) are always free.</p>
       </Card>
+      <ReferCard />
       <WhatsAppNumber />
       <YourData />
       {b.platform_admin && <AllRestaurants />}
@@ -205,8 +206,8 @@ function AllRestaurants() {
   const rows = [...(u?.restaurants || [])].sort((a, b) => sort === "name" ? a.name.localeCompare(b.name)
     : sort === "left" ? (a.left_this_month ?? 1e9) - (b.left_this_month ?? 1e9) : total(b) - total(a));
   return (
-    <Card title="All restaurants · WhatsApp and scans" actions={<Select value={month} onChange={(e) => setMonth(e.target.value)} aria-label="Month">
-      {months.map((m) => <option key={m} value={m}>{new Date(m + "-01T00:00:00").toLocaleDateString("en-IN", { month: "long", year: "numeric" })}</option>)}</Select>}>
+    <Card title="All restaurants · WhatsApp and scans" actions={<span className="row"><a className="link" href="/leads">Leads →</a><Select value={month} onChange={(e) => setMonth(e.target.value)} aria-label="Month">
+      {months.map((m) => <option key={m} value={m}>{new Date(m + "-01T00:00:00").toLocaleDateString("en-IN", { month: "long", year: "numeric" })}</option>)}</Select></span>}>
       {!u ? <p className="muted">Loading…</p> : <>
         <p><strong>{u.total.sent.toLocaleString("en-IN")}</strong> messages sent · Meta cost <strong>{formatPaise(u.total.meta_cost_paise)}</strong> ·
           {" "}<strong>{u.total.credits_left.toLocaleString("en-IN")}</strong> bought credits unused · {u.total.restaurants} restaurants
@@ -321,5 +322,25 @@ function ManualApi({ onDone, login }: { onDone: () => void; login?: string }) {
           onDone();
         })}>Check and connect</Button><Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button></div>}
     </div>
+  );
+}
+
+
+/** A restaurant's own link: each restaurant that joins with it and pays gives both a month free. */
+function ReferCard() {
+  const [r, setR] = useState<{ code: string; link: string; signed: number; rewarded: number; share: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => { api<NonNullable<typeof r>>("/growth/referral").then(setR).catch(() => setR(null)); }, []);
+  if (!r) return null;
+  return (
+    <Card title="🎁 Refer a restaurant, get a month free">
+      <p>Share your link. When a restaurant joins with it and starts paying, <strong>you both get a month free</strong>. No limit.</p>
+      <p className="mono small">{r.link}</p>
+      <div className="row wrap">
+        <a className="btn" href={`https://wa.me/?text=${encodeURIComponent(r.share)}`} target="_blank" rel="noreferrer">Share on WhatsApp</a>
+        <Button variant="ghost" onClick={() => { navigator.clipboard?.writeText(r.link).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }); }}>{copied ? "Copied ✓" : "Copy link"}</Button>
+      </div>
+      {(r.signed > 0) && <p className="muted small">{r.signed} joined with your link · {r.rewarded} free month{r.rewarded === 1 ? "" : "s"} earned</p>}
+    </Card>
   );
 }

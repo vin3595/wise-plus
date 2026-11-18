@@ -9,7 +9,9 @@ import { EmbLogo } from "../components/Brand";
 
 export default function Signup() {
   const { signedIn } = useSession();
-  const [form, setForm] = useState({ restaurant_name: "", login_id: "", owner_name: "", email: "", phone: "" });
+  const qp = new URLSearchParams(location.search);
+  const ref = (qp.get("ref") || "").toUpperCase() || null;      // wise-plus: someone's referral link
+  const [form, setForm] = useState({ restaurant_name: "", login_id: "", owner_name: "", email: "", phone: qp.get("phone") || "" });
   const [modules, setModules] = useState<string[]>(["pos", "stock", "bills"]);
   const [idStatus, setIdStatus] = useState<{ available: boolean; reason: string | null } | null>(null);
   const [sent, setSent] = useState<{ sent_to: string; dev_otp: string | null } | null>(null);
@@ -36,7 +38,7 @@ export default function Signup() {
         {sent.dev_otp && <p className="dev-note">Development mode code: <strong>{sent.dev_otp}</strong></p>}
         <form onSubmit={(e) => {
           e.preventDefault();
-          run(async () => signedIn(await api<TokenOut>("/auth/signup/verify", { body: { ...form, modules, otp } })));
+          run(async () => signedIn(await api<TokenOut>("/auth/signup/verify", { body: { ...form, modules, otp, ref } })));
         }}>
           <Field label="Code">
             <Input value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}

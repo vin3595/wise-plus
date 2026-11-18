@@ -7,6 +7,8 @@ import { useSession } from "./session";
 import Setup from "./pages/Setup";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
+import Landing from "./pages/Landing";
+import Leads from "./pages/Leads";
 import Home from "./pages/Home";
 import Branding from "./pages/Branding";
 import Outlets from "./pages/Outlets";
@@ -244,6 +246,7 @@ export default function App() {
   // Kitchen display from its link: signs itself in, no PIN (Setup > Screens).
   const kitchen = location.pathname.match(/^\/kitchen\/([^/]+)/);
   if (kitchen) return <KitchenScreen kitchenKey={decodeURIComponent(kitchen[1])} />;
+  if (location.pathname === "/start") return <Landing />;                 // wise-plus: the page that sells Ease My Bill
   if (loading) return <div className="splash">Loading…</div>;
 
   if (!me) {
@@ -252,7 +255,7 @@ export default function App() {
         <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={loginId ? <Login /> : <Navigate to="/setup" replace />} />
         <Route path="/setup" element={<Setup />} />
-        <Route path="*" element={<Navigate to={loginId ? "/login" : "/setup"} replace />} />
+        <Route path="*" element={<Navigate to={loginId ? "/login" : /easemybill\.com$/.test(location.hostname) ? "/start" : "/setup"} replace />} />
       </Routes>
     );
   }
@@ -279,6 +282,7 @@ export default function App() {
         <Route path="/bill-keeper" element={<BillKeeper />} />
         <Route path="/purchase-bills" element={<PurchaseBills />} />
         <Route path="/expenses" element={<Expenses />} />
+        <Route path="/leads" element={<Leads />} />
         <Route path="/feedback" element={<Feedback />} />
         <Route path="/offers" element={<Offers />} />
         <Route path="/broadcast" element={<Broadcast />} />
