@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     wa_app_id: str = ""                       # Meta app id (Connect WhatsApp for restaurants' own numbers)
     wa_es_config_id: str = ""                 # Embedded Signup configuration id (from the Meta app, once a Tech Provider)
     wa_promo_daily_cap: int = 1000            # broadcasts: most a restaurant may send in a day from the shared number
+    legal_name: str = ""                     # who runs Ease My Bill, as on the PAN (policy pages, Razorpay/Paytm review)
+    contact_email: str = ""
+    contact_address: str = ""
     meta_pixel_id: str = ""                   # Meta (Facebook/Instagram) pixel on the landing page, for ads
     wa_growth_template: str = "emb_followup"  # marketing template: follow-ups to people who asked about Ease My Bill
     wa_shared_marketing: bool = False         # broadcasts on the shared number for everyone (off: only own numbers + house)

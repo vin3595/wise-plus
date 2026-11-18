@@ -77,7 +77,8 @@ def info() -> dict:
     s = get_settings()
     return {"bundle_paise": BUNDLE, "founding_paise": FOUNDING_PAISE, "founding_slots": FOUNDING_SLOTS, "founding_left": left,
             "trial_days": s.trial_days, "msgs_per_outlet": MSGS_PER_OUTLET, "pixel_id": s.meta_pixel_id or None,
-            "whatsapp": s.wa_display_number or None}
+            "whatsapp": s.wa_display_number or None,
+            "legal_name": s.legal_name or None, "email": s.contact_email or None, "address": s.contact_address or None}
 
 
 @public.get("/demo-slots")

@@ -8,6 +8,7 @@ import Setup from "./pages/Setup";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Landing from "./pages/Landing";
+import Policies, { POLICY_PATHS } from "./pages/Policies";
 import Leads from "./pages/Leads";
 import Home from "./pages/Home";
 import Branding from "./pages/Branding";
@@ -246,7 +247,8 @@ export default function App() {
   // Kitchen display from its link: signs itself in, no PIN (Setup > Screens).
   const kitchen = location.pathname.match(/^\/kitchen\/([^/]+)/);
   if (kitchen) return <KitchenScreen kitchenKey={decodeURIComponent(kitchen[1])} />;
-  if (location.pathname === "/start") return <Landing />;                 // wise-plus: the page that sells Ease My Bill
+  if (location.pathname === "/start") return <Landing />;
+  if (POLICY_PATHS.includes(location.pathname)) return <Policies page={location.pathname.slice(1)} />;   // public: Razorpay/Paytm check these                 // wise-plus: the page that sells Ease My Bill
   if (loading) return <div className="splash">Loading…</div>;
 
   if (!me) {

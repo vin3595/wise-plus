@@ -177,6 +177,7 @@ export default function Landing() {
         <EmbLogo height={26} />
         <p>Made in Jodhpur for Indian restaurants and cafés.{info?.whatsapp ? <> WhatsApp: <a href={`https://wa.me/${info.whatsapp}?text=${encodeURIComponent("Hi, I'd like to know more about Ease My Bill")}`}>+{info.whatsapp}</a></> : null}</p>
         <p className="lp-small"><a href="/setup">Sign in</a> · <a href={trialHref}>Start free trial</a></p>
+        <p className="lp-small"><a href="/pricing">Pricing</a> · <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a> · <a href="/refunds">Refunds &amp; cancellation</a> · <a href="/delivery">Delivery</a> · <a href="/contact">Contact us</a></p>
       </footer>
       <a className="lp-float" href={trialHref}>Start free</a>
     </div>
