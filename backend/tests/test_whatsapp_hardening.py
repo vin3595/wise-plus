@@ -188,6 +188,28 @@ def test_broadcast_only_from_own_number_and_routing(client, monkeypatch):
     assert _hook(client, {"entry": []}, secret="their-app-secret-123").status_code == 403
 
 
+def test_marketing_stop_from_whatsapp(client, monkeypatch):
+    from sqlalchemy import select
+
+    from app.db import system_session
+    from app.models import Customer
+    from app.whatsapp import health
+    _meta(monkeypatch, [])
+    s = setup(client)
+    p = "97" + str(uuid.uuid4().int)[:8]
+    with system_session() as db:
+        from sqlalchemy import text
+        tid = db.execute(text("select id from tenants where login_id = :l"), {"l": s["login"]}).scalar()
+        db.add(Customer(id=uuid.uuid4(), tenant_id=tid, phone=p, points_paise=0, stamps=0))
+    _hook(client, {"entry": [{"changes": [{"field": "user_preferences", "value": {"user_preferences": [
+        {"wa_id": "91" + p, "category": "marketing_messages", "value": "stop"}]}}]}]})
+    with system_session() as db:
+        assert db.scalar(select(Customer.wa_optout).where(Customer.phone == p)) is True
+    health.on_account("user_preferences", {"user_preferences": [{"wa_id": "91" + p, "category": "marketing_messages", "value": "resume"}]})
+    with system_session() as db:
+        assert db.scalar(select(Customer.wa_optout).where(Customer.phone == p)) is False
+
+
 def test_health_endpoint(client, monkeypatch):
     from app.config import get_settings
     monkeypatch.setattr(get_settings(), "wa_token", "")

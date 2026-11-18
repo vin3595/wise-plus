@@ -120,6 +120,15 @@ def on_account(field: str, value: dict) -> None:
             problem(f"template:{name}:{ev}", f"WhatsApp template '{name}' is {ev.lower()}"
                     + (f" ({value.get('reason')})" if value.get("reason") not in (None, "NONE") else "")
                     + ". Messages that use it won't go until it's fixed.")
+    elif field == "user_preferences":
+        # someone stopped (or resumed) marketing messages from inside WhatsApp: no broadcasts to them, from anyone on this number
+        from ..models import Customer
+        for p in value.get("user_preferences") or []:
+            if p.get("category") != "marketing_messages" or not p.get("wa_id"):
+                continue
+            stop = (p.get("value") or "").lower() == "stop"
+            with system_session() as db:
+                db.execute(update(Customer).where(Customer.phone == str(p["wa_id"])[-10:]).values(wa_optout=stop))
     elif field == "phone_number_quality_update":
         ev = (value.get("event") or "").upper()
         num = value.get("display_phone_number") or ""
