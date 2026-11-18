@@ -37,7 +37,7 @@ def test_signed_request_body_matches_signature():
     b = json.dumps(got["body"], separators=(",", ":"))
     assert got["head"]["clientId"] == "C11" and got["head"]["version"] == "v1"
     assert pt.verify(b, KEY, got["head"]["signature"])
-    assert "clientId" not in json.loads(pt.signed({"mid": "M"}, KEY, None))["head"]
+    assert json.loads(pt.signed({"mid": "M"}, KEY, None))["head"]["clientId"] == "C11"      # Paytm wants it always
 
 
 def test_bad_key_length():

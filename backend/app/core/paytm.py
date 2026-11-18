@@ -92,9 +92,7 @@ def form_params(form: dict[str, str]) -> str:
 def signed(body: dict, key: str, client_id: str | None) -> str:
     """The whole JSON request, with the signature over the exact body string that is sent."""
     b = json.dumps(body, separators=(",", ":"), ensure_ascii=False)
-    head = {"version": "v1", "signature": sign(b, key)}
-    if client_id:
-        head["clientId"] = client_id
+    head = {"clientId": client_id or "C11", "version": "v1", "signature": sign(b, key)}   # C11: Paytm's default key slot
     # Built by hand so the body bytes are exactly the ones that were signed.
     return '{"body":' + b + ',"head":' + json.dumps(head, separators=(",", ":")) + "}"
 
@@ -140,10 +138,14 @@ class PaytmError(Exception):
 def qr_from_reply(reply: dict) -> tuple[str, str | None]:
     """(UPI data to draw as a QR, Paytm's QR id). Raises PaytmError with Paytm's own message."""
     body = reply.get("body") or {}
-    info = body.get("resultInfo") or {}
+    info = body.get("resultInfo") or reply.get("resultInfo") or {}
     if info.get("resultStatus") != "SUCCESS" or not body.get("qrData"):
+        st = str(info.get("resultStatus") or "")
+        if st == "403" or (info.get("resultMsg") or "").lower().startswith("unauthorized"):
+            raise PaytmError("Paytm hasn't switched on Dynamic QR for this MID yet. Ask Paytm (or your account manager) to enable "
+                             "'Dynamic QR / UPI QR code' on it; the keys themselves are fine.")
         msg = info.get("resultMsg") or "Paytm didn't make the QR"
-        code = info.get("resultCode")
+        code = info.get("resultCode") or (st if st and st != "FAILURE" else None)
         raise PaytmError(f"Paytm: {msg}" + (f" ({code})" if code else ""))
     return str(body["qrData"]), (str(body["qrCodeId"]) if body.get("qrCodeId") else None)
 
