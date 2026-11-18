@@ -408,3 +408,8 @@ tr.cancelled td .small { text-decoration: none; }
 .nowrap { white-space: nowrap; }
 .warn-row td { background: #fff7ed; }
 .table-wrap { overflow-x: auto; }
+.wa-tick { margin-left: 0.35rem; font-size: 0.78rem; font-weight: 700; color: #9ca3af; cursor: help; }
+.wa-tick.wa-delivered { color: #6b7280; }
+.wa-tick.wa-read { color: #0ea5e9; }
+.wa-tick.wa-failed { color: var(--berry, #be123c); }
+.wa-warn { margin: 0.3rem 0; font-size: 0.85rem; color: var(--berry, #be123c); font-weight: 600; }

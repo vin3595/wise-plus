@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api, download } from "../api";
 import { formatPaise } from "../money";
 import { useSession } from "../session";
-import { Button, Card, ErrorText, Select, useAction } from "../ui";
+import { Button, Card, ErrorText, Field, Input, Select, useAction } from "../ui";
 
 export interface BillingInfo {
   state: "house" | "trial" | "paid" | "locked" | "free";
@@ -158,6 +158,7 @@ export default function Billing() {
         </div>}
         <p className="muted small">{b.messages.per_outlet} free each month for every outlet. Bought messages never expire and are used after the free ones. Messages to you (reports, dues, bank) are always free.</p>
       </Card>
+      <WhatsAppNumber />
       <YourData />
       {b.platform_admin && <AllRestaurants />}
     </div>
@@ -183,8 +184,12 @@ function YourData() {
 
 interface PRow { tenant_id: string; name: string; login_id: string; state: string; outlets: number; bill_msgs_used: number; bill_msgs_free: number | null;
   credits_left: number | null; left_this_month: number | null; sent: Record<string, number>; failed: number; meta_cost_paise: number;
-  scans_used: number; scans_free: number | null; scans_bought_left: number; packs_bought: number }
-interface PUsage { month: string; restaurants: PRow[]; total: { sent: number; meta_cost_paise: number; credits_left: number; restaurants: number; running_out: number } }
+  scans_used: number; scans_free: number | null; scans_bought_left: number; packs_bought: number; own_number: boolean;
+  delivery: { total: number; delivered_pct: number | null; read_pct: number | null; failed_pct: number | null }; fail_reasons: { why: string; count: number }[] }
+interface PUsage { month: string; restaurants: PRow[]; total: { sent: number; meta_cost_paise: number; credits_left: number; restaurants: number; running_out: number;
+  delivery: PRow["delivery"] };
+  health: { ok: boolean; configured: boolean; number: { number?: string; quality?: string; tier?: string; status?: string; name_status?: string; at?: string } | null;
+    day: { sent: number; failed: number }; problem: { at: string; message: string } | null } | null }
 
 /** Only you (the owner of your own businesses): every restaurant's WhatsApp messages, credits and scans. */
 function AllRestaurants() {
@@ -206,19 +211,25 @@ function AllRestaurants() {
         <p><strong>{u.total.sent.toLocaleString("en-IN")}</strong> messages sent · Meta cost <strong>{formatPaise(u.total.meta_cost_paise)}</strong> ·
           {" "}<strong>{u.total.credits_left.toLocaleString("en-IN")}</strong> bought credits unused · {u.total.restaurants} restaurants
           {u.total.running_out ? <strong className="error-text"> · {u.total.running_out} running out</strong> : null}</p>
+        {u.total.delivery.total > 0 && <p className="small">Reached the phone <strong>{u.total.delivery.delivered_pct}%</strong> · read {u.total.delivery.read_pct}% · failed {u.total.delivery.failed_pct}%</p>}
+        {u.health && <p className={`small ${u.health.ok ? "muted" : "error-text"}`}>{u.health.ok ? "✅ WhatsApp is sending" : "⚠️ WhatsApp needs attention"}
+          {u.health.number?.number ? ` · ${u.health.number.number}: quality ${u.health.number.quality || "?"}, daily limit ${u.health.number.tier || "?"}${u.health.number.status ? `, ${u.health.number.status.toLowerCase()}` : ""}` : ""}
+          {u.health.problem ? <><br />Last problem: {u.health.problem.message}</> : null}</p>}
         <div className="row"><span className="muted small">Sort:</span>
           {(["sent", "left", "name"] as const).map((k) => <button key={k} className={`chip${sort === k ? " on" : ""}`} onClick={() => setSort(k)}>
             {k === "sent" ? "Most sent" : k === "left" ? "Least left" : "Name"}</button>)}</div>
         <div className="table-wrap"><table className="table">
           <thead><tr><th>Restaurant</th><th>Plan</th><th className="num">Free bill msgs used</th><th className="num">Bought credits left</th>
-            <th className="num">Sent (bills · broadcasts)</th><th className="num">Meta cost</th><th className="num">Scans</th></tr></thead>
+            <th className="num">Sent (bills · broadcasts)</th><th className="num">Reached</th><th className="num">Meta cost</th><th className="num">Scans</th></tr></thead>
           <tbody>{rows.map((r) => (
             <tr key={r.tenant_id} className={low(r) ? "warn-row" : ""}>
-              <td><strong>{r.name}</strong><div className="small muted">{r.login_id} · {r.outlets} outlet{r.outlets === 1 ? "" : "s"}</div></td>
+              <td><strong>{r.name}</strong><div className="small muted">{r.login_id} · {r.outlets} outlet{r.outlets === 1 ? "" : "s"}{r.own_number ? " · own number" : ""}</div>
+                {!r.own_number && <ManualApi login={r.login_id} onDone={() => setMonth((m) => m)} />}</td>
               <td>{r.state}</td>
               <td className="num">{r.bill_msgs_free === null ? <span className="muted">unlimited</span> : <>{r.bill_msgs_used} / {r.bill_msgs_free}{low(r) && " ⚠️"}</>}</td>
               <td className="num">{r.credits_left === null ? "—" : r.credits_left.toLocaleString("en-IN")}{r.packs_bought ? <div className="small muted">{r.packs_bought} pack{r.packs_bought === 1 ? "" : "s"} bought</div> : null}</td>
               <td className="num">{(r.sent.bill || 0) + (r.sent.otp || 0)} · {r.sent.promo || 0}{r.failed ? <div className="small error-text">{r.failed} failed</div> : null}</td>
+              <td className="num">{r.delivery.total ? `${r.delivery.delivered_pct}%` : "—"}{r.fail_reasons[0] ? <div className="small error-text" title={r.fail_reasons.map((f) => `${f.why} (${f.count})`).join("\n")}>{r.fail_reasons[0].why} ({r.fail_reasons[0].count})</div> : null}</td>
               <td className="num">{formatPaise(r.meta_cost_paise)}</td>
               <td className="num">{r.scans_used}{r.scans_free !== null ? ` / ${r.scans_free}` : ""}{r.scans_bought_left ? <div className="small muted">+{r.scans_bought_left} bought</div> : null}</td>
             </tr>))}</tbody>
@@ -227,5 +238,88 @@ function AllRestaurants() {
           Offer replies and messages to owners aren't counted. On WhatsApp, send <strong>credits</strong> for the same list.</p>
       </>}
     </Card>
+  );
+}
+
+
+interface Conn { mode: "shared" | "own"; display_number: string | null; can_connect: boolean; how: string | null; webhook_url: string; app_id: string | null; config_id: string | null; graph_version: string }
+declare global { interface Window { FB?: { init: (o: object) => void; login: (cb: (r: { authResponse?: { code?: string } }) => void, o: object) => void }; fbAsyncInit?: () => void } }
+
+/** Which number customers get bills and offers from: the shared one, or the restaurant's own (Meta's sign-up popup). */
+function WhatsAppNumber() {
+  const { me } = useSession();
+  const [c, setC] = useState<Conn | null>(null);
+  const act = useAction();
+  const load = () => api<Conn>("/whatsapp/connection").then(setC).catch(() => setC(null));
+  useEffect(() => { load(); }, []);
+  if (!c) return null;
+  const owner = me?.user.role === "owner";
+  const connect = () => act.run(async () => {
+    if (!c.app_id || !c.config_id) return;
+    if (!window.FB) {
+      await new Promise<void>((ok, bad) => {
+        window.fbAsyncInit = () => ok();
+        const sc = document.createElement("script");
+        sc.src = "https://connect.facebook.net/en_US/sdk.js"; sc.async = true; sc.onerror = () => bad(new Error("Couldn't open Meta's sign-up"));
+        document.body.appendChild(sc);
+      });
+    }
+    window.FB!.init({ appId: c.app_id, autoLogAppEvents: true, xfbml: false, version: c.graph_version });
+    let ids: { phone_number_id?: string; waba_id?: string } = {};
+    const onMsg = (e: MessageEvent) => {
+      if (!String(e.origin).endsWith("facebook.com")) return;
+      try { const d = typeof e.data === "string" ? JSON.parse(e.data) : e.data; if (d?.type === "WA_EMBEDDED_SIGNUP" && d.data) ids = d.data; } catch { /* other messages */ }
+    };
+    window.addEventListener("message", onMsg);
+    const code = await new Promise<string | null>((ok) => window.FB!.login((r) => ok(r.authResponse?.code || null),
+      { config_id: c.config_id, response_type: "code", override_default_response_type: true, extras: { setup: {}, sessionInfoVersion: 3 } }));
+    window.removeEventListener("message", onMsg);
+    if (!code || !ids.phone_number_id || !ids.waba_id) throw new Error("WhatsApp sign-up wasn't finished");
+    await api("/whatsapp/connect", { body: { code, phone_number_id: ids.phone_number_id, waba_id: ids.waba_id } });
+    await load();
+  });
+  return (
+    <Card title="Your WhatsApp number">
+      {c.mode === "own" ? <p>Bills and offers go from <strong>your own number</strong>{c.display_number ? ` (${c.display_number})` : ""}, with your name on the chat.</p>
+        : <p>Bills and offers go from the shared Ease My Bill number{c.display_number ? ` (+${c.display_number})` : ""}, with your restaurant's name in every message. Nothing to set up.</p>}
+      {owner && c.can_connect && c.mode === "shared" && <Button onClick={connect} disabled={act.busy}>{act.busy ? "Opening WhatsApp sign-up…" : "Use my own WhatsApp number"}</Button>}
+      {owner && c.mode === "own" && <button className="link danger small" onClick={() => { if (confirm("Go back to the shared number?")) act.run(async () => { await api("/whatsapp/disconnect", { method: "POST" }); await load(); }); }}>Go back to the shared number</button>}
+      {c.mode === "shared" && <p className="muted small">Bills, sign-in codes and offer QRs are free of setup on the shared number. <strong>Broadcasts</strong> to your
+        customers go from your own WhatsApp number (your name on the chat, Meta bills you directly). Have one already, or want us to set it up? Below.</p>}
+      {owner && c.mode === "shared" && <ManualApi onDone={load} />}
+      {c.mode === "own" && c.how === "manual" && <p className="muted small">In your Meta app › WhatsApp › Configuration, set the webhook to <code>{c.webhook_url}</code> and
+        subscribe to <em>messages</em>, so delivery ticks and 'Stop offers' taps reach us.</p>}
+      <ErrorText error={act.error} />
+    </Card>
+  );
+}
+
+
+function ManualApi({ onDone, login }: { onDone: () => void; login?: string }) {
+  const [open, setOpen] = useState(false);
+  const [f, setF] = useState({ phone_number_id: "", token: "", waba_id: "", app_secret: "" });
+  const [done, setDone] = useState<{ display_number: string; templates: string[]; webhook_url: string; verify_token: string | null } | null>(null);
+  const act = useAction();
+  if (!open) return <p className="small"><button className="link" onClick={() => setOpen(true)}>{login ? "Set their WhatsApp API" : "I have my own WhatsApp API"}</button>
+    {!login && <> · or message us and we'll set it up for you</>}</p>;
+  return (
+    <div className="sub-form">
+      <p className="muted small">From Meta's WhatsApp Manager / your Meta app: the phone number ID, a permanent (system user) token, the WhatsApp Business Account ID,
+        and the app secret (for delivery ticks).</p>
+      <div className="row wrap">
+        <Field label="Phone number ID"><Input value={f.phone_number_id} onChange={(e) => setF({ ...f, phone_number_id: e.target.value.trim() })} inputMode="numeric" /></Field>
+        <Field label="WhatsApp Business Account ID"><Input value={f.waba_id} onChange={(e) => setF({ ...f, waba_id: e.target.value.trim() })} inputMode="numeric" /></Field>
+        <Field label="Permanent token"><Input type="password" value={f.token} onChange={(e) => setF({ ...f, token: e.target.value.trim() })} autoComplete="off" /></Field>
+        <Field label="App secret"><Input type="password" value={f.app_secret} onChange={(e) => setF({ ...f, app_secret: e.target.value.trim() })} autoComplete="off" /></Field>
+      </div>
+      <ErrorText error={act.error} />
+      {done ? <p className="ok-text">Connected {done.display_number}. {done.templates.length ? `Templates sent to Meta for approval: ${done.templates.join(", ")}.` : ""}
+        <br /><span className="muted small">Now in the Meta app › WhatsApp › Configuration: webhook <code>{done.webhook_url}</code>{done.verify_token ? <>, verify token <code>{done.verify_token}</code></> : null}, and subscribe to <em>messages</em>.</span></p>
+        : <div className="row"><Button disabled={act.busy || !f.phone_number_id || f.token.length < 20} onClick={() => act.run(async () => {
+          const body = { phone_number_id: f.phone_number_id, token: f.token, waba_id: f.waba_id || null, app_secret: f.app_secret || null };
+          setDone(await api(login ? `/platform/whatsapp/${login}` : "/whatsapp/connect-manual", { body }));
+          onDone();
+        })}>Check and connect</Button><Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button></div>}
+    </div>
   );
 }

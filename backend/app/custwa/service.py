@@ -18,12 +18,14 @@ import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..models import Bill, Outlet, Tenant, User
 from .models import BillFeedback, WaOutbox
+
+IST = timezone(timedelta(hours=5, minutes=30))
 
 log = logging.getLogger("wise.custwa")
 RATINGS = {5: "😍 Loved it", 3: "🙂 It was okay", 1: "😞 Not good"}
@@ -65,32 +67,66 @@ def queue_bill(db: Session, bill: Bill) -> None:
                 "p": __import__("json").dumps(payload)})
 
 
-def send_bill(to: str, p: dict) -> None:
+def send_bill(to: str, p: dict) -> dict:
     from ..whatsapp import client
     s = get_settings()
     comps = [{"type": "body", "parameters": [{"type": "text", "text": str(p[k])[:300]} for k in ("brand", "invoice", "amount", "link")]}]
     comps += [{"type": "button", "sub_type": "quick_reply", "index": str(i),
                "parameters": [{"type": "payload", "payload": f"fb:{p['bill_id']}:{r}"}]} for i, r in enumerate(BUTTON_ORDER)]
-    client._post({"to": client.to_wa(to), "type": "template",
-                  "template": {"name": s.wa_bill_template, "language": {"code": "en"}, "components": comps}})
+    return client._post({"to": client.to_wa(to), "type": "template",
+                         "template": {"name": s.wa_bill_template, "language": {"code": "en"}, "components": comps}})
 
 
 def send_due(limit: int = 20) -> int:
-    """Send what's queued. Several API processes may run this: rows are claimed with SKIP LOCKED."""
+    """Send what's queued: bills first, then broadcasts at a gentle pace (paused while the number is in trouble,
+    and at most WISE_WA_PROMO_DAILY_CAP a day per restaurant on the shared number). Several API processes may run
+    this: rows are claimed with SKIP LOCKED. Meta's id is kept for the delivery ticks."""
     from ..db import system_session
+    from ..whatsapp import client
+    from ..whatsapp.health import promos_paused
     sent = 0
     with system_session() as db:
-        rows = db.scalars(select(WaOutbox).where(WaOutbox.status == "queued", WaOutbox.next_try_at <= _now())
-                          .order_by(WaOutbox.created_at).limit(limit).with_for_update(skip_locked=True)).all()
+        due = select(WaOutbox).where(WaOutbox.status == "queued", WaOutbox.next_try_at <= _now())
+        rows = list(db.scalars(due.where(WaOutbox.kind != "promo").order_by(WaOutbox.created_at).limit(limit)
+                               .with_for_update(skip_locked=True)).all())
+        paused = promos_paused()
+        if len(rows) < limit and not paused:
+            rows += db.scalars(due.where(WaOutbox.kind == "promo").order_by(WaOutbox.created_at).limit(min(10, limit - len(rows)))
+                               .with_for_update(skip_locked=True)).all()
+        caps: dict = {}
         for r in rows:
+            if r.kind == "promo" and not _may_broadcast(db, r.tenant_id):
+                r.status, r.error, r.delivery = "failed", "Broadcasts need your own WhatsApp number", "failed"
+                continue
+            if r.kind == "promo" and _over_cap(db, r.tenant_id, caps):
+                r.next_try_at = _tomorrow_morning()         # today's share used: tomorrow at 10
+                continue
             try:
-                if r.kind == "bill":
-                    send_bill(r.to_phone, r.payload)
-                elif r.kind == "promo":
-                    from ..offers.broadcast import send_promo
-                    send_promo(r.to_phone, r.payload)
+                with client.context(tenant_id=r.tenant_id, purpose=r.kind, ref=r.ref):
+                    if r.kind == "bill":
+                        data = send_bill(r.to_phone, r.payload)
+                    elif r.kind == "promo":
+                        from ..offers.broadcast import send_promo
+                        data = send_promo(r.to_phone, r.payload)
+                    else:
+                        data = {}
                 r.status, r.error = "sent", None
+                r.wamid = ((data or {}).get("messages") or [{}])[0].get("id")
+                r.delivery = "sent" if r.wamid else None
+                if r.kind == "promo":
+                    caps[r.tenant_id] = caps.get(r.tenant_id, 0) + 1
                 sent += 1
+            except client.WaError as e:
+                r.tries += 1
+                r.error = e.reason[:300]
+                again = e.code in client.RETRY or e.code is None
+                r.status = "queued" if again and r.tries < 6 else "failed"
+                r.delivery = "failed" if r.status == "failed" else None
+                r.next_try_at = _now() + timedelta(minutes=2 ** r.tries)
+                log.warning("custwa: %s to …%s failed (%s)", r.kind, r.to_phone[-4:], r.error)
+                if r.status == "failed" and e.code == 131026 and r.tenant_id:
+                    from ..whatsapp.health import _unreachable
+                    _unreachable(db, r.tenant_id, r.to_phone, True)
             except Exception as e:  # noqa: BLE001
                 r.tries += 1
                 r.error = str(e)[:300]
@@ -100,15 +136,44 @@ def send_due(limit: int = 20) -> int:
     return sent
 
 
+def _may_broadcast(db: Session, tenant_id) -> bool:
+    from ..offers.broadcast import sender
+    t = db.get(Tenant, tenant_id) if tenant_id else None
+    return t is not None and sender(db, t)[0] is not None
+
+
+def _over_cap(db: Session, tenant_id, caps: dict) -> bool:
+    if tenant_id is None:
+        return False
+    from ..whatsapp.models import WaNumber
+    if db.get(WaNumber, tenant_id) is not None:          # their own number: Meta's own limits apply, not ours
+        return False
+    if tenant_id not in caps:
+        start = _now().astimezone(IST).replace(hour=0, minute=0, second=0, microsecond=0)
+        caps[tenant_id] = db.scalar(select(func.count()).select_from(WaOutbox).where(
+            WaOutbox.tenant_id == tenant_id, WaOutbox.kind == "promo", WaOutbox.status == "sent", WaOutbox.created_at >= start)) or 0
+    return caps[tenant_id] >= get_settings().wa_promo_daily_cap
+
+
+def _tomorrow_morning() -> datetime:
+    t = _now().astimezone(IST) + timedelta(days=1)
+    return t.replace(hour=10, minute=0, second=0, microsecond=0)
+
+
 async def sender() -> None:
     s = get_settings()
     if not (s.wa_token and s.wa_phone_number_id):
         return
+    from ..whatsapp import health
     while True:
         try:
             await asyncio.to_thread(send_due)
         except Exception:  # noqa: BLE001
             log.exception("custwa sender")
+        try:
+            await asyncio.to_thread(health.hourly)      # each number's quality, limit, token; failure spikes
+        except Exception:  # noqa: BLE001
+            log.exception("whatsapp health")
         await asyncio.sleep(5)
 
 
@@ -120,11 +185,12 @@ def _reply(phone: str, body: str) -> None:
 
 
 def _tell_owner(db: Session, tenant_id, msg: str) -> None:
-    """A note to the owner (a reply if they've messaged in the last 24 hours; otherwise it's on the Billing page)."""
+    """A note to the owner (outside the 24-hour window it goes as the 'update' template)."""
     from ..whatsapp import client
     for p in set(db.scalars(select(User.phone).where(User.tenant_id == tenant_id, User.role == "owner", User.phone.is_not(None))).all()):
         try:
-            client.send_options(p, msg, [("buy messages", "Buy more")])
+            with client.context(tenant_id=tenant_id, purpose="owner"):
+                client.send_options(p, msg, [("buy messages", "Buy more")])
         except Exception:  # noqa: BLE001
             log.info("custwa: note to owner …%s not sent", str(p)[-4:])
 

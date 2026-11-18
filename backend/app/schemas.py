@@ -758,6 +758,8 @@ class BillPreviewOut(BaseModel):
 
 class BillOut(BillPreviewOut):
     training: bool = False              # practice bill: printed "TRAINING - NOT A BILL"
+    wa: str | None = None               # wise-plus: the bill on WhatsApp: queued | sent | delivered | read | failed
+    wa_why: str | None = None           # why it failed, in words
     id: uuid.UUID
     invoice_no: str
     status: str

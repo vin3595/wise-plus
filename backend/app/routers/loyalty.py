@@ -84,7 +84,9 @@ def lookup(phone: str, auth: Auth = Depends(require(Perm.billing)), db: Session 
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e)) from None
     r = ly.rules(db, auth.tenant_id)
     cfg = db.get(LoyaltySettings, auth.tenant_id)
-    out = {"mode": r.mode, "phone": ph, "known": False, "name": None, "points_paise": 0, "stamps": 0,
+    from ..models import Customer
+    unreachable = bool(db.scalar(select(Customer.wa_unreachable).where(Customer.phone == ph)))
+    out = {"wa_unreachable": unreachable, "mode": r.mode, "phone": ph, "known": False, "name": None, "points_paise": 0, "stamps": 0,
            "stamps_needed": r.stamps_needed, "reward_paise": r.reward_paise, "reward_label": cfg.reward_label if cfg else "",
            "redeem_min_paise": r.redeem_min_paise, "max_redeem_bp": r.max_redeem_bp, "visits": 0}
     if r.mode == "off":

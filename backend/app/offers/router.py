@@ -359,9 +359,12 @@ def preview(body: FiltersIn, db: Session = Depends(get_db), auth: Auth = Depends
     from ..models import Tenant
     from . import broadcast as bc
     rows = bc.people(db, _f(body))
-    m = msgs(db, db.get(Tenant, auth.tenant_id))
-    return {"count": len(rows), "credits": len(rows) * bc.CREDITS_EACH, "have": None if m["unlimited"] else m["bonus"],
-            "credits_each": bc.CREDITS_EACH,
+    t = db.get(Tenant, auth.tenant_id)
+    m = msgs(db, t)
+    via, why = bc.sender(db, t)
+    own = via == "own"
+    return {"count": len(rows), "credits": 0 if own else len(rows) * bc.CREDITS_EACH, "have": None if (m["unlimited"] or own) else m["bonus"],
+            "credits_each": 0 if own else bc.CREDITS_EACH, "send_from": via, "blocked": why,
             "sample": [{"name": r["name"] or "—", "phone": bc.mask(r["p"]), "visits": r["visits"], "spend_paise": int(r["spend"]),
                         "last_visit": r["last_visit"]} for r in sorted(rows, key=lambda r: -r["spend"])[:8]]}
 
@@ -386,11 +389,14 @@ def send_broadcast(body: BroadcastIn, db: Session = Depends(get_db), auth: Auth 
         if o is None or not osv.live(o, osv.business_date()):
             raise HTTPException(status.HTTP_409_CONFLICT, "That offer isn't on right now")
         keyword = o.keyword
+    via, why = bc.sender(db, t)
+    if via is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, why)
     rows = bc.people(db, _f(body.filters))
     if not rows:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "No customers match these filters")
-    credits = len(rows) * bc.CREDITS_EACH
-    if not take_credits(db, t, credits):
+    credits = 0 if via == "own" else len(rows) * bc.CREDITS_EACH      # their own number: Meta bills them, no credits
+    if credits and not take_credits(db, t, credits):
         raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED,
                             f"This needs {credits:,} message credits ({len(rows)} customers × {bc.CREDITS_EACH}). Buy a message pack in Settings › Billing.")
     b = Broadcast(tenant_id=t.id, name=body.name.strip(), filters=_f(body.filters), text=bc.clean_text(body.text), offer_id=body.offer_id,

@@ -3,7 +3,7 @@ import { api } from "../api";
 import { formatPaise } from "../money";
 
 export interface LoyaltyInfo { mode: "off" | "points" | "stamps" | "both"; phone: string; known: boolean; name: string | null; points_paise: number; stamps: number;
-  stamps_needed: number; reward_paise: number; reward_label: string; redeem_min_paise: number; max_redeem_bp: number; visits: number }
+  stamps_needed: number; reward_paise: number; reward_label: string; redeem_min_paise: number; max_redeem_bp: number; visits: number; wa_unreachable?: boolean }
 export interface LoyaltyUse { points_paise: number; use_reward: boolean }
 
 /** Most points usable on a bill of this size, in whole rupees (same rule as the server). */
@@ -25,11 +25,13 @@ export function LoyaltyBox({ phone, gross, value, onChange, onInfo }: { phone: s
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [digits]);
-  if (!info || info.mode === "off") return null;
+  const noWa = info?.wa_unreachable ? <p className="wa-warn">📵 This number isn't on WhatsApp: print the bill for them.</p> : null;
+  if (!info || info.mode === "off") return noWa;
   const usable = usablePoints(info, gross);
   const showPts = info.mode === "points" || info.mode === "both", showSt = info.mode === "stamps" || info.mode === "both";
   return (
     <div className="loyalty-box">
+      {noWa}
       <div className="lb-head">{info.known ? <><strong>{info.name || "Returning customer"}</strong> · visit {info.visits + 1}</> : <strong>New customer: this bill starts their {showPts ? "points" : "stamps"}</strong>}</div>
       {info.known && <div className="lb-lines">
         {showPts && <span>Points worth <strong>{formatPaise(info.points_paise)}</strong></span>}

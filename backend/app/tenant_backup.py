@@ -27,8 +27,8 @@ from .models import Base, Tenant
 
 VERSION = 1
 APPEND_ONLY = {"audit_log"}    # never deleted (not even by a restore): rows from the backup are added back if missing
-SKIP = {"auth_throttle", "billing_rz_plans", "nightly_runs", "otp_codes", "wa_contacts", "wa_state"}   # not one business's data
-FOLDERS = ["{t}", "scans/{t}", "sheets/{t}", "statements/{t}"]
+SKIP = {"auth_throttle", "billing_rz_plans", "nightly_runs", "otp_codes", "wa_contacts", "wa_state", "wa_messages", "wa_numbers"}   # not one business's data
+FOLDERS = ["{t}", "scans/{t}", "sheets/{t}", "statements/{t}", "petty/{t}"]
 READABLE = [  # (sheet, table, columns or None for all)
     ("Bills", "bills", ["business_date", "invoice_no", "status", "customer_name", "customer_phone", "customer_gstin", "gross_paise",
                         "discount_paise", "taxable_paise", "cgst_paise", "sgst_paise", "igst_paise", "round_off_paise", "total_paise"]),

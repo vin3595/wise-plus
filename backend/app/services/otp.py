@@ -68,8 +68,13 @@ def _phone(identifier: str) -> str:
     return identifier.rsplit(":", 1)[-1]
 
 
-def _deliver(identifier: str, code: str) -> None:
+def _deliver_via(provider: str, identifier: str, code: str) -> None:
     s = get_settings()
+    _deliver(identifier, code, s.model_copy(update={"otp_provider": provider}))
+
+
+def _deliver(identifier: str, code: str, settings=None) -> None:
+    s = settings or get_settings()
     if s.otp_provider in ("console", "box") or "@" in identifier:
         # Email delivery (SMTP/SES) is a TODO; console mode is for local development.
         log.warning("OTP for %s: %s", identifier, code)
@@ -114,7 +119,11 @@ def _deliver(identifier: str, code: str) -> None:
                     {"type": "button", "sub_type": "url", "index": "0", "parameters": [{"type": "text", "text": code}]}]}})
         except Exception:  # noqa: BLE001
             log.exception("WhatsApp OTP send failed")
-            log.warning("OTP for %s: %s", identifier, code)
+            # wise-plus: never stranded on a sign-in code: SMS when an SMS service is set up (codes are never logged)
+            if s.fast2sms_api_key or (s.msg91_auth_key and s.msg91_template_id):
+                prov = "fast2sms" if s.fast2sms_api_key else "msg91"
+                _deliver_via(prov, identifier, code)
+                return
             raise OtpError("Couldn't send the code on WhatsApp right now. Try again.") from None
         return
     raise OtpError(f"Unknown OTP provider {s.otp_provider!r}")

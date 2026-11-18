@@ -42,6 +42,15 @@ def usage(month: str | None = None) -> dict:
                 "select tenant_id, kind, status, count(*) from wa_outbox where created_at >= :a and created_at < :b group by 1, 2, 3"),
                 {"a": start, "b": end}):
             sent.setdefault(tid, {}).setdefault(kind, {})[st] = n
+        ticks: dict = {}
+        for tid, st, n in db.execute(text("select tenant_id, status, count(*) from wa_messages where created_at >= :a and created_at < :b "
+                                          "group by 1, 2"), {"a": start, "b": end}):
+            ticks.setdefault(tid, {})[st] = n
+        whys: dict = {}
+        for tid, err, n in db.execute(text("select tenant_id, error, count(*) from wa_messages where created_at >= :a and created_at < :b "
+                                           "and status = 'failed' group by 1, 2 order by 3 desc"), {"a": start, "b": end}):
+            whys.setdefault(tid, []).append({"why": err or "Unknown", "count": n})
+        own = {t for (t,) in db.execute(text("select tenant_id from wa_numbers where status = 'active'"))}
         outlets = dict(db.execute(select(Outlet.tenant_id, func.count()).where(Outlet.is_active.is_(True), Outlet.is_training.is_(False))
                                   .group_by(Outlet.tenant_id)).all())
         for t in db.scalars(select(Tenant).order_by(Tenant.name)):
@@ -66,11 +75,30 @@ def usage(month: str | None = None) -> dict:
                 "scans_bought_left": s.bonus_scans if s else 0,
                 "packs_bought": sum(1 for p in (s.packs or []) if p.get("messages")) if s else 0,
                 "alert": (s.msg_alert or "").split(":")[-1] if s and s.msg_alert and s.msg_alert.startswith(month) else None,
+                "delivery": _rates(ticks.get(t.id, {})), "fail_reasons": whys.get(t.id, [])[:4], "own_number": t.id in own,
             })
     tot = {"sent": sum(sum(r["sent"].values()) for r in rows), "meta_cost_paise": sum(r["meta_cost_paise"] for r in rows),
            "credits_left": sum(r["credits_left"] or 0 for r in rows), "restaurants": len(rows),
            "running_out": sum(1 for r in rows if r["left_this_month"] is not None and r["left_this_month"] <= max(1, (r["bill_msgs_free"] or 0) // 5))}
-    return {"month": month, "restaurants": rows, "total": tot}
+    from ..whatsapp.health import status as wa_status
+    allt: dict = {}
+    for r in rows:
+        for k, v in r["delivery"]["counts"].items():
+            allt[k] = allt.get(k, 0) + v
+    tot["delivery"] = _rates(allt)
+    try:
+        health = wa_status()
+    except Exception:  # noqa: BLE001
+        health = None
+    return {"month": month, "restaurants": rows, "total": tot, "health": health}
+
+
+def _rates(c: dict) -> dict:
+    """Of the messages Meta took: how many reached the phone, were read, failed."""
+    n = sum(c.values())
+    reached = c.get("delivered", 0) + c.get("read", 0)
+    pct = lambda x: round(x * 100 / n) if n else None  # noqa: E731
+    return {"counts": c, "total": n, "delivered_pct": pct(reached), "read_pct": pct(c.get("read", 0)), "failed_pct": pct(c.get("failed", 0))}
 
 
 @router.get("/usage")
@@ -87,7 +115,15 @@ def whatsapp_text(month: str | None = None) -> str:
     t = u["total"]
     lines = [f"*WhatsApp across all restaurants, {u['month']}*",
              f"{t['sent']} messages sent · Meta cost ₹{t['meta_cost_paise'] / 100:,.0f} · {t['credits_left']} bought credits unused"
-             + (f" · ⚠️ {t['running_out']} running out" if t["running_out"] else ""), ""]
+             + (f" · ⚠️ {t['running_out']} running out" if t["running_out"] else "")
+             + (f"\nDelivered {t['delivery']['delivered_pct']}% · read {t['delivery']['read_pct']}% · failed {t['delivery']['failed_pct']}%"
+                if t["delivery"]["total"] else ""), ""]
+    h = u.get("health") or {}
+    num = h.get("number") or {}
+    if num:
+        lines.insert(1, f"Number {num.get('number') or ''}: quality {num.get('quality') or '?'} · limit {num.get('tier') or '?'} · {num.get('status') or ''}".strip())
+    if h.get("problem"):
+        lines.insert(2, "⚠️ Last problem: " + h["problem"]["message"])
     for r in sorted(u["restaurants"], key=lambda r: -sum(r["sent"].values()))[:25]:
         if r["bill_msgs_free"] is None:
             left = "unlimited"
@@ -96,7 +132,11 @@ def whatsapp_text(month: str | None = None) -> str:
             if r["left_this_month"] is not None and r["left_this_month"] <= max(1, r["bill_msgs_free"] // 5):
                 left += " ⚠️"
         sent = sum(r["sent"].values())
-        lines.append(f"• *{r['name']}* ({r['state']}): {left} · sent {sent}" + (f" ({r['sent'].get('promo', 0)} broadcast)" if r["sent"].get("promo") else ""))
+        d = r["delivery"]
+        tick = f" · {d['delivered_pct']}% delivered" if d["total"] else ""
+        bad = f" · ❌ {r['fail_reasons'][0]['why']}" if r["fail_reasons"] else ""
+        lines.append(f"• *{r['name']}* ({r['state']}): {left} · sent {sent}" + (f" ({r['sent'].get('promo', 0)} broadcast)" if r["sent"].get("promo") else "")
+                     + tick + bad)
     return "\n".join(lines)
 
 
@@ -104,3 +144,21 @@ def admin_by_chosen(chosen) -> bool:
     with system_session() as db:
         t = db.get(Tenant, uuid.UUID(chosen[0]))
         return bool(t and house(t.login_id) and chosen[2] == "owner")
+
+
+@router.post("/whatsapp/{login_id}")
+def set_whatsapp_for(login_id: str, body: dict, auth: Auth = Depends(get_auth), db: Session = Depends(get_db)) -> dict:
+    """You setting up a restaurant's own WhatsApp API for them."""
+    from ..whatsapp.connect import ManualIn, manual_connect
+    if not is_admin(db, auth):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+    with system_session() as sdb:
+        t = sdb.scalar(select(Tenant).where(func.lower(Tenant.login_id) == login_id.lower()))
+        tid = t.id if t else None
+    if tid is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such restaurant")
+    try:
+        data = ManualIn.model_validate(body)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Phone number id, token (and WABA id) please") from e
+    return manual_connect(tid, data)

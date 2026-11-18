@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     wa_promo_template: str = "promo_message"          # wise-plus: marketing broadcast ('Stop offers' button)
     wa_promo_offer_template: str = "promo_offer"      # the same with a 'Get my offer' button first
     wa_display_number: str = ""          # wise-plus: the WhatsApp number customers message (offer posters)
+    wa_update_template: str = "wise_update"   # utility template: a reply sent after the 24-hour window closed
+    wa_app_id: str = ""                       # Meta app id (Connect WhatsApp for restaurants' own numbers)
+    wa_es_config_id: str = ""                 # Embedded Signup configuration id (from the Meta app, once a Tech Provider)
+    wa_promo_daily_cap: int = 1000            # broadcasts: most a restaurant may send in a day from the shared number
+    wa_shared_marketing: bool = False         # broadcasts on the shared number for everyone (off: only own numbers + house)
     wa_otp_template: str = "login_code"   # authentication template for sign-up / sign-in codes (WISE_OTP_PROVIDER=whatsapp)   # approved template for the nightly summary outside the 24-hour window
     nightly_at: str = "23:30"       # India time; "" turns the nightly WhatsApp summary off
 

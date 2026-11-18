@@ -6,7 +6,7 @@ import { Button, Card, ErrorText, Field, Input, Select, useAction } from "../ui"
 
 interface Filters { active_days?: number; away_days?: number; new_days?: number; min_visits?: number; max_visits?: number; min_spend?: number; max_spend?: number;
   min_avg?: number; max_avg?: number; top_pct?: number; bottom_pct?: number; offers?: "users" | "never"; outlet_ids?: string[] }
-interface Preview { count: number; credits: number; have: number | null; credits_each: number;
+interface Preview { count: number; credits: number; have: number | null; credits_each: number; send_from?: "own" | "shared" | null; blocked?: string | null;
   sample: { name: string; phone: string; visits: number; spend_paise: number; last_visit: string }[] }
 interface Sent { id: string; name: string; text: string; recipients: number; credits: number; created_at: string; sent: number; waiting: number; failed: number; offer_codes: number }
 
@@ -91,6 +91,8 @@ export default function Broadcast() {
           <>
             <p className="big-line"><strong>{pv.count}</strong> customer{pv.count === 1 ? "" : "s"}{pv.have !== null && <span className="muted"> · {pv.credits.toLocaleString("en-IN")} message credits ({pv.credits_each} each)</span>}</p>
             {pv.sample.length > 0 && <p className="muted small">{pv.sample.map((s) => `${s.name} ${s.phone} (${s.visits} visit${s.visits === 1 ? "" : "s"}, ${formatPaise(s.spend_paise)})`).join(" · ")}</p>}
+            {pv.blocked && <p className="warn-text">📵 {pv.blocked}</p>}
+            {pv.send_from === "own" && <p className="muted small">Goes from your own WhatsApp number. Meta bills you directly, no message credits used.</p>}
             {short && <p className="warn-text">You have {pv.have?.toLocaleString("en-IN")} credits. Buy a message pack in Settings › Billing, or narrow the group.</p>}
           </>)}
         <p className="muted small">Only customers who gave their number on a bill, and never anyone who tapped "Stop offers".</p>
@@ -114,7 +116,7 @@ export default function Broadcast() {
         </div>
         <ErrorText error={error} />
         {done && <p className="ok-text">{done}</p>}
-        <Button disabled={busy || !pv?.count || !!short || name.trim().length < 2 || text.trim().length < 5} onClick={send}><Send size={16} aria-hidden /> Send to {pv?.count ?? 0}</Button>
+        <Button disabled={busy || !pv?.count || !!short || !!pv?.blocked || name.trim().length < 2 || text.trim().length < 5} onClick={send}><Send size={16} aria-hidden /> Send to {pv?.count ?? 0}</Button>
         <p className="muted small">WhatsApp shows new lines as " · ". Meta charges about ₹0.86 per marketing message; each one uses {pv?.credits_each ?? 6} message credits.</p>
       </Card>
 

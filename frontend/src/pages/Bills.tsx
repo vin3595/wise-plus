@@ -105,7 +105,10 @@ export default function Bills() {
                 <td className="pick">{b.status === "paid" && !b.locked && <input type="checkbox" aria-label={`Select ${b.invoice_no}`} checked={picked.includes(b.id)} onChange={() => toggle(b.id)} />}</td>
                 <td>{b.invoice_no}{b.status === "cancelled" && <span className="badge">cancelled</span>}
                   {(b.revision || 1) > 1 && <button className="badge edited" onClick={() => openHistory(b)}>corrected</button>}
-                  {b.locked && <span className="badge">locked</span>}</td>
+                  {b.locked && <span className="badge">locked</span>}
+                  {b.wa && <span className={`wa-tick wa-${b.wa}`} title={b.wa === "failed" ? `Not sent on WhatsApp: ${b.wa_why || "unknown"}` :
+                    b.wa === "read" ? "Read on WhatsApp" : b.wa === "delivered" ? "Delivered on WhatsApp" : b.wa === "queued" ? "Sending on WhatsApp…" : "Sent on WhatsApp"}>
+                    {b.wa === "failed" ? "✕" : b.wa === "queued" ? "…" : b.wa === "sent" ? "✓" : "✓✓"}</span>}</td>
                 <td>{new Date(b.created_at).toLocaleTimeString("en-IN", { timeStyle: "short" })}</td>
                 <td>#{b.token_no}</td>
                 <td>{b.customer_phone || b.customer_name || "—"}</td>

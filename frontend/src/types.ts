@@ -375,6 +375,8 @@ export interface BillPreview {
 
 export interface Bill extends BillPreview {
   training?: boolean;
+  wa?: "queued" | "sent" | "delivered" | "read" | "failed" | null;   // the bill on WhatsApp
+  wa_why?: string | null;
   id: string;
   invoice_no: string;
   status: "paid" | "cancelled";

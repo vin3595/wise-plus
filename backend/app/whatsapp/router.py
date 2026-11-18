@@ -117,13 +117,23 @@ async def receive(request: Request, background: BackgroundTasks) -> dict:
     sig = request.headers.get("x-hub-signature-256", "")
     good = "sha256=" + hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
     if not hmac.compare_digest(sig, good):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Bad signature")
+        from .numbers import webhook_secrets          # a restaurant's own Meta app (set up by hand) points here too
+        if not any(hmac.compare_digest(sig, "sha256=" + hmac.new(x.encode(), raw, hashlib.sha256).hexdigest()) for x in webhook_secrets()):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Bad signature")
     try:
         data = json.loads(raw)
     except ValueError:
         return {"ok": True}
+    from . import health
     for entry in data.get("entry", []):
         for change in entry.get("changes", []):
+            field = change.get("field") or "messages"
+            if field != "messages":                      # quality, templates, the account: alerts for you
+                background.add_task(_safe, health.on_account, field, change.get("value") or {})
+                continue
+            if change.get("value", {}).get("statuses"):  # delivery ticks on what we sent
+                background.add_task(_safe, health.on_statuses, change["value"]["statuses"])
+            via = ((change.get("value") or {}).get("metadata") or {}).get("phone_number_id")
             names = {(ct.get("wa_id") or ""): ((ct.get("profile") or {}).get("name") or "")
                      for ct in change.get("value", {}).get("contacts", []) or []}
             for m in change.get("value", {}).get("messages", []) or []:
@@ -140,12 +150,19 @@ async def receive(request: Request, background: BackgroundTasks) -> dict:
                 media = m.get("image") or m.get("document")
                 if m.get("from") and media and media.get("id"):
                     background.add_task(handle_media, m["from"], media["id"], media.get("mime_type") or "",
-                                        media.get("filename") or "bill", media.get("caption") or "")
+                                        media.get("filename") or "bill", media.get("caption") or "", via)
                 elif m.get("from") and text:
-                    background.add_task(handle, m["from"], text, names.get(m["from"], ""))
+                    background.add_task(handle, m["from"], text, names.get(m["from"], ""), via)
                 if m.get("from"):                       # wise-plus: the 24-hour window for the nightly summary
                     background.add_task(_seen_now, m["from"])
     return {"ok": True}       # always 200 fast, or Meta keeps retrying
+
+
+def _safe(fn, *args) -> None:
+    try:
+        fn(*args)
+    except Exception:  # noqa: BLE001
+        log.exception("whatsapp: webhook event")
 
 
 def _seen_now(phone: str) -> None:
@@ -267,8 +284,13 @@ def send(phone: str, r: Reply) -> None:
             client.send_document(phone, r.document[0], r.document[1])
 
 
-async def handle_media(phone: str, media_id: str, mime: str, filename: str, caption: str) -> None:
+async def handle_media(phone: str, media_id: str, mime: str, filename: str, caption: str, via: str | None = None) -> None:
     """A photo or PDF: read it as a supplier's bill and say what was found."""
+    with client.context(via=via):
+        await _handle_media(phone, media_id, mime, filename, caption)
+
+
+async def _handle_media(phone: str, media_id: str, mime: str, filename: str, caption: str) -> None:
     from . import bills
     try:
         chosen, rest, multi, early = _place(phone, caption)
@@ -342,14 +364,21 @@ def offer_reply(phone: str, text: str, name: str = "") -> bool:
                 return True
         body = osv.reply_text(db, offer, code)
         link = f"{get_settings().public_base_url.rstrip('/')}/api/public/offer-qr/{code.code}.png"
-    try:
-        client.send_image(phone, link, body)
-    except Exception:  # noqa: BLE001 - the picture couldn't be fetched: the code in words still works
-        client.send_text(phone, body)
+        tid, cstr = offer.tenant_id, code.code
+    with client.context(tenant_id=tid, purpose="offer", ref=cstr):
+        try:
+            client.send_image(phone, link, body)
+        except Exception:  # noqa: BLE001 - the picture couldn't be fetched: the code in words still works
+            client.send_text(phone, body)
     return True
 
 
-def handle(phone: str, text: str, name: str = "") -> None:
+def handle(phone: str, text: str, name: str = "", via: str | None = None) -> None:
+    with client.context(via=via):
+        _handle(phone, text, name)
+
+
+def _handle(phone: str, text: str, name: str = "") -> None:
     try:
         t = (text or "").strip()
         if t.startswith("stop:"):                      # 'Stop offers' on a broadcast

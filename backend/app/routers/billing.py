@@ -217,7 +217,19 @@ def list_bills(outlet_id: uuid.UUID, day: date | None = None, q: str | None = No
         stmt = stmt.where(or_(Bill.invoice_no.like(like), Bill.customer_phone.like(f"%{q.strip()}%")))
     else:
         stmt = stmt.where(Bill.business_date == (day or business_date()))
-    return [bill_out(db, b) for b in db.scalars(stmt.order_by(Bill.created_at.desc(), Bill.seq.desc()).limit(200))]
+    out = [bill_out(db, b) for b in db.scalars(stmt.order_by(Bill.created_at.desc(), Bill.seq.desc()).limit(200))]
+    if out:                                # wise-plus: the WhatsApp ticks on each bill
+        from ..custwa.models import WaOutbox
+        wa = {r.ref: r for r in db.scalars(select(WaOutbox).where(WaOutbox.kind == "bill", WaOutbox.ref.in_([str(b.id) for b in out])))}
+        for b in out:
+            r = wa.get(str(b.id))
+            if r is not None:
+                b.wa = r.delivery or ("failed" if r.status == "failed" else "queued" if r.status == "queued" else "sent")
+                b.wa_why = r.error if b.wa == "failed" else None
+                if b.wa == "failed" and not b.wa_why:
+                    from ..whatsapp.models import WaMessage
+                    b.wa_why = db.scalar(select(WaMessage.error).where(WaMessage.wamid == r.wamid)) if r.wamid else None
+    return out
 
 
 @router.get("/bills/{bill_id}", response_model=BillOut)

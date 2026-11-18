@@ -39,6 +39,8 @@ class WaOutbox(Base):
     status: Mapped[str] = mapped_column(String(8), default="queued", nullable=False)   # queued | sent | failed
     tries: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     error: Mapped[str | None] = mapped_column(String(300))
+    wamid: Mapped[str | None] = mapped_column(String(160))           # Meta's message id, for the delivery ticks
+    delivery: Mapped[str | None] = mapped_column(String(9))          # sent | delivered | read | failed (from Meta)
     next_try_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     __table_args__ = (UniqueConstraint("kind", "ref"), Index("ix_outbox_due", "status", "next_try_at"))

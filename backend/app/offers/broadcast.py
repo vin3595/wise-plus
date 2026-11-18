@@ -102,7 +102,7 @@ def queue(db: Session, tenant, bid: uuid.UUID, rows: list[dict], text_: str, key
     return n
 
 
-def send_promo(to: str, p: dict) -> None:
+def send_promo(to: str, p: dict) -> dict:
     """The approved marketing template: 'Hi {{1}}, here's an update from {{2}}: {{3}} …' with 'Get my offer' (when there's
     an offer) and 'Stop offers'."""
     from ..config import get_settings
@@ -112,7 +112,7 @@ def send_promo(to: str, p: dict) -> None:
     comps = [{"type": "body", "parameters": [{"type": "text", "text": str(p[k])} for k in ("name", "brand", "text")]}]
     btns = ([f"kw:{p['keyword']}"] if p.get("keyword") else []) + [f"stop:{p['tenant_id']}"]
     comps += [{"type": "button", "sub_type": "quick_reply", "index": str(i), "parameters": [{"type": "payload", "payload": b}]} for i, b in enumerate(btns)]
-    client._post({"to": client.to_wa(to), "type": "template", "template": {"name": name, "language": {"code": "en"}, "components": comps}})
+    return client._post({"to": client.to_wa(to), "type": "template", "template": {"name": name, "language": {"code": "en"}, "components": comps}})
 
 
 def opt_out(phone: str, tenant_id: str) -> str | None:
@@ -131,3 +131,18 @@ def opt_out(phone: str, tenant_id: str) -> str | None:
         for c in rows:
             c.wa_optout = True
         return f"Done. You won't get offers from {t.app_name or t.name} on WhatsApp any more. Your bills still come as usual."
+
+
+def sender(db: Session, tenant) -> tuple[str | None, str | None]:
+    """Where a broadcast would go from: 'own' (their WhatsApp API, Meta bills them), 'shared' (your own businesses only),
+    or (None, why not). Offers and bills go on the shared number; broadcasts don't, to keep it trusted."""
+    from ..billing.service import house
+    from ..config import get_settings
+    from ..whatsapp.models import WaNumber
+    n = db.get(WaNumber, tenant.id)
+    if n is not None and n.status == "active":
+        return "own", None
+    if house(tenant.login_id) or get_settings().wa_shared_marketing:
+        return "shared", None
+    return None, ("Broadcasts go from your own WhatsApp number, so offers to your customers come with your name and Meta bills you "
+                  "directly. Connect it under Settings › Billing › Your WhatsApp number (we can set it up for you).")

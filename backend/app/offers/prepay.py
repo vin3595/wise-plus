@@ -177,10 +177,12 @@ def send_qr(phone10: str, code_id: uuid.UUID) -> None:
         offer = db.get(Offer, c.offer_id)
         body = osv.reply_text(db, offer, c)
         link = f"{get_settings().public_base_url.rstrip('/')}/api/public/offer-qr/{c.code}.png"
-    try:
-        client.send_image("91" + phone10, link, body)
-    except Exception:  # noqa: BLE001
+        tid, code_str = c.tenant_id, c.code
+    with client.context(tenant_id=tid, purpose="offer", ref=code_str):
         try:
-            client.send_text("91" + phone10, body)
+            client.send_image("91" + phone10, link, body)
         except Exception:  # noqa: BLE001
-            pass
+            try:
+                client.send_text("91" + phone10, body)
+            except Exception:  # noqa: BLE001
+                pass

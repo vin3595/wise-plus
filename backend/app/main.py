@@ -64,11 +64,12 @@ def create_app() -> FastAPI:
     from .offers import router as offers
     from .expenses import router as petty
     from .billing import platform
+    from .whatsapp import connect as waconnect
     routes = [(tableqr.router, [Depends(guard("pos"))]), (custfb.router, [Depends(guard("pos"))]), (plans.router, []), (plans.public, []), (stockplus.router, [Depends(guard("stock"))]), (stockplus.alerts, []), (bill_scan.router, [Depends(guard("bills"))]),
               (ledger.router, [Depends(guard("bills"))]), (daily_sheets.router, [Depends(guard("sheets"))]),
               (inventory.router, stock_or_bills), (orders.router, pos), (billing.router, pos), (bill_edits.router, pos), (qr.router, pos),
               (printing.router, pos), (cash.router, pos), (dayclose.router, pos), (payments.router, pos), (loyalty.router, pos),
-              (offline.router, pos), (ads.router, pos), (banks.router, []), (creditnotes.router, []), (exports.router, []), (tenant_backup.router, []), (offers.router, []), (offers.public, []), (offers.pay_public, []), (petty.router, []), (platform.router, [])]
+              (offline.router, pos), (ads.router, pos), (banks.router, []), (creditnotes.router, []), (exports.router, []), (tenant_backup.router, []), (offers.router, []), (offers.public, []), (offers.pay_public, []), (petty.router, []), (platform.router, []), (waconnect.router, [])]
     routes += [(r, []) for r in (assistant.router, whatsapp.router, public.router, auth.router, tenant.router, users.router, menu.router,
                                  menu_import.router, reports.router, report_tables.router, sms.router, events.router, accounts.router, roles.router)]
     for r, deps in routes:
@@ -118,6 +119,17 @@ def create_app() -> FastAPI:
         except Exception:  # noqa: BLE001
             return JSONResponse({"ok": False, "db": False}, status_code=503)
         return JSONResponse({"ok": True, "db": True})
+
+    @app.get("/api/health/whatsapp")
+    def health_whatsapp() -> JSONResponse:
+        """wise-plus: is WhatsApp sending? Only yes/no and counts: the server's nightly check emails you when it's no."""
+        from .whatsapp.health import status as wa_status
+        try:
+            st = wa_status()
+        except Exception:  # noqa: BLE001
+            return JSONResponse({"ok": False}, status_code=503)
+        body = {"ok": st["ok"], "configured": st["configured"], "day": st["day"]}
+        return JSONResponse(body, status_code=200 if st["ok"] or not st["configured"] else 503)
 
     @app.get("/api/public/config")
     def public_config() -> dict:

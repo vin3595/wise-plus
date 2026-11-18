@@ -1,6 +1,8 @@
 """Sending WhatsApp messages through Meta's Cloud API (wise-plus). Settings: WISE_WA_* in the server's .env."""
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import logging
 import re
 
@@ -26,20 +28,195 @@ def last10(phone: str) -> str:
     return re.sub(r"\D", "", phone or "")[-10:]
 
 
-def _post(payload: dict) -> dict:
+# ------------------------------------------------------------------ who is sending, and why (set around a send)
+
+_tenant: contextvars.ContextVar = contextvars.ContextVar("wa_tenant", default=None)
+_via: contextvars.ContextVar = contextvars.ContextVar("wa_via", default=None)       # the number a message came in on
+_purpose: contextvars.ContextVar = contextvars.ContextVar("wa_purpose", default=None)
+_ref: contextvars.ContextVar = contextvars.ContextVar("wa_ref", default=None)
+
+
+@contextlib.contextmanager
+def context(tenant_id=None, via: str | None = None, purpose: str | None = None, ref: str | None = None):
+    """Messages sent inside go from this restaurant's own number (if connected), are logged under it, and labelled."""
+    toks = [v.set(x) for v, x in ((_tenant, str(tenant_id) if tenant_id else _tenant.get()), (_via, via or _via.get()),
+                                  (_purpose, purpose or _purpose.get()), (_ref, ref or _ref.get()))]
+    try:
+        yield
+    finally:
+        for v, t in zip((_tenant, _via, _purpose, _ref), toks):
+            v.reset(t)
+
+
+class WaError(Exception):
+    """Meta refused or failed a message. reason is in plain words for the screen."""
+
+    def __init__(self, code: int | None, reason: str, detail: str = ""):
+        super().__init__(f"{code}: {reason}" if code else reason)
+        self.code, self.reason, self.detail = code, reason, detail
+
+    @property
+    def window_closed(self) -> bool:
+        return self.code == 131047
+
+
+# Meta's error codes → what happened, in words; and which are worth trying again in a moment.
+REASONS = {
+    131026: "Not on WhatsApp (or an old WhatsApp version)", 131047: "More than 24 hours since they last messaged",
+    131049: "WhatsApp held it back: too many offers to this person lately", 131050: "They stopped offers from you on WhatsApp",
+    131051: "WhatsApp doesn't support this kind of message", 131052: "The picture or file couldn't be fetched",
+    131053: "The picture or file couldn't be uploaded", 131048: "Paused: too many messages marked as spam",
+    131056: "Too many messages to this person in a short time", 130429: "WhatsApp is busy: too many messages a second",
+    131000: "WhatsApp had a problem (will try again)", 131016: "WhatsApp is down for a moment (will try again)",
+    132000: "The message template's details don't match", 132001: "The message template isn't there or isn't approved",
+    132005: "The message template text is too long", 132007: "The message template broke WhatsApp's rules",
+    132012: "The message template's details are in the wrong format", 132015: "The message template is paused by WhatsApp",
+    132016: "The message template is switched off by WhatsApp", 133010: "The WhatsApp number isn't registered",
+    131031: "The WhatsApp account is locked", 131042: "WhatsApp payment problem on the business account",
+    368: "The WhatsApp number is blocked for a while (policy)", 190: "The WhatsApp access token has expired",
+    10: "The app lost permission on the WhatsApp number", 100: "Something in the message wasn't accepted",
+    4: "Too many requests to WhatsApp (will try again)", 80007: "WhatsApp's limit for this number was reached",
+    2: "WhatsApp had a problem (will try again)", 1: "WhatsApp had a problem (will try again)",
+}
+RETRY = {131000, 131016, 130429, 131056, 4, 80007, 2, 1}
+
+
+def reason(code: int | None, fallback: str = "") -> str:
+    return REASONS.get(code or -1, fallback or "WhatsApp didn't take the message")
+
+
+def _sender() -> tuple[str, str]:
+    """(phone_number_id, token): the number a message came in on, else the restaurant's own, else the shared number."""
     s = get_settings()
-    url = f"https://graph.facebook.com/{s.wa_graph_version}/{s.wa_phone_number_id}/messages"
-    r = httpx.post(url, json={"messaging_product": "whatsapp", **payload}, timeout=20,
-                   headers={"Authorization": f"Bearer {s.wa_token}"})
-    if r.status_code >= 300:
-        log.warning("whatsapp send failed %s: %s", r.status_code, r.text[:300])
-        r.raise_for_status()
-    return r.json()
+    via, tid = _via.get(), _tenant.get()
+    if via == s.wa_phone_number_id or not (via or tid):
+        return s.wa_phone_number_id, s.wa_token            # a reply on the shared number stays on it
+    try:
+        from . import numbers
+        got = numbers.sender_for(via=via) if via else numbers.sender_for(tenant_id=tid)
+        if got:
+            return got
+    except Exception:  # noqa: BLE001 - never block a message on a lookup: use the shared number
+        log.exception("whatsapp: couldn't look up the sending number")
+    return s.wa_phone_number_id, s.wa_token
+
+
+def _record(payload: dict, from_id: str, wamid: str | None, tries: int, err: WaError | None, fallback: bool = False) -> None:
+    """Best effort: a log line per message. A failure here never stops the message."""
+    try:
+        import uuid as _u
+
+        from ..db import system_session
+        from .models import WaMessage
+        kind = payload.get("type", "text")
+        tpl = (payload.get("template") or {}).get("name")
+        with system_session() as db:
+            db.add(WaMessage(id=_u.uuid4(), tenant_id=_u.UUID(_tenant.get()) if _tenant.get() else None, wamid=wamid, from_id=from_id,
+                             to_phone=str(payload.get("to", ""))[:15], kind=kind[:12], purpose=(_purpose.get() or _guess(payload))[:16],
+                             template=tpl, ref=(_ref.get() or None), status="failed" if err else "accepted",
+                             error_code=err.code if err else None, error=(err.reason if err else None), tries=tries, fallback=fallback))
+    except Exception:  # noqa: BLE001
+        log.warning("whatsapp: couldn't log a message", exc_info=True)
+
+
+def _guess(payload: dict) -> str:
+    t = (payload.get("template") or {}).get("name") or ""
+    s = get_settings()
+    if t == s.wa_bill_template:
+        return "bill"
+    if t in (s.wa_promo_template, s.wa_promo_offer_template):
+        return "promo"
+    if t == s.wa_otp_template:
+        return "otp"
+    if t:
+        return "template"
+    return "reply"
+
+
+def _post(payload: dict, _fallback: bool = False) -> dict:
+    """Send one message: tries again on Meta's passing errors (busy, rate limit, a hiccup), logs it with its id
+    for the delivery ticks, and raises WaError with the reason in words when it can't go."""
+    import time
+    pnid, token = _sender()
+    s = get_settings()
+    url = f"https://graph.facebook.com/{s.wa_graph_version}/{pnid}/messages"
+    body = {"messaging_product": "whatsapp", **payload}
+    err: WaError | None = None
+    tries = 0
+    for wait in (0, 0.6, 2.0, 5.0):
+        if wait:
+            time.sleep(wait)
+        tries += 1
+        try:
+            r = httpx.post(url, json=body, timeout=20, headers={"Authorization": f"Bearer {token}"})
+        except httpx.HTTPError as e:                     # network: worth another go
+            err = WaError(None, "Couldn't reach WhatsApp (network)", str(e)[:200])
+            continue
+        if r.status_code < 300:
+            data = r.json()
+            wamid = ((data.get("messages") or [{}])[0]).get("id")
+            _record(payload, pnid, wamid, tries, None, _fallback)
+            return data
+        try:
+            e = (r.json() or {}).get("error") or {}
+        except ValueError:
+            e = {}
+        code = e.get("code")
+        sub = ((e.get("error_data") or {}).get("details") or e.get("message") or "")[:200]
+        err = WaError(code, reason(code, sub), sub)
+        log.warning("whatsapp send failed %s (%s): %s", r.status_code, code, sub)
+        if not (code in RETRY or r.status_code >= 500 or r.status_code == 429):
+            break
+    _record(payload, pnid, None, tries, err, _fallback)
+    if err and err.code in (190, 10, 133010, 131031, 368, 131042, 132001, 132015, 132016):
+        try:                                             # the number or a template is broken: tell the platform owner
+            from . import health
+            health.problem(f"code:{err.code}", f"WhatsApp: {err.reason}. Messages aren't going out ({err.detail[:120]})")
+        except Exception:  # noqa: BLE001
+            pass
+    raise err
+
+
+def _flatten(text: str) -> str:
+    """Templates can't take new lines, tabs or 4+ spaces in a variable."""
+    t = re.sub(r"[\t ]{2,}", " ", re.sub(r"\s*\n+\s*", " · ", text or "")).strip(" ·")
+    return t[:900]
+
+
+def _or_template(fn, to: str, text: str):
+    """A reply that fails only because the 24-hour window closed goes again as the approved 'update' template."""
+    try:
+        return fn()
+    except WaError as e:
+        tpl = get_settings().wa_update_template
+        if not (e.window_closed and tpl):
+            raise
+        from ..models import Tenant  # noqa: F401
+        brand = _brand()
+        return _post({"to": to_wa(to), "type": "template", "template": {"name": tpl, "language": {"code": "en"}, "components": [
+            {"type": "body", "parameters": [{"type": "text", "text": brand[:60]}, {"type": "text", "text": _flatten(text)}]}]}}, _fallback=True)
+
+
+def _brand() -> str:
+    tid = _tenant.get()
+    if tid:
+        try:
+            import uuid as _u
+
+            from ..db import system_session
+            from ..models import Tenant
+            with system_session() as db:
+                t = db.get(Tenant, _u.UUID(tid))
+                if t:
+                    return t.app_name or t.name
+        except Exception:  # noqa: BLE001
+            pass
+    return "Ease My Bill"
 
 
 def send_text(to: str, body: str) -> dict:
     """Free text: only inside the 24-hour window after the person messaged us (replies to the owner's questions)."""
-    return _post({"to": to_wa(to), "type": "text", "text": {"preview_url": False, "body": body[:4000]}})
+    return _or_template(lambda: _post({"to": to_wa(to), "type": "text", "text": {"preview_url": False, "body": body[:4000]}}), to, body)
 
 
 def send_template(to: str, name: str, params: list[str] | None = None, lang: str = "en") -> dict:
@@ -54,13 +231,14 @@ def send_document(to: str, link: str, filename: str, caption: str | None = None)
 
 
 def send_image(to: str, link: str, caption: str | None = None) -> dict:
-    return _post({"to": to_wa(to), "type": "image", "image": {"link": link, **({"caption": caption[:1024]} if caption else {})}})
+    return _or_template(lambda: _post({"to": to_wa(to), "type": "image", "image": {"link": link, **({"caption": caption[:1024]} if caption else {})}}),
+                        to, (caption or "") + f" {link}")
 
 
 def get_media(media_id: str) -> tuple[bytes, str]:
     """A photo or PDF someone sent us: (bytes, mime type). Meta gives a short-lived URL that needs the token."""
     s = get_settings()
-    h = {"Authorization": f"Bearer {s.wa_token}"}
+    h = {"Authorization": f"Bearer {_sender()[1]}"}
     meta = httpx.get(f"https://graph.facebook.com/{s.wa_graph_version}/{media_id}", headers=h, timeout=20)
     meta.raise_for_status()
     info = meta.json()
@@ -87,4 +265,5 @@ def send_options(to: str, body: str, options: list[tuple[str, str]], button: str
         action = {"button": button[:20], "sections": [{"title": "Choose one", "rows": [
             {"id": cmd[:200], "title": label[:24]} for cmd, label in options]}]}
         kind = "list"
-    return _post({"to": to_wa(to), "type": "interactive", "interactive": {"type": kind, "body": {"text": body}, "action": action}})
+    return _or_template(lambda: _post({"to": to_wa(to), "type": "interactive", "interactive": {"type": kind, "body": {"text": body}, "action": action}}),
+                        to, body)

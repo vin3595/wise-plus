@@ -162,6 +162,7 @@ def test_broadcast_filters_credits_optout(client, monkeypatch):
     from tests.test_banking import _bill
     s = setup(client)
     tok, ck, v = s["tok"], s["ck"], s["v"]
+    monkeypatch.setattr(get_settings(), "wa_shared_marketing", True)     # this test: broadcasts with credits on the shared number
     client.post("/api/users", headers=h(tok), json={"name": "Asha", "role": "cashier", "pin": "7419", "outlet_ids": [ck]})
     asha = client.post("/api/auth/pin", json={"login_id": s["login"], "outlet_id": ck, "pin": "7419"}).json()["token"]
     client.post("/api/shifts", headers=h(asha), json={"outlet_id": ck, "opening_cash_paise": 0})
