@@ -20,13 +20,20 @@ from ..services.role_perms import effective
 
 HEADS = ("kharcha", "kharch", "kharche", "expense", "exp", "petty")
 UNITS = {"l": "L", "ltr": "L", "litre": "L", "liter": "L", "lt": "L", "ml": "ml", "kg": "kg", "kgs": "kg", "g": "g", "gm": "g",
-         "pc": "pc", "pcs": "pc", "dozen": "dozen", "dz": "dozen", "packet": "packet", "pkt": "packet", "block": "block",
+         "pc": "pc", "pcs": "pc", "piece": "pc", "pieces": "pc", "nos": "pc", "no": "pc", "nag": "pc", "packets": "packet",
+         "boxes": "box", "box": "box", "bottle": "bottle", "bottles": "bottle", "ltrs": "L", "litres": "L", "kilo": "kg", "dozen": "dozen", "dz": "dozen", "packet": "packet", "pkt": "packet", "block": "block",
          "silli": "block", "can": "can", "jar": "can", "crate": "crate"}
 FROM_WORDS = {"counter": "counter", "galla": "counter", "upi": "upi", "bank": "upi", "gpay": "upi", "paytm": "upi", "phonepe": "upi",
               "owner": "owner", "pocket": "owner", "jeb": "owner", "petty": "petty"}
 SYN = {"doodh": "Milk", "dudh": "Milk", "barf": "Ice", "baraf": "Ice", "sabzi": "Vegetables", "sabji": "Vegetables", "phal": "Fruits",
        "auto": "Transport", "rickshaw": "Transport", "kiraya": "Transport", "cylinder": "Gas", "paani": "Water", "pani": "Water",
        "safai": "Cleaning"}
+
+
+def looks_like_expense(word: str) -> bool:
+    """Plain 'brownie 25 pieces 650 rs': a word and an amount, and nothing else understood it."""
+    p = parse("x " + word)
+    return bool(p["amount"] and p["words"]) and len(word) <= 80
 
 
 def is_petty(word: str) -> bool:

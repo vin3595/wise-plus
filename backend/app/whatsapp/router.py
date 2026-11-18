@@ -243,6 +243,9 @@ def reply_rich(phone: str, text: str) -> Reply | None:
                 out = wfiles.handle(db, chosen, word)
             if out is None:
                 out = answer_rich(db, text or "help")
+                if out.text.startswith("I didn't get that") and wpetty.looks_like_expense(word):
+                    # "brownie 25 pieces 650 rs": an expense written without 'kharcha'
+                    out = wpetty.handle(db, chosen, "kharcha " + word, "kharcha " + (text or "")) or out
     if multi:
         out.text += f"\n\n_@{chosen[1]}_"
     return out

@@ -74,7 +74,13 @@ def item_for(db: Session, category: str) -> StockItem | None:
                     .order_by(PettyExpense.created_at.desc()).limit(1))
     if sid:
         return db.get(StockItem, sid)
-    return db.scalar(select(StockItem).where(func.lower(StockItem.name) == category.lower(), StockItem.is_active.is_(True)).limit(1))
+    it = db.scalar(select(StockItem).where(func.lower(StockItem.name) == category.lower(), StockItem.is_active.is_(True)).limit(1))
+    if it is not None:
+        return it
+    import difflib                                     # "Brownee" → Brownie
+    items = {i.name.lower(): i for i in db.scalars(select(StockItem).where(StockItem.is_active.is_(True), StockItem.kind == "raw"))}
+    m = difflib.get_close_matches(category.lower(), list(items), n=1, cutoff=0.82)
+    return items[m[0]] if m else None
 
 
 def last_rate(db: Session, category: str, outlet_id: uuid.UUID | None = None) -> dict | None:

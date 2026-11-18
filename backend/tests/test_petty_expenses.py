@@ -135,6 +135,9 @@ def test_petty_on_whatsapp(client, monkeypatch, tmp_path):
     assert "No shift is open" in r3.text
     u = wr.reply_rich("91" + p, r.options[0][0])
     assert "Undone" in u.text and _stock(client, tok, ck)["Milk"]["qty_m"] == before + 3_000_000
+    plain = wr.reply_rich("91" + p, "Brownee 25 pieces 650 rs")              # no 'kharcha': still an expense
+    assert plain.text.startswith("✅ ₹650 · Brownee · 25 pc"), plain.text
+    assert wr.reply_rich("91" + p, "hi").text.startswith("✅") is False
     bare = wr.reply_rich("91" + p, "kharcha")                                # bare 'kharcha' is still the expenses report
     assert not bare.text.startswith("✅") and all(o[1] != "Undo" for o in bare.options)
 
