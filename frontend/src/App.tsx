@@ -40,6 +40,7 @@ import Banks from "./pages/Banks";
 import Offers from "./pages/Offers";
 import Broadcast from "./pages/Broadcast";
 import PurchaseBills from "./pages/PurchaseBills";
+import Expenses from "./pages/Expenses";
 import Barcodes from "./pages/Barcodes";
 import Floor from "./pages/Floor";
 import TableService from "./pages/TableService";
@@ -56,7 +57,7 @@ import { EmbMark, PoweredBy } from "./components/Brand";
 
 const ICONS: Record<string, LucideIcon> = {
   "Home": LayoutDashboard, "Orders": ClipboardList, "Kitchen display": ChefHat, "Bills": Receipt,
-  "Cash": Wallet, "Supplier dues": Truck, "Banks": Landmark, "Daily sheets": NotebookPen, "Bill keeper": Archive, "Table requests": BellRing, "Reports": BarChart3, "Stock": Package, "Purchases": Package, "Customers": UsersIcon, "Getting started": Rocket,
+  "Cash": Wallet, "Petty expenses": Receipt, "Supplier dues": Truck, "Banks": Landmark, "Daily sheets": NotebookPen, "Bill keeper": Archive, "Table requests": BellRing, "Reports": BarChart3, "Stock": Package, "Purchases": Package, "Customers": UsersIcon, "Getting started": Rocket,
   "Menu": UtensilsCrossed, "Outlets and screens": Store, "Staff": UserCog, "Settings": SettingsIcon,
 };
 
@@ -75,6 +76,7 @@ function Shell({ children }: { children: ReactNode }) {
     { label: "Table requests", section: "Counter", pages: [["/floor", "Table requests", pos && can("kot.send")]] },
     { label: "Bills", section: "Counter", pages: [["/bills", "Bills", pos && can("billing")]] },
     { label: "Cash", section: "Money", pages: [["/cash", "Cash", pos && can("cash.expected")], ["/day-close", "Day close", pos && can("day.close")]] },
+    { label: "Petty expenses", section: "Money", pages: [["/expenses", "Petty expenses", can("billing")]] },
     { label: "Daily sheets", section: "Money", pages: [["/sheets", "Daily sheets", has("sheets") && can("reports.view")]] },
     { label: "Bill keeper", section: "Money", pages: [["/purchase-bills", "Purchase bills", (has("stock") || has("bills")) && can("inventory.manage")],
       ["/bill-keeper", "Bill keeper", has("bills") && can("inventory.manage")]] },
@@ -276,6 +278,7 @@ export default function App() {
         <Route path="/services" element={<Services />} />
         <Route path="/bill-keeper" element={<BillKeeper />} />
         <Route path="/purchase-bills" element={<PurchaseBills />} />
+        <Route path="/expenses" element={<Expenses />} />
         <Route path="/feedback" element={<Feedback />} />
         <Route path="/offers" element={<Offers />} />
         <Route path="/broadcast" element={<Broadcast />} />

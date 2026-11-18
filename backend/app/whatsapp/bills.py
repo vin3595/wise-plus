@@ -134,6 +134,10 @@ async def _read_sent_bill(chosen: tuple, phone10: str, media_id: str, mime: str,
             if Perm.inventory_manage not in effective(uuid.UUID(tenant_id), Role(role)):
                 return Reply("Your account can't check supplier statements. Ask the owner to allow it under Staff › Who can do what.")
             return await _read_statement(tenant_id, user_id, data, ct, filename or "statement")
+        from . import petty as wpetty
+        if wpetty.caption_says_petty(caption) or kind.get("type") == "PETTY_SLIP":
+            # loose petty-cash slips: straight into Money › Petty expenses
+            return await _read_slips(chosen, phone10, data, ct, caption)
         if kind.get("type") == "LEDGER_PAGE":
             # The daily cash sheet, not a supplier's bill.
             from . import sheets
@@ -317,3 +321,44 @@ def save_or_discard(db: Session, chosen: tuple, phone10: str, save: bool, add_ne
     return Reply(f"{added}✅ Saved: {d['supplier']['name']}, {rs(p['total_paise'])}. Stock updated."
                  f"\n{d['supplier']['name']} now: {rs(due)} due.",
                  [(f"dues {d['supplier']['name']}", "Their account"), ("dues", "All dues")])
+
+
+async def _read_slips(chosen: tuple, phone10: str, data: bytes, ct: str, caption: str) -> Reply:
+    from ..core.kds import business_date
+    from ..expenses import service as esvc
+    from ..expenses.models import PettyExpense
+    from ..expenses.reader import SlipError, read
+    from ..expenses.router import _folder, keep_slip
+    from . import petty as wpetty
+    tenant_id, _login, role, _uid = chosen
+    if Perm.billing not in effective(uuid.UUID(tenant_id), Role(role)):
+        return Reply("Your account can't add expenses. Ask the owner to allow it under Staff › Who can do what.")
+    h = esvc.photo_hash(data)
+    try:
+        got = await read(data, ct, "slip", business_date())
+    except SlipError as e:
+        return Reply(str(e) + " Or type it: *kharcha milk 300 6L*")
+    token = await run_in_threadpool(keep_slip, tenant_id, data, ct)
+
+    def store() -> Reply:
+        with tenant_session(tenant_id) as db:
+            seen = db.scalar(select(PettyExpense).where(PettyExpense.photo_hash == h, PettyExpense.status == "ok").limit(1))
+            outlet = wpetty.outlet_for(db, set(re.findall(r"[a-z0-9]+", (caption or "").lower())))
+            if outlet is None:
+                return Reply("Add an outlet in the app first (Setup › Outlets).")
+            drafts = []
+            for s in got["slips"]:
+                if not s.get("qty_m"):
+                    q, u = esvc.guess_qty(db, s["category"], s["amount_paise"], outlet.id)
+                    if q:
+                        s = s | {"qty_m": q, "unit": u}
+                drafts.append(s)
+            from fastapi import HTTPException
+            try:
+                r = wpetty.save_slips(db, chosen, outlet, drafts, os.path.join(_folder(tenant_id), token), h, seen)
+            except HTTPException as e:
+                return Reply(f"⚠️ {e.detail}")
+            if got["has_gstin"] and seen is None:
+                r.text += "\n\nℹ️ This slip has a GSTIN: if it's a proper bill, send it as a purchase instead so you can claim the GST."
+            return r
+    return await run_in_threadpool(store)

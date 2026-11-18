@@ -129,14 +129,49 @@ def cash_vouchers(db: Session, outlets, d1: date, d2: date, ledgers: dict, accts
                 party = sups.get((m.paid_to or "").strip().lower(), (m.paid_to or "Supplier").strip())
                 v = Voucher("Payment", day, num, f"Cash paid to {party}", party=party)
                 v.add(party, -m.amount_paise)
+            elif m.paid_to == "Petty cash":
+                v = Voucher("Contra", day, num, "Cash to petty cash")
+                v.add(PETTY, -m.amount_paise)
             else:
                 v = Voucher("Payment", day, num, f"Cash out: {note}")
                 v.add(L(ledgers, "suspense"), -m.amount_paise)
             v.add(cash, m.amount_paise)
+        elif m.reason == "Back from petty cash":
+            v = Voucher("Contra", day, num, "Back from petty cash")
+            v.add(cash, -m.amount_paise)
+            v.add(PETTY, m.amount_paise)
         else:
             v = Voucher("Contra" if m.purpose in ("topup", "change") else "Receipt", day, num, f"Cash put in: {note}")
             v.add(cash, -m.amount_paise)
             v.add(L(ledgers, "capital") if m.purpose == "topup" else L(ledgers, "suspense"), m.amount_paise)
+        out.append(v)
+    return out
+
+
+PETTY = "Petty Cash"
+
+
+def petty_vouchers(db: Session, outlets, d1: date, d2: date, ledgers: dict, accts) -> list[Voucher]:
+    """wise-plus: petty expenses not paid from the counter (those are cash movements already), and petty cash top-ups."""
+    from .expenses.models import PettyExpense, PettyTopup
+    bank = _bank_ledger(accts[0], ledgers) if len(accts) == 1 else L(ledgers, "suspense")
+    out = []
+    for x in db.scalars(select(PettyExpense).where(PettyExpense.outlet_id.in_(outlets), PettyExpense.status == "ok",
+                                                   PettyExpense.paid_from != "counter", PettyExpense.spent_on >= d1,
+                                                   PettyExpense.spent_on <= d2).order_by(PettyExpense.spent_on)):
+        what = x.what or x.category
+        if x.qty_m and x.unit:
+            what += f" ({x.qty_m / 1000:g} {x.unit})"
+        v = Voucher("Payment", x.spent_on, f"PETTY-{str(x.id)[:8]}", f"Petty expense: {what}")
+        v.add(x.category.strip(), -x.amount_paise)
+        v.add({"petty": PETTY, "owner": L(ledgers, "capital"), "upi": bank}.get(x.paid_from, PETTY), x.amount_paise)
+        out.append(v)
+    tday = func.date(func.timezone("Asia/Kolkata", PettyTopup.created_at))
+    for t in db.scalars(select(PettyTopup).where(PettyTopup.outlet_id.in_(outlets), PettyTopup.source != "counter", tday >= d1, tday <= d2)):
+        day = t.created_at.astimezone(IST).date()
+        v = Voucher("Contra" if t.source == "bank" else "Receipt", day, f"PETTYIN-{str(t.id)[:8]}", f"Petty cash top-up ({t.source})")
+        v.add(PETTY, -t.amount_paise)
+        v.add(bank if t.source == "bank" else L(ledgers, "capital"), t.amount_paise)
         out.append(v)
     return out
 
@@ -223,8 +258,11 @@ def extra_masters(db: Session, ledgers: dict, accts) -> list[tuple[str, str, str
         names.append((L(ledgers, key), tally.PARENTS[key], None))
     heads = set(db.scalars(select(BankTxn.category).where(BankTxn.kind == "expense", BankTxn.category.is_not(None)).distinct()).all())
     heads |= set(db.scalars(select(CashMovement.category).where(CashMovement.purpose == "expense", CashMovement.category.is_not(None)).distinct()).all())
+    from .expenses.models import PettyExpense
+    heads |= set(db.scalars(select(PettyExpense.category).where(PettyExpense.status == "ok").distinct()).all())
     names += [(h.strip(), "Indirect Expenses", None) for h in sorted(heads) if h and h.strip()]
     names.append(("Cash Expenses", "Indirect Expenses", None))
+    names.append((PETTY, "Cash-in-Hand", None))
     return names
 
 

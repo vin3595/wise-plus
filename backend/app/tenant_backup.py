@@ -42,10 +42,12 @@ READABLE = [  # (sheet, table, columns or None for all)
     ("Supplier dues", "supplier_entries", ["entry_date", "supplier_id", "kind", "amount_paise", "mode", "reference", "note", "status"]),
     ("Bank lines", "bank_txns", ["txn_date", "narration", "ref", "amount_paise", "kind", "category", "status"]),
     ("Cash in-out", "cash_movements", ["created_at", "kind", "amount_paise", "purpose", "category", "paid_to", "reason"]),
+    ("Petty expenses", "petty_expenses", ["spent_on", "category", "what", "amount_paise", "qty_m", "unit", "paid_from", "status"]),
 ]
 
 
 def tables():
+    from . import main  # noqa: F401 - every module's tables (offers, banks, petty…), also from the command line
     return [t for t in Base.metadata.sorted_tables if t.name not in SKIP and ("tenant_id" in t.c or t.name == "tenants")]
 
 

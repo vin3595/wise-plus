@@ -173,6 +173,7 @@ def vouchers_for(db: Session, kind: str, outlets, whole: bool, d1: date, d2: dat
         out += books.supplier_vouchers(db, d1, d2, ledgers, accts, whole)
     if kind in ("cash", "all"):
         out += books.cash_vouchers(db, outlets, d1, d2, ledgers, accts)
+        out += books.petty_vouchers(db, outlets, d1, d2, ledgers, accts)
     if kind in ("bank", "all"):
         vs, skipped = books.bank_vouchers(db, d1, d2, ledgers, accts)
         out += vs

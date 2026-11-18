@@ -395,3 +395,14 @@ tr.sub-row td { background: color-mix(in srgb, var(--line) 30%, transparent); }
 .roi-row { display: flex; justify-content: space-between; padding: 0.25rem 0; border-bottom: 1px solid var(--line, #eee); }
 .roi-row.grand { font-weight: 700; border-bottom: 0; }
 .roi-big { font-size: 1.25rem; font-weight: 700; margin: 0.6rem 0 0.2rem; }
+.sub-form { border-top: 1px solid var(--line, #eee); margin-top: 0.8rem; padding-top: 0.8rem; display: grid; gap: 0.6rem; }
+.exp-row { display: grid; grid-template-columns: 9.5rem 6rem minmax(8rem, 1fr) minmax(8rem, 1fr) 10rem minmax(9rem, 1fr) 9rem auto; gap: 0.4rem; align-items: center;
+  padding-bottom: 0.5rem; border-bottom: 1px dashed var(--line, #eee); }
+.exp-row .qty, .sub-form .qty { display: flex; gap: 0.3rem; }
+.exp-row .qty input { width: 4.5rem; }
+@media (max-width: 900px) { .exp-row { grid-template-columns: 1fr 1fr; } }
+tr.cancelled td { opacity: 0.5; text-decoration: line-through; }
+tr.cancelled td .small { text-decoration: none; }
+.ok-text { color: var(--ok, #047857); font-weight: 600; }
+.error-text { color: var(--berry, #be123c); }
+.nowrap { white-space: nowrap; }

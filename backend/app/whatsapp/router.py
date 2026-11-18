@@ -228,9 +228,10 @@ def reply_rich(phone: str, text: str) -> Reply | None:
                         else "Nightly summary stopped. Send *nightly on* to start it again.",
                         [("summary", "Today so far")] if on else [("nightly on", "Start again")])
         else:
-            out = None
+            from . import petty as wpetty
+            out = wpetty.handle(db, chosen, word, text or "")
             from . import banks as wbanks
-            if word in wbanks.WORDS | wbanks.CHECK or word.startswith("bk "):
+            if out is None and (word in wbanks.WORDS | wbanks.CHECK or word.startswith("bk ")):
                 from ..core.permissions import Perm, Role
                 from ..services.role_perms import effective
                 if Perm.banks not in effective(uuid.UUID(chosen[0]), Role(chosen[2])):

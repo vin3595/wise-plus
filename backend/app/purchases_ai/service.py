@@ -57,6 +57,8 @@ async def read_bill(data: bytes, content_type: str, name: str, kind: dict | None
         except Exception as e:
             raise ScanError("Couldn't open that file. Try a clearer photo or the original PDF.") from e
         kind = await ex.classify_document(first)
+    if kind.get("type") == "PETTY_SLIP" and kind.get("confidence", 0) >= 70:
+        raise ScanError("This looks like a petty cash slip, not a supplier's bill. Add it under Money › Petty expenses (Snap slips).")
     if not kind.get("accepted") and kind.get("confidence", 0) >= 80:
         raise ScanError(f"This doesn't look like a supplier's bill ({kind.get('reason') or kind.get('type', '').lower()}).")
     try:

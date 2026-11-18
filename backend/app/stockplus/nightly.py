@@ -94,6 +94,11 @@ def outlet_lines(db: Session, o: Outlet, day: date) -> tuple[list[str], dict]:
     ref = day_refunds(db, day, o.id)
     if ref:
         out.append(f"   Refunds (credit notes): {rs(ref)}")
+    from ..expenses.models import PettyExpense
+    pet = db.scalars(select(PettyExpense).where(PettyExpense.outlet_id == o.id, PettyExpense.spent_on == day, PettyExpense.status == "ok")).all()
+    if pet:
+        noslip = sum(1 for x in pet if not x.file_path and x.source != "vendor")
+        out.append(f"   Petty expenses: {rs(sum(x.amount_paise for x in pet))} ({len(pet)})" + (f" · 🔴 {noslip} without a slip" if noslip else ""))
     from ..tableqr.router import day_line
     tql = day_line(db, o.id, day)
     if tql:
