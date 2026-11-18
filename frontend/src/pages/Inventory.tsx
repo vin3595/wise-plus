@@ -328,7 +328,7 @@ function PurchasesTab({ outletId, items, suppliers, onChange }: { outletId: stri
   return (
     <>
       {pending.length > 0 && (
-        <Card title={`Bills from WhatsApp to check (${pending.length})`}>
+        <Card title={`Bills to check (${pending.length})`}>
           <ul className="pending-list">
             {pending.map((b) => (
               <li key={b.id} className={pendingId === b.id ? "on" : ""}>
@@ -341,7 +341,7 @@ function PurchasesTab({ outletId, items, suppliers, onChange }: { outletId: stri
               </li>))}
           </ul>
         </Card>)}
-      <Card title="Enter a supplier's bill" actions={<ScanBill outletId={outletId} onDraft={(d) => { fromScan(d); setPendingId(d.scan_id || null); }} />}>
+      <Card title="Enter a supplier's bill" actions={<ScanBill outletId={outletId} onDraft={(d) => { fromScan(d); setPendingId(d.scan_id || null); }} onBatch={loadPending} />}>
         {scan && (
           <div className="scan-result">
             {scan.thumbnail && <img src={scan.thumbnail} alt="The scanned bill" className="scan-thumb" />}

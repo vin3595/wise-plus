@@ -70,7 +70,7 @@ def _count(auth: Auth) -> None:
 
 
 @router.post("")
-async def scan_bill(outlet_id: uuid.UUID = Form(...), file: UploadFile = File(...),
+async def scan_bill(outlet_id: uuid.UUID = Form(...), file: UploadFile = File(...), batch: bool = Form(False),
                     auth: Auth = Depends(require(Perm.inventory_manage))) -> dict:
     await run_in_threadpool(_check, auth, outlet_id)
     ct = (file.content_type or "").lower()
@@ -106,7 +106,8 @@ async def scan_bill(outlet_id: uuid.UUID = Form(...), file: UploadFile = File(..
     draft["thumbnail"] = thumb
     draft["low_confidence"] = bool(kind.get("should_warn"))
     # Bill keeper: the original photo/PDF is kept and linked to the purchase once it's saved.
-    draft["scan_id"] = await run_in_threadpool(_keep, auth, outlet_id, data, ct, name, draft, bill)
+    # batch: several bills picked at once go to "Waiting to be checked", like bills sent on WhatsApp.
+    draft["scan_id"] = await run_in_threadpool(_keep, auth, outlet_id, data, ct, name, draft, bill, "batch" if batch else "app")
     return draft
 
 
@@ -125,11 +126,11 @@ def keep_file(tenant_id, sid: uuid.UUID, data: bytes, ct: str, name: str = "") -
     return path
 
 
-def _keep(auth: Auth, outlet_id: uuid.UUID, data: bytes, ct: str, name: str, draft: dict, bill: dict) -> str:
+def _keep(auth: Auth, outlet_id: uuid.UUID, data: bytes, ct: str, name: str, draft: dict, bill: dict, source: str = "app") -> str:
     sid = uuid.uuid4()
     path = keep_file(auth.tenant_id, sid, data, ct, name)
     with tenant_session(auth.tenant_id) as db:
-        db.add(ScannedBill(id=sid, tenant_id=auth.tenant_id, outlet_id=outlet_id, source="app", user_id=auth.user_id,
+        db.add(ScannedBill(id=sid, tenant_id=auth.tenant_id, outlet_id=outlet_id, source=source, user_id=auth.user_id,
                            file_path=path, draft={**draft, "_bill": bill}))
     return str(sid)
 

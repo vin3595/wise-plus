@@ -163,6 +163,11 @@ def test_scan_endpoint_drafts_and_remembers(monkeypatch):
     d = c.post("/api/inventory/purchases/scan", headers=h(tok), data={"outlet_id": out["id"]}, files={"file": ("b.jpg", b"jpegbytes", "image/jpeg")}).json()
     assert d["duplicate"]["total_paise"] == 63000
 
+    # Several bills picked at once: each waits in "Bills to check"
+    d = c.post("/api/inventory/purchases/scan", headers=h(tok), data={"outlet_id": out["id"], "batch": "true"}, files={"file": ("b2.jpg", b"jpegbytes2", "image/jpeg")}).json()
+    waiting = c.get("/api/inventory/purchases/scan/pending", headers=h(tok)).json()
+    assert [w["id"] for w in waiting] == [d["scan_id"]] and waiting[0]["source"] == "batch"
+
     # Not a bill
     async def selfie(png):
         return {"type": "RANDOM_PHOTO", "confidence": 97, "reason": "a photo of a cup", "accepted": False, "should_warn": False}
