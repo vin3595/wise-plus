@@ -249,7 +249,7 @@ def reply_rich(phone: str, text: str) -> Reply | None:
             out = wpetty.handle(db, chosen, word, text or "")
             if out is None and word in ("credits", "all credits", "credits all", "restaurants", "all restaurants"):
                 from ..billing import platform
-                if platform.admin_by_chosen(chosen):
+                if platform.admin_by_phone(phone):
                     out = Reply(platform.whatsapp_text())
             from . import banks as wbanks
             if out is None and (word in wbanks.WORDS | wbanks.CHECK or word.startswith("bk ")):

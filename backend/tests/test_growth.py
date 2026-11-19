@@ -63,11 +63,14 @@ def test_lead_flow_followups_stop_and_admin(client, monkeypatch):
 
     # your Leads page; nobody else's
     other = setup(client)
-    assert client.get("/api/platform/leads", headers=h(other["tok"])).status_code == 404
-    lst = client.get("/api/platform/leads", headers=h(boss["tok"])).json()
+    from tests.test_platform_usage import admin_tok
+    adm = admin_tok(client, monkeypatch, boss["phone"])
+    for t in (other["tok"], boss["tok"]):       # restaurant logins, your own included: no Leads page
+        assert client.get("/api/platform/leads", headers=h(t)).status_code == 404
+    lst = client.get("/api/platform/leads", headers=h(adm)).json()
     me = next(x for x in lst["leads"] if x["phone"] == phone)
     assert me["campaign"] == "nov-jodhpur" and lst["funnel"].get("demo", 0) >= 1
-    e = client.patch(f"/api/platform/leads/{me['id']}", headers=h(boss["tok"]), json={"status": "talking", "notes": "Wants 2 outlets"}).json()
+    e = client.patch(f"/api/platform/leads/{me['id']}", headers=h(adm), json={"status": "talking", "notes": "Wants 2 outlets"}).json()
     assert e["status"] == "talking" and e["notes"] == "Wants 2 outlets"
 
 

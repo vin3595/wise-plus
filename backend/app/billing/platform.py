@@ -3,7 +3,6 @@
 Who sees it: the owner of one of your own businesses (WISE_HOUSE_TENANTS). Nobody else, whatever their role."""
 from __future__ import annotations
 
-import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -11,8 +10,9 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from ..db import system_session
-from ..deps import Auth, get_auth, get_db
+from ..deps import Auth
 from ..models import Outlet, Tenant
+from .admin_auth import is_admin_phone, require_admin
 from .models import Subscription
 from .plans import MSGS_PER_OUTLET, SCANS_PER_MONTH
 from .service import _month, access, house
@@ -24,8 +24,8 @@ router = APIRouter(prefix="/platform", tags=["platform"])
 
 
 def is_admin(db: Session, auth: Auth) -> bool:
-    t = db.get(Tenant, auth.tenant_id)
-    return bool(t and house(t.login_id) and auth.role.value == "owner")
+    """Restaurant logins (your own included) are never the platform admin: that's /admin, see admin_auth."""
+    return False
 
 
 def usage(month: str | None = None) -> dict:
@@ -102,9 +102,7 @@ def _rates(c: dict) -> dict:
 
 
 @router.get("/usage")
-def platform_usage(month: str | None = None, auth: Auth = Depends(get_auth), db: Session = Depends(get_db)) -> dict:
-    if not is_admin(db, auth):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+def platform_usage(month: str | None = None, _adm: str = Depends(require_admin)) -> dict:
     if month and not (len(month) == 7 and month[4] == "-" and month.replace("-", "").isdigit()):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Month as YYYY-MM")
     return usage(month)
@@ -140,18 +138,14 @@ def whatsapp_text(month: str | None = None) -> str:
     return "\n".join(lines)
 
 
-def admin_by_chosen(chosen) -> bool:
-    with system_session() as db:
-        t = db.get(Tenant, uuid.UUID(chosen[0]))
-        return bool(t and house(t.login_id) and chosen[2] == "owner")
+def admin_by_phone(phone: str) -> bool:
+    return is_admin_phone(phone)
 
 
 @router.post("/whatsapp/{login_id}")
-def set_whatsapp_for(login_id: str, body: dict, auth: Auth = Depends(get_auth), db: Session = Depends(get_db)) -> dict:
+def set_whatsapp_for(login_id: str, body: dict, _adm: str = Depends(require_admin)) -> dict:
     """You setting up a restaurant's own WhatsApp API for them."""
     from ..whatsapp.connect import ManualIn, manual_connect
-    if not is_admin(db, auth):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
     with system_session() as sdb:
         t = sdb.scalar(select(Tenant).where(func.lower(Tenant.login_id) == login_id.lower()))
         tid = t.id if t else None
@@ -167,22 +161,18 @@ def set_whatsapp_for(login_id: str, body: dict, auth: Auth = Depends(get_auth), 
 # ---------------------------------------------------------------- your Razorpay, for Ease My Bill's own billing
 
 @router.get("/razorpay")
-def razorpay_keys(auth: Auth = Depends(get_auth), db: Session = Depends(get_db)) -> dict:
+def razorpay_keys(_adm: str = Depends(require_admin)) -> dict:
     from . import rz
-    if not is_admin(db, auth):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
     k = rz.keys()
     return {"key_id": k["key_id"] or None, "has_secret": bool(k["key_secret"]), "has_webhook_secret": bool(k["webhook_secret"]),
             "webhook_url": "https://plus.easemybill.com/api/public/billing/razorpay"}
 
 
 @router.post("/razorpay")
-def set_razorpay_keys(body: dict, auth: Auth = Depends(get_auth), db: Session = Depends(get_db)) -> dict:
+def set_razorpay_keys(body: dict, _adm: str = Depends(require_admin)) -> dict:
     """Paste the live Key Id and Key Secret; they're checked with Razorpay before they're kept."""
     import secrets
     from . import rz
-    if not is_admin(db, auth):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
     kid = str(body.get("key_id") or "").strip()
     sec = str(body.get("key_secret") or "").strip()
     if not kid.startswith("rzp_") or len(sec) < 10:

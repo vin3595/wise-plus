@@ -9,11 +9,10 @@ from datetime import datetime
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
 
-from ..billing.platform import is_admin
+from ..billing.admin_auth import require_admin
 from ..db import system_session
-from ..deps import Auth, get_auth, get_db
+from ..deps import Auth, get_auth
 from . import service as gs
 from .models import Lead, Referral
 
@@ -96,11 +95,6 @@ def ref(code: str) -> dict:
 
 # ------------------------------------------------------------------ your Leads page
 
-def _admin(db: Session, auth: Auth) -> None:
-    if not is_admin(db, auth):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
-
-
 def _out(ld: Lead) -> dict:
     return {"id": str(ld.id), "name": ld.name, "phone": ld.phone10, "restaurant": ld.restaurant, "city": ld.city, "outlets": ld.outlets,
             "uses_now": ld.uses_now, "source": ld.source, "campaign": (ld.utm or {}).get("utm_campaign"), "ref_code": ld.ref_code,
@@ -110,8 +104,7 @@ def _out(ld: Lead) -> dict:
 
 
 @router.get("/platform/leads")
-def leads(state: str | None = None, q: str | None = None, auth: Auth = Depends(get_auth), db: Session = Depends(get_db)) -> dict:
-    _admin(db, auth)
+def leads(state: str | None = None, q: str | None = None, _adm: str = Depends(require_admin)) -> dict:
     with system_session() as sdb:
         stmt = select(Lead)
         if state:
@@ -136,8 +129,7 @@ class LeadEdit(BaseModel):
 
 
 @router.patch("/platform/leads/{lead_id}")
-def edit_lead(lead_id: uuid.UUID, body: LeadEdit, auth: Auth = Depends(get_auth), db: Session = Depends(get_db)) -> dict:
-    _admin(db, auth)
+def edit_lead(lead_id: uuid.UUID, body: LeadEdit, _adm: str = Depends(require_admin)) -> dict:
     with system_session() as sdb:
         ld = sdb.get(Lead, lead_id)
         if ld is None:
@@ -160,9 +152,8 @@ class LeadAdd(LeadIn):
 
 
 @router.post("/platform/leads", status_code=201)
-def add_lead(body: LeadAdd, background: BackgroundTasks, auth: Auth = Depends(get_auth), db: Session = Depends(get_db)) -> dict:
+def add_lead(body: LeadAdd, background: BackgroundTasks, _adm: str = Depends(require_admin)) -> dict:
     """A restaurant you met: added by hand (follow-ups only if they agreed to WhatsApp)."""
-    _admin(db, auth)
     try:
         ld, new = gs.save_lead(body.model_dump(exclude={"website"}))
     except ValueError as e:

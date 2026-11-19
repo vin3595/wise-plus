@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     billing_rz_key_id: str = ""
     billing_rz_key_secret: str = ""
     billing_rz_webhook_secret: str = ""
+    platform_admin_phones: str = ""  # wise-plus: who runs Ease My Bill (10-digit, comma separated): signs in at /admin, separate from any restaurant
     house_tenants: str = ""          # login ids of your own businesses: never billed, Daily cash sheet
     # Address customers' phones use for QR menus and the order-ready screen (the Wise Box's public
     # Cloudflare address). Empty = the address the staff opened Wise from.

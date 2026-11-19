@@ -165,8 +165,6 @@ export default function Billing() {
       <ReferCard />
       <WhatsAppNumber />
       <YourData />
-      {b.platform_admin && <YourRazorpay />}
-      {b.platform_admin && <AllRestaurants />}
     </div>
   );
 }
@@ -198,7 +196,7 @@ interface PUsage { month: string; restaurants: PRow[]; total: { sent: number; me
     day: { sent: number; failed: number }; problem: { at: string; message: string } | null } | null }
 
 /** Only you (the owner of your own businesses): every restaurant's WhatsApp messages, credits and scans. */
-function AllRestaurants() {
+export function AllRestaurants() {
   const now = new Date();
   const ym = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   const [month, setMonth] = useState(ym(now));
@@ -211,7 +209,7 @@ function AllRestaurants() {
   const rows = [...(u?.restaurants || [])].sort((a, b) => sort === "name" ? a.name.localeCompare(b.name)
     : sort === "left" ? (a.left_this_month ?? 1e9) - (b.left_this_month ?? 1e9) : total(b) - total(a));
   return (
-    <Card title="All restaurants · WhatsApp and scans" actions={<span className="row"><a className="link" href="/leads">Leads →</a><Select value={month} onChange={(e) => setMonth(e.target.value)} aria-label="Month">
+    <Card title="All restaurants · WhatsApp and scans" actions={<span className="row"><Select value={month} onChange={(e) => setMonth(e.target.value)} aria-label="Month">
       {months.map((m) => <option key={m} value={m}>{new Date(m + "-01T00:00:00").toLocaleDateString("en-IN", { month: "long", year: "numeric" })}</option>)}</Select></span>}>
       {!u ? <p className="muted">Loading…</p> : <>
         <p><strong>{u.total.sent.toLocaleString("en-IN")}</strong> messages sent · Meta cost <strong>{formatPaise(u.total.meta_cost_paise)}</strong> ·
@@ -332,7 +330,7 @@ function ManualApi({ onDone, login }: { onDone: () => void; login?: string }) {
 
 
 /** Only you: the Razorpay account Ease My Bill's own ₹999 plans are charged to. */
-function YourRazorpay() {
+export function YourRazorpay() {
   const [k, setK] = useState<{ key_id: string | null; has_secret: boolean; has_webhook_secret: boolean; webhook_url: string } | null>(null);
   const [f, setF] = useState({ key_id: "", key_secret: "" });
   const [done, setDone] = useState<{ key_id: string; webhook_url: string; webhook_secret: string | null } | null>(null);

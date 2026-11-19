@@ -9,7 +9,7 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Landing from "./pages/Landing";
 import Policies, { POLICY_PATHS } from "./pages/Policies";
-import Leads from "./pages/Leads";
+import Admin from "./pages/Admin";
 import Home from "./pages/Home";
 import Branding from "./pages/Branding";
 import Outlets from "./pages/Outlets";
@@ -247,6 +247,7 @@ export default function App() {
   // Kitchen display from its link: signs itself in, no PIN (Setup > Screens).
   const kitchen = location.pathname.match(/^\/kitchen\/([^/]+)/);
   if (kitchen) return <KitchenScreen kitchenKey={decodeURIComponent(kitchen[1])} />;
+  if (location.pathname === "/admin" || location.pathname.startsWith("/admin/")) return <Admin />;   // Ease My Bill admin: its own sign-in
   if (location.pathname === "/start") return <Landing />;
   if (POLICY_PATHS.includes(location.pathname)) return <Policies page={location.pathname.slice(1)} />;   // public: Razorpay/Paytm check these                 // wise-plus: the page that sells Ease My Bill
   if (loading) return <div className="splash">Loading…</div>;
@@ -284,7 +285,6 @@ export default function App() {
         <Route path="/bill-keeper" element={<BillKeeper />} />
         <Route path="/purchase-bills" element={<PurchaseBills />} />
         <Route path="/expenses" element={<Expenses />} />
-        <Route path="/leads" element={<Leads />} />
         <Route path="/feedback" element={<Feedback />} />
         <Route path="/offers" element={<Offers />} />
         <Route path="/broadcast" element={<Broadcast />} />

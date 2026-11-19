@@ -16,6 +16,15 @@ export const tokenStore = {
   clear: () => localStorage.removeItem(TOKEN_KEY),
 };
 
+// wise-plus: the Ease My Bill admin (/admin) signs in separately from every restaurant.
+const ADMIN_KEY = "emb.admin";
+export const adminTokenStore = {
+  get: () => { try { return localStorage.getItem(ADMIN_KEY); } catch { return null; } },
+  set: (t: string) => { try { localStorage.setItem(ADMIN_KEY, t); } catch { /* storage off */ } },
+  clear: () => { try { localStorage.removeItem(ADMIN_KEY); } catch { /* storage off */ } },
+};
+const isAdminPath = (p: string) => p.startsWith("/platform/") || p.startsWith("/admin/");
+
 let onUnauthorized: () => void = () => {};
 export function setUnauthorizedHandler(fn: () => void) {
   onUnauthorized = fn;
@@ -36,7 +45,8 @@ function messageFrom(body: unknown, fallback: string): string {
 
 export async function api<T>(path: string, opts: { method?: string; body?: unknown; form?: FormData } = {}): Promise<T> {
   const headers: Record<string, string> = {};
-  const token = tokenStore.get();
+  const admin = isAdminPath(path);
+  const token = admin ? adminTokenStore.get() : tokenStore.get();
   if (token) headers.Authorization = `Bearer ${token}`;
   let body: BodyInit | undefined;
   if (opts.form) body = opts.form;
@@ -53,7 +63,7 @@ export async function api<T>(path: string, opts: { method?: string; body?: unkno
   const text = await res.text();
   const data = text ? safeJson(text) : null;
   if (!res.ok) {
-    if (res.status === 401 && token) onUnauthorized();
+    if (res.status === 401 && token) { if (admin) adminTokenStore.clear(); else onUnauthorized(); }
     throw new ApiError(res.status, messageFrom(data, `Request failed (${res.status})`));
   }
   return data as T;
