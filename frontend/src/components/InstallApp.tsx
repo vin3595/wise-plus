@@ -55,3 +55,42 @@ export default function InstallApp({ full = false }: { full?: boolean }) {
     </>
   );
 }
+
+/** The pop-up that offers to install Ease My Bill, like other app-like sites do. Shown once the browser says it
+ *  can be installed (Android/Windows Chrome and Edge) or on iPhone Safari; "Not now" hides it for a week. */
+const CUSTOMER_PAGES = /^\/(display|customer-screen|b|print|q|kiosk|kitchen|admin)(\/|$)/;
+const SNOOZE = "emb.install.snooze";
+
+export function InstallPrompt() {
+  const [ready, setReady] = useState(!!window.__wiseInstall);
+  const [shown, setShown] = useState(false);
+  const [iosHelp, setIosHelp] = useState(false);
+  useEffect(() => {
+    const on = () => setReady(!!window.__wiseInstall);
+    window.addEventListener("wise-installable", on);
+    const t = setTimeout(() => setShown(true), 2500);          // let the page settle first
+    return () => { window.removeEventListener("wise-installable", on); clearTimeout(t); };
+  }, []);
+  let snoozed = false;
+  try { snoozed = Number(localStorage.getItem(SNOOZE) || 0) > Date.now(); } catch { /* private mode */ }
+  const ios = isIos() && /safari/i.test(navigator.userAgent) && !/crios|fxios|edgios/i.test(navigator.userAgent);
+  if (!shown || snoozed || installed() || CUSTOMER_PAGES.test(location.pathname) || !(ready || ios)) return null;
+  const later = () => { try { localStorage.setItem(SNOOZE, String(Date.now() + 7 * 86400000)); } catch { /* ignore */ } setShown(false); };
+  const go = async () => {
+    if (ios) { setIosHelp(true); return; }
+    const e = window.__wiseInstall; if (!e) return;
+    await e.prompt(); await e.userChoice.catch(() => null);
+    window.__wiseInstall = null; setReady(false); setShown(false);
+  };
+  return (
+    <div className="install-sheet" role="dialog" aria-label="Install Ease My Bill">
+      <img src="/icon-192.png" alt="" width={48} height={48} />
+      <div className="grow">
+        <strong>Install Ease My Bill</strong>
+        <div className="small muted">{iosHelp ? <>Tap <b>Share</b> ⬆ below, then <b>Add to Home Screen</b>.</> : "Opens full screen from your home screen, like an app. Free, no Play Store needed."}</div>
+      </div>
+      {!iosHelp && <button className="btn" onClick={go}>Install</button>}
+      <button className="link small" onClick={later}>{iosHelp ? "OK" : "Not now"}</button>
+    </div>
+  );
+}

@@ -11,7 +11,7 @@ import "./styles.css";
 import "./theme.css";
 import "./shell.css";
 import { startHaptics } from "./haptics";
-import { catchInstallPrompt } from "./components/InstallApp";
+import { catchInstallPrompt, InstallPrompt } from "./components/InstallApp";
 
 catchInstallPrompt();
 startHaptics();
@@ -25,6 +25,7 @@ createRoot(document.getElementById("root")!).render(
     <BrowserRouter>
       <SessionProvider>
         <App />
+        <InstallPrompt />
       </SessionProvider>
     </BrowserRouter>
   </StrictMode>
