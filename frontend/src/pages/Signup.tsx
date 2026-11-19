@@ -1,33 +1,35 @@
-import { useEffect, useState, type ChangeEvent } from "react";
+import { useState, type ChangeEvent } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useSession } from "../session";
 import type { TokenOut } from "../types";
 import { Button, ErrorText, Field, Input, useAction } from "../ui";
-import { ServicePicker } from "./Services";
 import { EmbLogo, SupportLine } from "../components/Brand";
 
 export default function Signup() {
   const { signedIn } = useSession();
   const qp = new URLSearchParams(location.search);
   const ref = (qp.get("ref") || "").toUpperCase() || null;      // wise-plus: someone's referral link
-  const [form, setForm] = useState({ restaurant_name: "", login_id: "", owner_name: "", email: "", phone: qp.get("phone") || "" });
-  const [modules, setModules] = useState<string[]>(["pos", "stock", "bills"]);
-  const [idStatus, setIdStatus] = useState<{ available: boolean; reason: string | null } | null>(null);
+  const [form, setForm] = useState({ restaurant_name: "", owner_name: "", email: "", phone: qp.get("phone") || "" });
+  const modules = ["pos", "stock", "bills"];          // one plan: everything is on
+  const [made, setMade] = useState<TokenOut | null>(null);
   const [sent, setSent] = useState<{ sent_to: string; dev_otp: string | null } | null>(null);
   const [otp, setOtp] = useState("");
   const { busy, error, run } = useAction();
   const set = (k: keyof typeof form) => (e: ChangeEvent<HTMLInputElement>) => setForm({ ...form, [k]: e.target.value });
 
-  useEffect(() => {
-    const id = form.login_id.trim().toLowerCase();
-    if (id.length < 3) { setIdStatus(null); return; }
-    const t = setTimeout(() => {
-      api<{ available: boolean; reason: string | null }>(`/auth/login-id-available?login_id=${encodeURIComponent(id)}`)
-        .then(setIdStatus).catch(() => setIdStatus(null));
-    }, 350);
-    return () => clearTimeout(t);
-  }, [form.login_id]);
+  if (made) {
+    return (
+      <div className="auth-page"><div className="auth-card">
+        <div className="auth-brand"><EmbLogo height={52} /></div>
+        <h1>You're all set</h1>
+        <p className="muted">Your login ID is</p>
+        <p style={{ fontSize: "2.4rem", fontWeight: 700, letterSpacing: "0.2em", margin: "0.2em 0" }}>{made.tenant.login_id}</p>
+        <p className="muted small">Note it down. You and your staff type it once on each phone or tablet, then sign in with your mobile number.</p>
+        <Button onClick={() => signedIn(made)}>Continue</Button>
+      </div></div>
+    );
+  }
 
   if (sent) {
     return (
@@ -38,7 +40,7 @@ export default function Signup() {
         {sent.dev_otp && <p className="dev-note">Development mode code: <strong>{sent.dev_otp}</strong></p>}
         <form onSubmit={(e) => {
           e.preventDefault();
-          run(async () => signedIn(await api<TokenOut>("/auth/signup/verify", { body: { ...form, modules, otp, ref } })));
+          run(async () => setMade(await api<TokenOut>("/auth/signup/verify", { body: { ...form, modules, otp, ref } })));
         }}>
           <Field label="Code">
             <Input value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
@@ -56,27 +58,17 @@ export default function Signup() {
     <div className="auth-page"><div className="auth-card">
       <div className="auth-brand"><EmbLogo height={52} /></div>
       <h1>Start free</h1>
-      <p className="muted">Pick what you need. It's ready in a minute, no one has to set it up for you. 14-day free trial; switch services on or off any time.</p>
+      <p className="muted">Billing, stock, supplier bill scans and WhatsApp, all in one plan: <b>₹999/month per outlet</b>. Free for 14 days, ready in a minute.</p>
       <form onSubmit={(e) => {
         e.preventDefault();
         run(async () => setSent(await api("/auth/signup/start", { body: { ...form, modules } })));
       }}>
-        <ServicePicker value={modules} onChange={(v) => v.length && setModules(v)} prices />
-        <p className="small muted">All three: ₹999/month. Yearly: pay 10 months (all three: 9). Founding members, first 50 only: everything for ₹4,999 for the first year.</p>
-        <Field label="Business name"><Input value={form.restaurant_name} onChange={(e) => {
-          // Keep suggesting a login ID from the name until the owner edits it themselves.
-          const name = e.target.value;
-          setForm((f) => ({ ...f, restaurant_name: name,
-            login_id: f.login_id && f.login_id !== slug(f.restaurant_name) ? f.login_id : slug(name) }));
-        }} required /></Field>
-        <Field label="Login ID" hint={idStatus ? (idStatus.available ? "Available" : idStatus.reason || "Not available") : "Your staff type this once on each device. Also your web address."}>
-          <Input value={form.login_id} onChange={set("login_id")} autoCapitalize="none" required />
-        </Field>
+        <Field label="Business name"><Input value={form.restaurant_name} onChange={set("restaurant_name")} required /></Field>
         <Field label="Your name"><Input value={form.owner_name} onChange={set("owner_name")} required /></Field>
         <Field label="Email"><Input type="email" value={form.email} onChange={set("email")} required /></Field>
         <Field label="Mobile number"><Input inputMode="tel" value={form.phone} onChange={set("phone")} required /></Field>
         <ErrorText error={error} />
-        <Button disabled={busy || idStatus?.available === false}>Send verification code</Button>
+        <Button disabled={busy}>Send verification code</Button>
       </form>
       <p className="muted center">Already set up? <Link to="/setup">Sign in</Link></p>
       <SupportLine />
@@ -84,6 +76,3 @@ export default function Signup() {
   );
 }
 
-function slug(name: string) {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30);
-}

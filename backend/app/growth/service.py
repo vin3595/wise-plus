@@ -164,8 +164,8 @@ FOLLOW = [
     lambda ld: (f"At Shakewallah in Jodhpur, {BRAND} runs every outlet: bills on WhatsApp, offers by QR "
                 f"(customers send a keyword, scan at the counter), supplier bills read from a photo, stock and recipe costs, Tally for the CA. "
                 f"Want to see it on your own menu? Reply *demo* and we'll call you."),
-    lambda ld: (f"Last note from us, {ld.name.split()[0]}: our *founding offer* (everything for ₹4,999 for the whole first year) is only for the "
-                f"first 50 restaurants. Start here: {site()}/signup?phone={ld.phone10}\n\nThanks, and all the best with your restaurant! 🙏"),
+    lambda ld: (f"Last note from us, {ld.name.split()[0]}: one plan, ₹999 a month per outlet, everything included "
+                f"(billing, stock, supplier bills, WhatsApp). Start here: {site()}/signup?phone={ld.phone10}\n\nThanks, and all the best with your restaurant! 🙏"),
 ]
 
 

@@ -16,7 +16,7 @@ export default function TrialBanner() {
   }
   if (b.state === "trial" && !b.plan && daysLeft(b.until) <= 7) {
     const d = daysLeft(b.until);
-    return <div className="trial-banner" role="status">Free trial: {d} day{d === 1 ? "" : "s"} left. {owner && <Link to="/billing">{b.founding.left > 0 ? `Founding offer: ₹4,999 for a year (${b.founding.left} places left)` : "Choose a plan"}</Link>}</div>;
+    return <div className="trial-banner" role="status">Free trial: {d} day{d === 1 ? "" : "s"} left. {owner && <Link to="/billing">Subscribe: ₹999/month, everything included</Link>}</div>;
   }
   return null;
 }

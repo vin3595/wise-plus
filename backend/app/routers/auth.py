@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from ..config import get_settings
 from ..core.contact import mask_identifier, normalize_identifier
-from ..core.login_id import normalize_login_id, validate_login_id
+from ..core.login_id import normalize_login_id, validate_login_id, new_login_code
 from ..core.permissions import OTP_ROLES, Role
 from ..core.security import pin_lookup_key, verify_secret
 from ..db import system_session
@@ -55,7 +55,7 @@ def signup_start(body: SignupStart) -> OtpSent:
     error = None
     with system_session() as db:
         _check_signup_open(db)
-        if db.scalar(select(Tenant.id).where(Tenant.login_id == body.login_id)) is not None:
+        if body.login_id and db.scalar(select(Tenant.id).where(Tenant.login_id == body.login_id)) is not None:
             raise HTTPException(status.HTTP_409_CONFLICT, "That login ID is taken")
         try:
             code = otp.issue(db, body.phone, "signup")
@@ -78,13 +78,18 @@ def signup_verify(body: SignupVerify) -> TokenOut:
         except otp.OtpError as e:
             error = e  # keep the session committing so the failed attempt is counted
         if error is None:
-            if db.scalar(select(Tenant.id).where(Tenant.login_id == body.login_id)) is not None:
+            login_id = body.login_id
+            if login_id and db.scalar(select(Tenant.id).where(Tenant.login_id == login_id)) is not None:
                 raise HTTPException(status.HTTP_409_CONFLICT, "That login ID was just taken")
+            while not login_id:
+                c = new_login_code()
+                if db.scalar(select(Tenant.id).where(Tenant.login_id == c)) is None:
+                    login_id = c
             tenant = Tenant(
-                login_id=body.login_id, name=body.restaurant_name, owner_email=body.email,
+                login_id=login_id, name=body.restaurant_name, owner_email=body.email,
                 owner_phone=body.phone, app_name=body.restaurant_name,
                 trial_ends_at=datetime.now(timezone.utc) + timedelta(days=s.trial_days),
-                modules=clean_modules(body.modules, body.login_id) if body.modules is not None else None,
+                modules=clean_modules(body.modules, login_id) if body.modules is not None else None,
             )
             db.add(tenant)
             db.flush()
@@ -99,13 +104,14 @@ def signup_verify(body: SignupVerify) -> TokenOut:
                 first_outlet(db, tenant, brand)   # wise-plus: stock / bills / sheets work straight away
             audit.record(db, tenant.id, owner.id, "signup", "tenant", tenant.id, after=audit.snapshot(tenant))
             result = issue_token(db, owner, tenant)
+            new_id = login_id
     if error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error))
     assert result is not None
     try:                                    # wise-plus growth: the lead becomes a trial; referral noted
         from ..growth.service import on_signup
         with system_session() as db:
-            tid = db.scalar(select(Tenant.id).where(Tenant.login_id == body.login_id))
+            tid = db.scalar(select(Tenant.id).where(Tenant.login_id == new_id))
         if tid:
             on_signup(tid, body.phone, body.ref)
     except Exception:  # noqa: BLE001 - never block a sign-up on this

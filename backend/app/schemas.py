@@ -19,7 +19,7 @@ class ORM(BaseModel):
 # ------------------------------------------------------------------ auth
 
 class SignupStart(BaseModel):
-    login_id: str
+    login_id: str | None = None           # left out: a random 6-digit login ID is given at sign-up
     restaurant_name: str = Field(min_length=2, max_length=120)
     owner_name: str = Field(min_length=2, max_length=120)
     email: str
@@ -27,7 +27,7 @@ class SignupStart(BaseModel):
     modules: list[str] | None = None      # wise-plus: services picked at sign-up; None = all
     ref: str | None = Field(default=None, max_length=20)   # wise-plus: referral code from someone's link
 
-    _v_login = field_validator("login_id")(lambda v: validate_login_id(v))
+    _v_login = field_validator("login_id")(lambda v: validate_login_id(v) if v else None)
     _v_email = field_validator("email")(lambda v: normalize_email(v))
     _v_phone = field_validator("phone")(lambda v: normalize_phone(v))
 

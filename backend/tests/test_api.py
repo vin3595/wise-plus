@@ -1210,3 +1210,13 @@ def test_card_machine_push_test_mode(client):
     r2 = client.post("/api/card/requests", headers=h(asha), json={**body, "bill_id": str(_uuid.uuid4())}).json()
     ok = client.post(f"/api/card/requests/{r2['id']}/test-result", headers=h(asha)).json()
     assert ok["status"] == "billed" and ok["bill"]["payments"][0]["mode"] == "card" and ok["bill"]["payments"][0]["reference"].startswith("card 4242")
+
+
+def test_signup_without_login_id_gets_a_6_digit_code(client):
+    body = {"restaurant_name": "Code Cafe", "owner_name": "Asha", "email": "asha@codecafe.in", "phone": "9811122233"}
+    code = client.post("/api/auth/signup/start", json=body).json()["dev_otp"]
+    r = client.post("/api/auth/signup/verify", json={**body, "otp": code})
+    assert r.status_code == 200, r.text
+    lid = r.json()["tenant"]["login_id"]
+    assert len(lid) == 6 and lid.isdigit()
+    assert client.get(f"/api/auth/outlets?login_id={lid}").status_code == 200

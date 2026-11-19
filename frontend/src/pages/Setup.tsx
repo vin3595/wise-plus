@@ -26,7 +26,7 @@ export default function Setup() {
           }}
         >
           <Field label="Restaurant login ID">
-            <Input value={id} onChange={(e) => setId(e.target.value)} placeholder="e.g. shakewallah" autoFocus
+            <Input value={id} onChange={(e) => setId(e.target.value)} placeholder="6-digit login ID, e.g. 482913" autoFocus
               autoCapitalize="none" autoCorrect="off" required />
           </Field>
           <ErrorText error={error && (error.includes("not found") ? "No restaurant with that login ID" : error)} />

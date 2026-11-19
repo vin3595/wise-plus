@@ -9,6 +9,12 @@ RESERVED = {
 }
 
 _PATTERN = re.compile(r"^[a-z][a-z0-9-]{2,29}$")
+_CODE = re.compile(r"^[0-9]{6}$")          # new sign-ups get a random 6-digit login ID
+
+
+def new_login_code() -> str:
+    import secrets
+    return str(secrets.randbelow(900000) + 100000)
 
 
 def normalize_login_id(raw: str) -> str:
@@ -18,6 +24,8 @@ def normalize_login_id(raw: str) -> str:
 def validate_login_id(raw: str) -> str:
     """Return the normalized login ID or raise ValueError with a user-readable reason."""
     value = normalize_login_id(raw)
+    if _CODE.match(value):
+        return value
     if not _PATTERN.match(value):
         raise ValueError(
             "Login ID must be 3-30 characters: lowercase letters, numbers and hyphens, starting with a letter"
