@@ -210,7 +210,7 @@ def set_wa_sender(body: dict, _adm: str = Depends(require_admin)) -> dict:
     from ..whatsapp.numbers import seal
     from .models import PlatformSecret
     s = get_settings()
-    tok = str(body.get("token") or "").strip()
+    tok = str(body.get("token") or "").strip() or s.wa_token      # blank: keep the saved token (e.g. adding the app secret)
     pid = str(body.get("phone_number_id") or "").strip()
     waba = str(body.get("waba_id") or "").strip()
     sec = str(body.get("app_secret") or "").strip()
@@ -225,6 +225,11 @@ def set_wa_sender(body: dict, _adm: str = Depends(require_admin)) -> dict:
     if "error" in r:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Meta refused: {r['error'].get('message', 'unknown error')}")
     shown = "".join(ch for ch in r.get("display_phone_number", "") if ch.isdigit())
+    if sec and app_id.isdigit():      # the app secret must belong to that app
+        chk = httpx.get(f"https://graph.facebook.com/{s.wa_graph_version}/oauth/access_token", params={
+            "client_id": app_id, "client_secret": sec, "grant_type": "client_credentials"}, timeout=20).json()
+        if "access_token" not in chk:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "That app secret doesn't match app " + app_id)
     vals = {"wa_token": tok, "wa_phone_number_id": pid, "wa_display_number": shown}
     if waba.isdigit():
         vals["wa_business_id"] = waba

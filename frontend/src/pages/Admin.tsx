@@ -90,13 +90,13 @@ function YourWhatsApp() {
       {done ? <p className="ok-text">Saved and checked with Meta ✓ +{done.display_number}{done.name ? ` (${done.name})` : ""}. It switches over when the server restarts — tell Claude "saved".</p> : <>
         <p className="muted small">Meta Business Suite › Settings › System users › EaseMyBillAPI › Generate token → Copy. App secret: developers.facebook.com › Ease My Bill › App settings › Basic.</p>
         <div className="row wrap">
-          <Field label="Permanent token"><Input type="password" value={f.token} onChange={(e) => setF({ ...f, token: e.target.value.trim() })} autoComplete="off" placeholder="EAA…" /></Field>
-          <Field label="App secret (optional now)"><Input type="password" value={f.app_secret} onChange={(e) => setF({ ...f, app_secret: e.target.value.trim() })} autoComplete="off" /></Field>
+          <Field label={k.has_token ? "Permanent token (saved — leave blank)" : "Permanent token"}><Input type="password" value={f.token} onChange={(e) => setF({ ...f, token: e.target.value.trim() })} autoComplete="off" placeholder="EAA…" /></Field>
+          <Field label={k.has_app_secret ? "App secret (saved)" : "App secret"}><Input type="password" value={f.app_secret} onChange={(e) => setF({ ...f, app_secret: e.target.value.trim() })} autoComplete="off" /></Field>
           <Field label="Phone number ID"><Input value={f.phone_number_id} onChange={(e) => setF({ ...f, phone_number_id: e.target.value.trim() })} inputMode="numeric" /></Field>
           <Field label="WhatsApp account ID"><Input value={f.waba_id} onChange={(e) => setF({ ...f, waba_id: e.target.value.trim() })} inputMode="numeric" /></Field>
         </div>
         <ErrorText error={act.error} />
-        <Button disabled={act.busy || !f.token.startsWith("EAA")} onClick={() => act.run(async () => {
+        <Button disabled={act.busy || !(f.token.startsWith("EAA") || (k.has_token && f.app_secret.length > 10))} onClick={() => act.run(async () => {
           setDone(await api("/platform/whatsapp-sender", { body: f })); setF({ ...f, token: "", app_secret: "" }); load();
         })}>{act.busy ? "Checking with Meta…" : "Check and save"}</Button>
       </>}
