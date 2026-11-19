@@ -53,26 +53,24 @@ async function pay(opts: Record<string, unknown>): Promise<RzResponse> {
   });
 }
 
-/** Settings > Billing: plan, founding offer, trial, bill-scan allowance and packs. */
+/** Settings > Billing: the one plan (₹999 per outlet, everything), trial, and the only extras: scan and WhatsApp packs. */
 export default function Billing() {
   const { refresh } = useSession();
   const [b, setB] = useState<BillingInfo | null>(null);
-  const [pick, setPick] = useState<string[]>(["pos", "stock", "bills"]);
-  const [period, setPeriod] = useState<"monthly" | "yearly">("yearly");
   const [q, setQ] = useState<Quote | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const { busy, error, run } = useAction();
-  const load = () => api<BillingInfo>("/billing").then((x) => { setB(x); if (x.plan?.modules) setPick(x.plan.modules); });
+  const load = () => api<BillingInfo>("/billing").then(setB);
   useEffect(() => { load(); }, []);
-  useEffect(() => { if (pick.length) api<Quote>("/billing/quote", { body: { modules: pick, period } }).then(setQ).catch(() => setQ(null)); else setQ(null); }, [pick, period]);
+  useEffect(() => { api<Quote>("/billing/quote", { body: { modules: ["pos", "stock", "bills"], period: "monthly" } }).then(setQ).catch(() => setQ(null)); }, [b?.outlets]);
   if (!b) return <p className="muted">Loading…</p>;
 
   const checkout = (plan: { modules: string[]; period: string }) => run(async () => {
     setMsg(null);
     const s = await api<{ subscription_id: string; key_id: string; quote: Quote; starts: string | null; name: string; email: string; phone: string }>(
       "/billing/subscribe", { body: plan });
-    const r = await pay({ key: s.key_id, subscription_id: s.subscription_id, name: "wise-plus",
-      description: plan.period === "founding" ? "Founding member · first year" : `${plan.period === "yearly" ? "Yearly" : "Monthly"} plan`,
+    const r = await pay({ key: s.key_id, subscription_id: s.subscription_id, name: "Ease My Bill",
+      description: "Everything · monthly",
       prefill: { name: s.name, email: s.email, contact: s.phone } });
     setB(await api<BillingInfo>("/billing/verify", { body: r }));
     setMsg(s.starts ? `Done. Your first charge is on ${day(s.starts)}, when your free trial ends.` : "Done. Your plan is on.");
@@ -89,7 +87,6 @@ export default function Billing() {
   });
   const cancel = () => run(async () => { setB(await api<BillingInfo>("/billing/cancel", { method: "POST" })); setMsg("Your plan won't renew. Everything works until the paid time ends."); });
 
-  const name = (k: string) => b.prices.services.find((s) => s.key === k)?.name || k;
   const left = daysLeft(b.until);
   const status = b.state === "house" ? "Your own business account: never billed."
     : b.state === "trial" ? `Free trial: ${left} day${left === 1 ? "" : "s"} left (till ${day(b.until)}).`
@@ -100,7 +97,7 @@ export default function Billing() {
       <h1>Billing</h1>
       <Card>
         <p className={b.state === "locked" ? "error" : ""}><strong>{status}</strong></p>
-        {b.plan && <p className="small">Plan: {b.plan.period === "founding" ? "Founding member (everything)" : `${b.plan.modules.map(name).join(" + ")}, ${b.plan.period}`} · {formatPaise(b.plan.amount_paise)}{b.plan.outlets > 1 ? ` · ${b.plan.outlets} outlets` : ""}{b.plan.status === "cancelled" ? " · won't renew" : ""}</p>}
+        {b.plan && <p className="small">Plan: everything, monthly · {formatPaise(b.plan.amount_paise)}{b.plan.outlets > 1 ? ` · ${b.plan.outlets} outlets` : ""}{b.plan.status === "cancelled" ? " · won't renew" : ""}</p>}
         {b.plan && b.outlets > b.plan.outlets && <p className="small error-text">You now have {b.outlets} outlets; your plan pays for {b.plan.outlets}. Choose the plan again below to cover them all.</p>}
         {msg && <p className="ok">{msg}</p>}
         <ErrorText error={error} />
@@ -108,43 +105,21 @@ export default function Billing() {
       </Card>
 
       {!b.house && b.ready && <>
-        {b.founding.left > 0 && !b.founding.member && (
-          <Card title="Founding member offer">
-            <div className="founding">
-              <div><strong className="big">{formatPaise(b.founding.price_paise * b.outlets)}</strong> <span className="muted">for the first year{b.outlets > 1 ? ` (${formatPaise(b.founding.price_paise)} × ${b.outlets} outlets)` : ""}</span></div>
-              <p>Everything: POS billing, Inventory and Bill scan. Regular price {formatPaise(b.prices.bundle_monthly_paise * 12)} a year.</p>
-              <p className="small warn-text">Only {b.founding.left} of {b.founding.slots} places left.</p>
-            </div>
-            <Button disabled={busy} onClick={() => checkout({ modules: ["pos", "stock", "bills"], period: "founding" })}>Become a founding member</Button>
-          </Card>
-        )}
-
-        <Card title={b.plan ? "Change plan" : "Choose a plan"}>
-          <div className="seg" role="group" aria-label="Pay">
-            {(["monthly", "yearly"] as const).map((p) => <button key={p} type="button" className={period === p ? "on" : ""} aria-pressed={period === p} onClick={() => setPeriod(p)}>{p === "monthly" ? "Monthly" : "Yearly · 2 months free"}</button>)}
-          </div>
-          <div className="plan-list">
-            {b.prices.services.map((s) => {
-              const on = pick.includes(s.key);
-              return (
-                <label key={s.key} className={`plan-row ${on ? "on" : ""}`}>
-                  <input type="checkbox" checked={on} onChange={() => setPick(on ? pick.filter((k) => k !== s.key) : [...pick, s.key])} />
-                  <span className="grow">{s.name}</span><span className="num">{formatPaise(s.monthly_paise)}/month</span>
-                </label>);
-            })}
-          </div>
-          {q && <div className="plan-total">
-            {q.bundle && <p className="small ok">All three together: {formatPaise(b.prices.bundle_monthly_paise)}/month{period === "yearly" ? ", and a year costs 9 months" : ""}.</p>}
-            {q.outlets > 1 && <p className="small muted">{formatPaise(q.per_outlet_paise)} per outlet × {q.outlets} outlets</p>}
-            <p><strong>{formatPaise(q.amount_paise)}</strong> {period === "yearly" ? `a year (pay ${q.months_paid} months, get 12 · you save ${formatPaise(q.saving_paise)})` : "a month"}</p>
+        <Card title={b.plan ? "Your plan" : "Choose your plan"}>
+          <div className="plan-total">
+            <p><strong className="big">{formatPaise(b.prices.bundle_monthly_paise)}</strong> <span className="muted">per outlet a month · everything included</span></p>
+            <p className="small">POS billing, KOT and kitchen screens, stock and recipes, bill scanning ({b.scans.per_month} a month), offers and QR, petty cash,
+              reports, Tally export, {b.messages.per_outlet} WhatsApp bills a month per outlet.</p>
+            {q && q.outlets > 1 && <p className="small muted">{formatPaise(q.per_outlet_paise)} × {q.outlets} outlets = <strong>{formatPaise(q.amount_paise)}</strong> a month</p>}
             {b.state === "trial" && <p className="muted small">Nothing is charged until your trial ends on {day(b.trial_ends_at)}.</p>}
-          </div>}
-          <Button disabled={busy || !q} onClick={() => checkout({ modules: pick, period })}>{b.state === "trial" ? "Add payment method" : `Pay ${q ? formatPaise(q.amount_paise) : ""}`}</Button>
+          </div>
+          {(!b.plan || b.plan.status === "cancelled" || b.outlets > b.plan.outlets) &&
+            <Button disabled={busy || !q} onClick={() => checkout({ modules: ["pos", "stock", "bills"], period: "monthly" })}>{b.state === "trial" ? "Add payment method" : `Pay ${q ? formatPaise(q.amount_paise) : ""} a month`}</Button>}
           {b.plan && b.plan.status !== "cancelled" && <Button variant="ghost" disabled={busy} onClick={cancel}>Stop renewing</Button>}
         </Card>
       </>}
 
-      {(pick.includes("bills") || b.plan?.modules.includes("bills") || b.house) && (
+      {(
         <Card title="Bill scans">
           <p>{b.scans.limit === null ? `${b.scans.used} scanned this month (no limit).` : `${b.scans.used} of ${b.scans.per_month} used this month`}{b.scans.bonus ? ` · ${b.scans.bonus} extra scans left` : ""}</p>
           {!b.house && b.ready && <div className="row">

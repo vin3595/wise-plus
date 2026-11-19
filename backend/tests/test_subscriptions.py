@@ -15,20 +15,15 @@ pytestmark = pytest.mark.usefixtures("client")
 
 def test_prices():
     from app.billing.plans import price
-    assert price(["pos"], "monthly")["amount_paise"] == 59900
-    assert price(["stock", "bills"], "monthly")["amount_paise"] == 59800
-    assert price(["pos", "stock", "bills"], "monthly")["amount_paise"] == 99900
-    three = price(["pos", "stock", "bills"], "monthly", outlets=3)                # per outlet
+    # one plan: everything, ₹999 per outlet a month, whatever is asked for
+    for asked in (["pos"], ["stock", "bills"], [], ["pos", "stock", "bills", "sheets"]):
+        q = price(asked, "monthly")
+        assert q["amount_paise"] == 99900 and q["modules"] == ["pos", "stock", "bills"]
+    three = price([], "monthly", outlets=3)                # per outlet
     assert three["amount_paise"] == 3 * 99900 and three["per_outlet_paise"] == 99900 and three["outlets"] == 3
-    assert price([], "founding", outlets=2)["amount_paise"] == 2 * 499900
-    y = price(["pos"], "yearly")
-    assert y["amount_paise"] == 599000 and y["saving_paise"] == 119800              # pay 10, get 12
-    b = price(["pos", "stock", "bills", "sheets"], "yearly")
-    assert b["amount_paise"] == 899100 and b["modules"] == ["pos", "stock", "bills"]  # bundle: pay 9
-    f = price(["pos"], "founding")
-    assert f["amount_paise"] == 499900 and f["modules"] == ["pos", "stock", "bills"]
-    with pytest.raises(ValueError):
-        price(["sheets"], "monthly")
+    for gone in ("yearly", "founding"):
+        with pytest.raises(ValueError):
+            price([], gone)
 
 
 @pytest.fixture
@@ -84,21 +79,22 @@ def test_trial_pay_and_lock(client, rzp):
     r = client.post("/api/inventory/suppliers", headers=h(tok), json={"name": "Metro"})
     assert r.status_code == 402 and "Settings › Billing" in r.json()["detail"]
     assert client.get("/api/billing", headers=h(tok)).json()["state"] == "locked"
-    # Founding member
-    r = client.post("/api/billing/subscribe", headers=h(tok), json={"modules": ["pos"], "period": "founding"})
+    # The one plan (founding and yearly are gone)
+    assert client.post("/api/billing/subscribe", headers=h(tok), json={"modules": ["pos"], "period": "founding"}).status_code == 422
+    r = client.post("/api/billing/subscribe", headers=h(tok), json={"modules": ["pos"], "period": "monthly"})
     assert r.status_code == 200, r.text
     sub = r.json()["subscription_id"]
     plan_call = next(c for c in rzp["calls"] if c[1] == "/plans")
-    assert plan_call[2]["item"]["amount"] == 499900 and plan_call[2]["period"] == "yearly"
+    assert plan_call[2]["item"]["amount"] == 99900 and plan_call[2]["period"] == "monthly"
     sub_call = next(c for c in rzp["calls"] if c[1] == "/subscriptions")
-    assert sub_call[2]["total_count"] == 1 and "start_at" not in sub_call[2]          # trial over: starts now
+    assert "start_at" not in sub_call[2]          # trial over: starts now
     bad = client.post("/api/billing/verify", headers=h(tok), json={"razorpay_payment_id": "pay_1", "razorpay_subscription_id": sub, "razorpay_signature": "x"})
     assert bad.status_code == 400
     ok = client.post("/api/billing/verify", headers=h(tok), json={"razorpay_payment_id": "pay_1", "razorpay_subscription_id": sub,
                                                                  "razorpay_signature": sig(f"pay_1|{sub}")})
     assert ok.status_code == 200, ok.text
     b = ok.json()
-    assert b["state"] == "paid" and b["founding"]["member"] and b["plan"]["period"] == "founding"
+    assert b["state"] == "paid" and b["plan"]["period"] == "monthly" and b["plan"]["modules"] == ["pos", "stock", "bills"]
     assert client.post("/api/inventory/suppliers", headers=h(tok), json={"name": "Metro"}).status_code == 201
     # Webhook: renewal failed and halted -> after the grace days the app locks again
     body = json.dumps({"event": "subscription.halted", "payload": {"subscription": {"entity": {"id": sub, "status": "halted"}}}}).encode()
@@ -114,7 +110,7 @@ def test_trial_pay_and_lock(client, rzp):
         s.paid_until = datetime.now(timezone.utc) - timedelta(days=4)
     assert client.post("/api/inventory/suppliers", headers=h(tok), json={"name": "Metro 2"}).status_code == 402
     # Charged again -> paid till the new cycle end
-    end = int((datetime.now(timezone.utc) + timedelta(days=365)).timestamp())
+    end = int((datetime.now(timezone.utc) + timedelta(days=31)).timestamp())
     body = json.dumps({"event": "subscription.charged", "payload": {"subscription": {"entity": {"id": sub, "current_end": end}}}}).encode()
     client.post("/api/public/billing/razorpay", content=body, headers={"x-razorpay-signature": hmac.new(b"whs", body, hashlib.sha256).hexdigest()})
     assert client.post("/api/inventory/suppliers", headers=h(tok), json={"name": "Metro 2"}).status_code == 201
@@ -123,16 +119,14 @@ def test_trial_pay_and_lock(client, rzp):
 def test_plan_limits_services_and_scans(client, rzp):
     login = "bim" + uuid.uuid4().hex[:6]
     tok = signup(client, login, "92" + str(uuid.uuid4().int)[:8])["token"]
-    # During the trial: choose a monthly Inventory + Bill scan plan; it starts when the trial ends
+    # During the trial: the plan starts when the trial ends (asking for less still gets everything)
     sub = client.post("/api/billing/subscribe", headers=h(tok), json={"modules": ["stock", "bills"], "period": "monthly"}).json()
-    assert sub["quote"]["amount_paise"] == 59800 and sub["starts"]
+    assert sub["quote"]["amount_paise"] == 99900 and sub["starts"]
     sc = next(c for c in rzp["calls"] if c[1] == "/subscriptions")
     assert sc[2]["start_at"] > datetime.now(timezone.utc).timestamp() + 86400 * 10
     sid = sub["subscription_id"]
     client.post("/api/billing/verify", headers=h(tok), json={"razorpay_payment_id": "p", "razorpay_subscription_id": sid, "razorpay_signature": sig(f"p|{sid}")})
-    assert client.get("/api/tenant/modules", headers=h(tok)).json()["on"] == ["stock", "bills"]
-    r = client.put("/api/tenant/modules", headers=h(tok), json={"modules": ["pos", "stock", "bills"]})
-    assert r.status_code == 402 and "POS billing isn't in your plan" in r.json()["detail"]
+    assert client.get("/api/tenant/modules", headers=h(tok)).json()["on"] == ["pos", "stock", "bills"]
     assert client.put("/api/tenant/modules", headers=h(tok), json={"modules": ["stock"]}).status_code == 200
     # Scans: 150 a month, then packs
     from app.billing.models import Subscription

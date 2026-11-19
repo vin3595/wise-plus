@@ -1,5 +1,5 @@
-"""wise-plus prices, per outlet per month (a business with 3 outlets pays 3×). Yearly: pay 10 months for 12; the bundle of
-all three, 9 for 12. Founding: the first 50 businesses, everything for ₹4,999 per outlet for the first year."""
+"""Ease My Bill price: one plan, everything included, ₹999 per outlet per month (3 outlets pay 3×).
+The only extras are WhatsApp message packs and bill-scan packs. (Old per-service, yearly and founding plans are gone.)"""
 from __future__ import annotations
 
 PRICES = {"pos": 59900, "stock": 29900, "bills": 29900}
@@ -15,22 +15,10 @@ MSG_PACKS = {"m1000": {"messages": 1000, "paise": 19900}, "m5000": {"messages": 
 ALL_PACKS = PACKS | MSG_PACKS
 
 
-def price(modules: list[str], period: str, outlets: int = 1) -> dict:
+def price(modules: list[str] | None = None, period: str = "monthly", outlets: int = 1) -> dict:
+    """modules is ignored: the plan always has everything."""
+    if period != "monthly":
+        raise ValueError("There's one plan: ₹999 per outlet a month, everything included")
     n = max(int(outlets or 1), 1)
-    if period == "founding":   # the full package only
-        full = BUNDLE * 12 * n
-        return {"modules": list(PAID), "period": "founding", "bundle": True, "monthly_paise": BUNDLE * n, "amount_paise": FOUNDING_PAISE * n,
-                "months_paid": 12, "saving_paise": full - FOUNDING_PAISE * n, "list_paise": sum(PRICES.values()) * n,
-                "outlets": n, "per_outlet_paise": FOUNDING_PAISE}
-    mods = [m for m in PAID if m in set(modules)]
-    if not mods:
-        raise ValueError("Pick at least one service")
-    bundle = set(mods) == set(PAID)
-    per = BUNDLE if bundle else sum(PRICES[m] for m in mods)
-    monthly = per * n
-    months_paid = (9 if bundle else 10) if period == "yearly" else 1
-    amount = monthly * months_paid
-    full = monthly * (12 if period == "yearly" else 1)
-    return {"modules": mods, "period": period, "bundle": bundle, "monthly_paise": monthly, "amount_paise": amount,
-            "months_paid": months_paid, "saving_paise": full - amount if period == "yearly" else 0,
-            "list_paise": sum(PRICES[m] for m in mods) * n, "outlets": n, "per_outlet_paise": per}
+    return {"modules": list(PAID), "period": "monthly", "bundle": True, "monthly_paise": BUNDLE * n, "amount_paise": BUNDLE * n,
+            "months_paid": 1, "saving_paise": 0, "list_paise": BUNDLE * n, "outlets": n, "per_outlet_paise": BUNDLE}

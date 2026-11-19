@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Camera, FileText, Plus } from "lucide-react";
 import { api, tokenStore } from "../api";
 import { formatPaise, inputToPaise } from "../money";
+import { clearShared, sharedFiles } from "../shared";
 import { useSession } from "../session";
 import { Button, Card, ErrorText, Field, Input, Select, useAction } from "../ui";
 
@@ -78,6 +79,13 @@ export default function Expenses() {
     });
     if (file.current) file.current.value = "";
   };
+  // A slip shared in from WhatsApp/Gallery (Android share sheet → "Petty cash slip"): read it straight away.
+  const sharedDone = useRef(false);
+  useEffect(() => {
+    if (sharedDone.current || !outlet || !new URLSearchParams(location.search).has("shared")) return;
+    sharedDone.current = true;
+    sharedFiles().then(async (f) => { await clearShared(); history.replaceState(null, "", "/expenses"); if (f[0]) snap(f[0]); }).catch(() => undefined);
+  }, [outlet]);   // eslint-disable-line react-hooks/exhaustive-deps
   const save = () => act.run(async () => {
     const items = (rows || []).filter((r) => (inputToPaise(r.amount) ?? 0) > 0).map((r) => ({
       amount_paise: inputToPaise(r.amount)!, category: r.category || "Other", what: r.what || null, spent_on: r.spent_on || null, paid_from: r.paid_from,

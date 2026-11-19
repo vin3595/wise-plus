@@ -121,10 +121,9 @@ def subscribe(body: PlanIn, auth: Auth = Depends(require(Perm.tenant_settings)),
     s = sub_for(db, t.id, create=True)
     if q["period"] == "founding" and _founding_left(db) <= 0 and not s.founding:
         raise HTTPException(status.HTTP_409_CONFLICT, "All 50 founding places are taken. The yearly bundle is the next best price.")
-    names = " + ".join(mods.MODULES[m] for m in q["modules"])
-    period = "yearly" if q["period"] == "founding" else q["period"]
+    period = q["period"]
     per = f" · {q['outlets']} outlets" if q["outlets"] > 1 else ""
-    plan = _plan_id(q["amount_paise"], period, (f"wise-plus founding member · first year" if q["period"] == "founding" else f"wise-plus {period} · {names}") + per)
+    plan = _plan_id(q["amount_paise"], period, "Ease My Bill · everything" + per)
     now = _now()
     start = max([d for d in (t.trial_ends_at, s.paid_until if s.status in ("authenticated", "active") else None) if d and d > now + timedelta(minutes=5)],
                 default=None)

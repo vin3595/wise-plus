@@ -10,6 +10,7 @@ import Signup from "./pages/Signup";
 import Landing from "./pages/Landing";
 import Policies, { POLICY_PATHS } from "./pages/Policies";
 import Admin from "./pages/Admin";
+import Share from "./pages/Share";
 import Home from "./pages/Home";
 import Branding from "./pages/Branding";
 import Outlets from "./pages/Outlets";
@@ -290,6 +291,7 @@ export default function App() {
         <Route path="/bill-keeper" element={<BillKeeper />} />
         <Route path="/purchase-bills" element={<PurchaseBills />} />
         <Route path="/expenses" element={<Expenses />} />
+        <Route path="/share" element={<Share />} />
         <Route path="/feedback" element={<Feedback />} />
         <Route path="/offers" element={<Offers />} />
         <Route path="/broadcast" element={<Broadcast />} />

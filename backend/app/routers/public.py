@@ -67,6 +67,9 @@ def manifest(login_id: str) -> JSONResponse:
             "background_color": "#ffffff",
             "theme_color": b.primary_color,
             "icons": icons,
+            # Android share sheet: share a bill photo or PDF from WhatsApp/Gallery into Ease My Bill
+            "share_target": {"action": "/share-target", "method": "POST", "enctype": "multipart/form-data",
+                             "params": {"title": "title", "text": "text", "files": [{"name": "files", "accept": ["image/*", "application/pdf"]}]}},
             "shortcuts": [{"name": "Billing", "url": f"/orders?r={b.login_id}"},
                           {"name": "Kitchen screen", "url": f"/kds?r={b.login_id}"}],
         },

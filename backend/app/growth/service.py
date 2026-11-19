@@ -236,7 +236,7 @@ TRIAL = [
     ("day3", lambda t: t.created_at + timedelta(days=3), None),          # only if no bill yet (see below)
     ("end4", lambda t: t.trial_ends_at - timedelta(days=4), lambda t: (
         f"Your {BRAND} free trial ends on {t.trial_ends_at.astimezone(IST):%d %b}. Keep everything running: choose a plan under "
-        f"Settings › Billing. Founding offer: everything for ₹4,999 for the first year.")),
+        f"Settings › Billing.  ₹999 per outlet a month, everything included.")),
     ("end1", lambda t: t.trial_ends_at - timedelta(days=1), lambda t: (
         f"Your {BRAND} trial ends tomorrow. Pick a plan under Settings › Billing so billing doesn't stop. Questions? WhatsApp or call {support()}.")),
     ("ended", lambda t: t.trial_ends_at + timedelta(days=1), lambda t: (
