@@ -73,7 +73,9 @@ export function InstallPrompt() {
   }, []);
   let snoozed = false;
   try { snoozed = Number(localStorage.getItem(SNOOZE) || 0) > Date.now(); } catch { /* private mode */ }
-  const ios = isIos() && /safari/i.test(navigator.userAgent) && !/crios|fxios|edgios/i.test(navigator.userAgent);
+  const ua = navigator.userAgent;
+  const iosChrome = isIos() && /crios/i.test(ua);
+  const ios = isIos() && (iosChrome || (/safari/i.test(ua) && !/fxios|edgios/i.test(ua)));
   if (!shown || snoozed || installed() || CUSTOMER_PAGES.test(location.pathname) || !(ready || ios)) return null;
   const later = () => { try { localStorage.setItem(SNOOZE, String(Date.now() + 7 * 86400000)); } catch { /* ignore */ } setShown(false); };
   const go = async () => {
@@ -87,7 +89,8 @@ export function InstallPrompt() {
       <img src="/icon-192.png" alt="" width={48} height={48} />
       <div className="grow">
         <strong>Install Ease My Bill</strong>
-        <div className="small muted">{iosHelp ? <>Tap <b>Share</b> ⬆ below, then <b>Add to Home Screen</b>.</> : "Opens full screen from your home screen, like an app. Free, no Play Store needed."}</div>
+        <div className="small muted">{iosHelp ? (iosChrome ? <>Tap <b>Share</b> ⬆ at the top right, next to the address bar, then <b>Add to Home Screen</b>.</>
+          : <>Tap <b>Share</b> ⬆ at the bottom, then <b>Add to Home Screen</b>.</>) : "Opens full screen from your home screen, like an app. Free, no Play Store needed."}</div>
       </div>
       {!iosHelp && <button className="btn" onClick={go}>Install</button>}
       <button className="link small" onClick={later}>{iosHelp ? "OK" : "Not now"}</button>
