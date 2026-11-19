@@ -111,7 +111,7 @@ export default function Billing() {
             <p className="small">POS billing, KOT and kitchen screens, stock and recipes, bill scanning ({b.scans.per_month} a month), offers and QR, petty cash,
               reports, Tally export, {b.messages.per_outlet} WhatsApp bills a month per outlet.</p>
             {q && q.outlets > 1 && <p className="small muted">{formatPaise(q.per_outlet_paise)} × {q.outlets} outlets = <strong>{formatPaise(q.amount_paise)}</strong> a month</p>}
-            {b.state === "trial" && <p className="muted small">Nothing is charged until your trial ends on {day(b.trial_ends_at)}.</p>}
+            {b.state === "trial" && <p className="muted small">₹999 is charged on {day(b.trial_ends_at)}, when your trial ends. Today Razorpay only takes a small amount (about ₹5) to set up autopay, and gives it back.</p>}
           </div>
           {(!b.plan || b.plan.status === "cancelled" || b.outlets > b.plan.outlets) &&
             <Button disabled={busy || !q} onClick={() => checkout({ modules: ["pos", "stock", "bills"], period: "monthly" })}>{b.state === "trial" ? "Add payment method" : `Pay ${q ? formatPaise(q.amount_paise) : ""} a month`}</Button>}
