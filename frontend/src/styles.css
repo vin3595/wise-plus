@@ -1103,3 +1103,13 @@ fieldset.field-group > legend { padding: 0; margin-bottom: 0.35rem; }
 .cash-move .cm-field { display: flex; flex-direction: column; gap: 0.4rem; }
 .cash-move .cm-field .chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
 .cash-move .cm-handed { margin: 0; grid-template-columns: 1fr 1fr; }
+
+/* wise-plus: feel like an app, not a web page. No pull-to-refresh or rubber-band bounce, no grey flash on tap,
+   no double-tap zoom delay, no text-selection or long-press menu on buttons and menus (inputs still selectable). */
+html, body { overscroll-behavior: none; }
+body { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+button, .btn, a.link, nav, .nav, .tabs, .page-tabs, .topbar, .menu-btn, .tile, .chip, label {
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+img { -webkit-user-drag: none; -webkit-touch-callout: none; }
+@media (display-mode: standalone) { body { -webkit-user-select: none; user-select: none; }
+  input, textarea, [contenteditable], .selectable, table td { -webkit-user-select: text; user-select: text; } }
