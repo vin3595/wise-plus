@@ -1,3 +1,4 @@
+import LoginIdLine from "../components/LoginIdLine";
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useSession } from "../session";
@@ -25,6 +26,7 @@ export default function Branding() {
     <div className="stack">
       <h1>Branding</h1>
       <p className="muted">This is what your staff and customers see: on the login screen, the app, bills and the installed app icon.</p>
+      <Card title="Your login ID"><LoginIdLine big /></Card>
       <Tabs id="branding">
       <Tab label="Logo and look">
       <Card title="Logo">

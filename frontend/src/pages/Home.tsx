@@ -8,6 +8,7 @@ import { Card } from "../ui";
 import CashAlerts from "../components/CashAlerts";
 import OwnerAlerts from "../components/OwnerAlerts";
 import PushToggle from "../components/PushToggle";
+import LoginIdLine from "../components/LoginIdLine";
 
 type Today = { bills: number; sales_paise: number; avg_bill_paise: number; cancelled_bills: number; discount_paise: number };
 
@@ -49,7 +50,10 @@ export default function Home() {
     : null;
   return (
     <div className="stack">
-      <h1>Hello, {me.user.name.split(" ")[0]}</h1>
+      <div>
+        <h1 style={{ marginBottom: 2 }}>Hello, {me.user.name.split(" ")[0]}</h1>
+        <LoginIdLine />
+      </div>
       {me.tenant.plan === "trial" && trialDays !== null && (
         <div className="banner info">Free trial: {trialDays} day{trialDays === 1 ? "" : "s"} left.</div>
       )}
