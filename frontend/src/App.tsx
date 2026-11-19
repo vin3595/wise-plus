@@ -35,6 +35,7 @@ import Bills from "./pages/Bills";
 import Inventory from "./pages/Inventory";
 import Payments from "./pages/Payments";
 import DayClose from "./pages/DayClose";
+import Activity from "./pages/Activity";
 import Customers from "./pages/Customers";
 import Accounts from "./pages/Accounts";
 import Access from "./pages/Access";
@@ -94,7 +95,7 @@ function Shell({ children }: { children: ReactNode }) {
       ["/tax", "Tax", pos && can("menu.manage")], ["/kitchen", "Kitchen and printers", pos && (can("menu.manage") || can("outlets.manage"))]] },
     { label: "Outlets and screens", section: "Setup", pages: [["/outlets", "Outlets", can("outlets.manage")], ["/screens", "Screens", pos && can("outlets.manage")],
       ["/screen-ads", "Screen ads", pos && can("ads.manage")]] },
-    { label: "Staff", section: "Setup", pages: [["/users", "Staff", can("users.manage")], ["/access", "Who can do what", can("users.manage")]] },
+    { label: "Staff", section: "Setup", pages: [["/users", "Staff", can("users.manage")], ["/access", "Who can do what", can("users.manage")], ["/activity", "Activity log", can("approve")]] },
     { label: "Settings", section: "Setup", pages: [["/services", "Services", can("tenant.settings")], ["/billing", "Billing", can("tenant.settings")], ["/payments", "Payments", pos && can("tenant.settings")], ["/sms", "SMS", pos && can("tenant.settings")],
       ["/branding", "Branding", can("tenant.settings")]] },
   ];
@@ -304,6 +305,7 @@ export default function App() {
         <Route path="/tax" element={<TaxGroups />} />
         <Route path="/outlets" element={<Outlets />} />
         <Route path="/users" element={<Users />} />
+        <Route path="/activity" element={<Activity />} />
         <Route path="/branding" element={<Branding />} />
         <Route path="/start" element={<GettingStarted />} />
         <Route path="/sms" element={<Sms />} />

@@ -27,6 +27,10 @@ def snapshot(obj: Any, fields: list[str] | None = None) -> dict:
 
 def record(db: Session, tenant_id: uuid.UUID, actor_user_id: uuid.UUID | None, action: str, entity: str,
            entity_id: Any = None, before: dict | None = None, after: dict | None = None) -> None:
+    from ..activity import CURRENT
+    marks = CURRENT.get()
+    if marks is not None:
+        marks.append(1)          # this request has its own detailed entry
     db.add(AuditLog(
         tenant_id=tenant_id, actor_user_id=actor_user_id, action=action, entity=entity,
         entity_id=str(entity_id) if entity_id is not None else None, before=before, after=after,

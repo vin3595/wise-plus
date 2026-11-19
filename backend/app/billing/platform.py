@@ -326,3 +326,15 @@ def set_login_codes(body: dict, _adm: str = Depends(require_admin)) -> dict:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Nothing to save")
     _save_platform(vals)
     return {"ok": True, "test_email_to": tested, **login_codes(_adm)}
+
+
+@router.get("/activity/{login_id}")
+def restaurant_activity(login_id: str, entity: str | None = None, q: str | None = None, before: datetime | None = None,
+                        limit: int = 50, _adm: str = Depends(require_admin)) -> dict:
+    """Ease My Bill admin: any restaurant's activity log (who changed what), for support."""
+    from ..activity import rows_for
+    with system_session() as db:
+        t = db.scalar(select(Tenant).where(Tenant.login_id == login_id.strip().lower()))
+        if t is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "No restaurant with that login ID")
+        return {"restaurant": t.name, **rows_for(db, t.id, entity, None, q, before, min(max(limit, 1), 200))}
