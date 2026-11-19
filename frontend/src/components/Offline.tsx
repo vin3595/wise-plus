@@ -14,7 +14,7 @@ export function OfflineBar() {
   if (!s.online) {
     return (
       <div className="offline-bar off" role="status">
-        <strong>Box not reachable. Billing on this counter only.</strong>
+        <strong>No internet. Billing on this counter; bills upload when it's back.</strong>
         <span>Cash, UPI and card bills still work and print here with their kitchen slips (series {s.series}).
           {s.queued > 0 && ` ${s.queued} bill${s.queued === 1 ? "" : "s"} waiting to upload.`} Keep this page open.</span>
       </div>

@@ -579,7 +579,7 @@ export default function Orders() {
         )}
         <ErrorText error={error} />
         <div className="send-row">
-          {!off.online && <p className="muted small grow">{canBill ? "Box not reachable: Cash, UPI and Card bills still work. Discounts, split bills and pay-later come back when it answers." : "Box not reachable. Take the order on paper or send it to the billing counter."}</p>}
+          {!off.online && <p className="muted small grow">{canBill ? "No internet: Cash, UPI and Card bills still work. Discounts, split bills and pay-later come back with the internet." : "No internet. Take the order on paper or send it to the billing counter."}</p>}
           {canBill && !addingTo && (
             <Button className="save-print grow" disabled={busy || cart.length === 0 || !outletId || (payMode === "cash" && given > 0 && given < total)} onClick={saveAndPrint}
               title="Sends the order to the kitchen, settles the bill and prints it (F2)">

@@ -1,6 +1,6 @@
 // App-shell service worker: the app opens even with no internet.
-// API calls always go to the network (offline billing data sync arrives in Phase 2).
-const CACHE = "emb-shell-v6";
+// API calls always go to the network; offline billing keeps its own copy (src/offline.ts).
+const CACHE = "emb-shell-v7";
 const SHARE = "emb-share";   // files shared into the app from the Android share sheet, until /share picks them up   // new name: phones drop the old Wise icons
 const SHELL = ["/", "/index.html", "/icon.svg", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png"];
 
@@ -32,7 +32,11 @@ self.addEventListener("fetch", (event) => {
   }
   if (event.request.method !== "GET" || url.pathname.startsWith("/api/")) return;
   if (event.request.mode === "navigate") {
-    event.respondWith(fetch(event.request).catch(() => caches.match("/index.html")));
+    // Keep the newest page so the app opens with no internet, matching the files it needs.
+    event.respondWith(fetch(event.request).then((res) => {
+      if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put("/index.html", copy)); }
+      return res;
+    }).catch(() => caches.match("/index.html")));
     return;
   }
   event.respondWith(
@@ -48,4 +52,26 @@ self.addEventListener("fetch", (event) => {
         })
     )
   );
+});
+
+// Phone notifications (QR orders, alerts, day close, tonight's summary).
+self.addEventListener("push", (event) => {
+  let d = {};
+  try { d = event.data ? event.data.json() : {}; } catch { d = { body: event.data ? event.data.text() : "" }; }
+  event.waitUntil(self.registration.showNotification(d.title || "Ease My Bill", {
+    body: d.body || "", tag: d.tag || undefined, data: { url: d.url || "/" },
+    icon: "/icon-192.png", badge: "/icon-192.png",
+  }));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || "/";
+  event.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const w of wins) {
+      if (new URL(w.url).origin === location.origin) { await w.focus(); w.navigate(url).catch(() => {}); return; }
+    }
+    await self.clients.openWindow(url);
+  })());
 });

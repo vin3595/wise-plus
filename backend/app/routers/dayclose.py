@@ -170,6 +170,10 @@ def close_day(body: CloseIn, auth: Auth = Depends(require(Perm.day_close)), db: 
         vals = sms.daily_values(db, outlet, body.day)
         for phone in cfg.daily_to or []:
             sms.enqueue(db, auth.tenant_id, "daily", phone, vals, ref=f"{outlet.id}:{body.day}:{phone}", outlet_id=outlet.id)
+    from ..push import service as push
+    push.notify(auth.tenant_id, f"Day closed · {outlet.name}",
+                f"{body.day:%d %b}: sales ₹{s['sales_paise'] / 100:,.0f} · {s['bills']} bills" + (f" · {len(rec.warnings)} to check" if rec.warnings else ""),
+                "/", tag=f"close-{outlet.id}-{body.day}")
     audit.record(db, auth.tenant_id, auth.user_id, "close", "day", rec.id,
                  after={"outlet": outlet.name, "day": str(body.day), "sales_paise": s["sales_paise"], "warnings": rec.warnings, "note": rec.note})
     return day_status(outlet.id, body.day, auth, db)

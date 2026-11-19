@@ -188,7 +188,7 @@ export function billOffline(p: {
 }): OfflineResult {
   const s = load();
   const pack = s.pack;
-  if (!pack || !s.device_id) throw new Error("This counter wasn't set up for offline billing before the box went down. Bill on paper and enter it later.");
+  if (!pack || !s.device_id) throw new Error("This counter wasn't ready for offline billing before the internet went down (open billing once while online). Bill on paper and enter it later.");
 
   const now = new Date();
   const day = businessDate(now);

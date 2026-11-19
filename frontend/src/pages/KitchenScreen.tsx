@@ -16,7 +16,7 @@ export default function KitchenScreen({ kitchenKey }: { kitchenKey: string }) {
       await signedIn(await api<TokenOut>("/auth/kitchen-screen", { body: { key: kitchenKey } }));
       setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Can't reach the box");
+      setError(e instanceof Error ? e.message : "No internet");
       setTimeout(() => { trying.current = false; signIn(); }, 15000);   // box still starting: keep trying
       return;
     }

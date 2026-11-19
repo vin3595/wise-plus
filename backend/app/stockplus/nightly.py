@@ -149,8 +149,19 @@ def run(day: date | None = None, force: bool = False) -> int:
             return 0
         people = _recipients(db)
         recent = {c.phone10: c.last_in_at for c in db.scalars(select(WaContact))}
+        from ..push.models import PushSubscription
+        push_tenants = set(db.scalars(select(PushSubscription.tenant_id).distinct()))
     texts: dict = {}
     sent = 0
+    from ..push import service as push      # phone notification too: arrives even when WhatsApp can't
+    for tid in push_tenants:
+        try:
+            with tenant_session(tid) as db:
+                texts[tid] = summary_text(db, day)
+            body = texts[tid].text.replace("*", "").strip()
+            push.notify(tid, f"Tonight's summary · {day:%d %b}", body[:400], "/", tag=f"nightly-{day}")
+        except Exception:  # noqa: BLE001
+            log.exception("nightly: push for %s failed", tid)
     cutoff = datetime.now(timezone.utc) - timedelta(hours=23, minutes=50)
     for tid, name, phone, login in people:
         p10 = client.last10(phone)
@@ -176,7 +187,7 @@ def run(day: date | None = None, force: bool = False) -> int:
 async def scheduler() -> None:
     """Checks every minute; at WISE_NIGHTLY_AT India time sends the night's summaries (once)."""
     s = get_settings()
-    if not (s.wa_token and s.wa_phone_number_id and s.nightly_at):
+    if not s.nightly_at:
         return
     hh, mm = (int(x) for x in s.nightly_at.split(":"))
     while True:

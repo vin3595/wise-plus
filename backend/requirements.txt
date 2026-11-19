@@ -12,6 +12,7 @@ python-multipart>=0.0.9
 httpx>=0.27
 pytest>=8.0
 cryptography>=42
+pywebpush>=2.0
 # wise-plus bill scanning (Ease My Bill's reader): Google Gemini, PDF pages, images
 google-genai>=1.0
 pypdfium2>=4.30

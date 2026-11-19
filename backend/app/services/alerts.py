@@ -51,9 +51,14 @@ def raise_alert(db: Session, tenant_id: uuid.UUID, outlet_id: uuid.UUID | None, 
                      .returning(OwnerAlert.id)).first()
     if row is None:
         return False
+    outlet = db.get(Outlet, outlet_id) if outlet_id else None
+    try:
+        from ..push import service as push
+        push.notify(tenant_id, f"⚠ {outlet.name if outlet else 'Ease My Bill'}", text[:200], "/", tag=f"{kind}:{ref}"[:60])
+    except Exception:  # noqa: BLE001
+        log.exception("alert push")
     if not sms_too:
         return True
-    outlet = db.get(Outlet, outlet_id) if outlet_id else None
     for phone in recipients(db, tenant_id):
         sms.enqueue(db, tenant_id, "alert", phone, {"outlet": outlet.name if outlet else "Ease My Bill", "what": text[:160]},
                     ref=f"{kind}:{ref}:{phone}"[:80], outlet_id=outlet_id)

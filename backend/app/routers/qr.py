@@ -155,6 +155,11 @@ def place_qr_order(qr_key: str, body: QrOrderIn) -> QrOrderStatus:
         audit.record(db, tenant_id, None, "qr_order", "order", order.id,
                      after={"table": table, "auto_accepted": outlet.qr_auto_accept})
         total = sum(p["qty"] * p["unit_paise"] for p in pending)
+        from ..push import service as push
+        where = f"table {table}" if table else (f"car {car}" if car else "takeaway")
+        push.notify(tenant_id, f"🛎 New QR order · {outlet.name}",
+                    f"{body.customer_name.strip()} · {where} · ₹{total / 100:,.0f}" + ("" if outlet.qr_auto_accept else " · tap to accept"),
+                    "/orders", tag=f"qr-{order.id}", roles=("owner", "manager", "cashier", "captain"))
         return _status(order, total)
 
 

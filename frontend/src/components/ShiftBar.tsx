@@ -200,7 +200,7 @@ export default function ShiftBar({ outletId, onChange }: { outletId: string; onC
           e.preventDefault();
           run(async () => {
             const waiting = queuedBills().length;
-            if (waiting) throw new Error(`${waiting} bill${waiting === 1 ? "" : "s"} made while the box was down ${waiting === 1 ? "hasn't" : "haven't"} uploaded yet. They count in this shift's cash, so close after they upload.`);
+            if (waiting) throw new Error(`${waiting} bill${waiting === 1 ? "" : "s"} made while the internet was down ${waiting === 1 ? "hasn't" : "haven't"} uploaded yet. They count in this shift's cash, so close after they upload.`);
             const body = byNote ? { counted_denoms: counts } : { counted_cash_paise: inputToPaise(amount) ?? 0 };
             const s = await api<Shift>(`/shifts/${shift.id}/close`, { body });
             setClosed(s); setAmount(""); setCounts({}); setMode("none");

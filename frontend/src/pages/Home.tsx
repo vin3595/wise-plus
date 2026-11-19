@@ -7,6 +7,7 @@ import { useSession } from "../session";
 import { Card } from "../ui";
 import CashAlerts from "../components/CashAlerts";
 import OwnerAlerts from "../components/OwnerAlerts";
+import PushToggle from "../components/PushToggle";
 
 type Today = { bills: number; sales_paise: number; avg_bill_paise: number; cancelled_bills: number; discount_paise: number };
 
@@ -53,6 +54,7 @@ export default function Home() {
         <div className="banner info">Free trial: {trialDays} day{trialDays === 1 ? "" : "s"} left.</div>
       )}
       {me.tenant.status === "read_only" && <div className="banner warn">Subscription expired. The app is read-only.</div>}
+      <PushToggle compact />
       {can("reports.view") && <AskBox />}
       {can("reports.view") && <TodayCard />}
       {can("approve") && <OwnerAlerts quietWhenEmpty={false} />}
