@@ -3,7 +3,7 @@ import { api } from "../api";
 import { useSession } from "../session";
 import type { TokenOut } from "../types";
 import { Button, ErrorText, Field, Input, Select, useAction } from "../ui";
-import { EmbMark, PoweredBy } from "../components/Brand";
+import { EmbMark, PoweredBy, SupportLine } from "../components/Brand";
 
 type Mode = "staff" | "owner";
 
@@ -24,6 +24,7 @@ export default function Login() {
         </div>
         {mode === "staff" ? <PinLogin /> : <OtpLogin />}
         <DeviceFooter />
+        <SupportLine />
       </div>
       {branding.show_powered_by && <PoweredBy />}
     </div>

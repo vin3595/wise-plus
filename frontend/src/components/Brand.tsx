@@ -15,3 +15,16 @@ export function PoweredBy({ className = "powered" }: { className?: string }) {
     </footer>
   );
 }
+
+/** Ease My Bill support: one number for restaurants (never shown to a restaurant's own customers). */
+export const SUPPORT_PHONE = "919799119994";
+export const SUPPORT_LABEL = "+91 97991 19994";
+export const supportWa = (text = "Hi, I need help with Ease My Bill") => `https://wa.me/${SUPPORT_PHONE}?text=${encodeURIComponent(text)}`;
+
+export function SupportLine({ className = "muted small" }: { className?: string }) {
+  return (
+    <p className={className} style={{ textAlign: "center" }}>
+      Need help? WhatsApp or call <a href={supportWa()} target="_blank" rel="noreferrer">{SUPPORT_LABEL}</a>
+    </p>
+  );
+}

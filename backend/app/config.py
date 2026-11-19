@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     wa_promo_daily_cap: int = 1000            # broadcasts: most a restaurant may send in a day from the shared number
     legal_name: str = ""                     # who runs Ease My Bill, as on the PAN (policy pages, Razorpay/Paytm review)
     contact_email: str = ""
+    support_phone: str = "9799119994"           # Ease My Bill support, in messages to restaurants and on the site
     contact_address: str = ""
     meta_pixel_id: str = ""                   # Meta (Facebook/Instagram) pixel on the landing page, for ads
     wa_growth_template: str = "emb_followup"  # marketing template: follow-ups to people who asked about Ease My Bill

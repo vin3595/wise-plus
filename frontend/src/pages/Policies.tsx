@@ -1,14 +1,13 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../api";
-import { EmbLogo } from "../components/Brand";
+import { EmbLogo, SUPPORT_LABEL, supportWa } from "../components/Brand";
 import "./landing.css";
 
 // Public policy pages for Ease My Bill. Razorpay and Paytm review these before they approve a merchant.
 
 export const POLICY_PATHS = ["/terms", "/privacy", "/refunds", "/delivery", "/contact", "/pricing"];
 
-type Info = { bundle_paise: number; trial_days: number; msgs_per_outlet?: number; whatsapp: string | null;
-  legal_name: string | null; email: string | null; address: string | null };
+type Info = { bundle_paise: number; trial_days: number; msgs_per_outlet?: number; legal_name: string | null; email: string | null; address: string | null };
 
 const TITLES: Record<string, string> = {
   terms: "Terms & conditions", privacy: "Privacy policy", refunds: "Refunds & cancellation",
@@ -27,13 +26,12 @@ export default function Policies({ page }: { page: string }) {
   const price = info ? `₹${Math.round(info.bundle_paise / 100).toLocaleString("en-IN")}` : "₹999";
   const trial = info?.trial_days ?? 30;
   const mail = info?.email;
-  const wa = info?.whatsapp;
 
   const contactLines = (
     <ul>
       {info?.legal_name && <li><b>Business:</b> {info.legal_name}, trading as Ease My Bill</li>}
       {mail && <li><b>Email:</b> <a href={`mailto:${mail}`}>{mail}</a></li>}
-      {wa && <li><b>Phone / WhatsApp:</b> <a href={`https://wa.me/${wa}`}>+{wa}</a></li>}
+      <li><b>Phone / WhatsApp:</b> <a href={supportWa()}>{SUPPORT_LABEL}</a></li>
       {info?.address && <li><b>Address:</b> {info.address}</li>}
       <li><b>Hours:</b> Monday to Saturday, 10 am to 7 pm IST</li>
     </ul>

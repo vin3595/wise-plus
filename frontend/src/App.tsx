@@ -56,7 +56,7 @@ import Services from "./pages/Services";
 import Sheets from "./pages/Sheets";
 import Reports from "./pages/Reports";
 import GettingStarted from "./pages/GettingStarted";
-import { EmbMark, PoweredBy } from "./components/Brand";
+import { EmbMark, PoweredBy, SUPPORT_LABEL, supportWa } from "./components/Brand";
 
 const ICONS: Record<string, LucideIcon> = {
   "Home": LayoutDashboard, "Orders": ClipboardList, "Kitchen display": ChefHat, "Bills": Receipt,
@@ -190,6 +190,7 @@ function Shell({ children }: { children: ReactNode }) {
             <div className="brand-mark">{logo("sm")}<strong>{appName}</strong></div>
             <div className="top-title">{current?.label}</div>
             <div className="topbar-right">
+              <a className="link small" href={supportWa()} target="_blank" rel="noreferrer" title={`Ease My Bill support: ${SUPPORT_LABEL}`}>Help</a>
               <InstallApp />
               {visible.length <= 1 && <><span className="muted who">{me?.user.name} · {me?.user.role}</span>
                 <button className="link" onClick={signOut}>Sign out</button></>}

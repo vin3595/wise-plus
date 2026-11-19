@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, download } from "../api";
 import { formatPaise } from "../money";
 import { useSession } from "../session";
+import { SUPPORT_LABEL, supportWa } from "../components/Brand";
 import { Button, Card, ErrorText, Field, Input, Select, useAction } from "../ui";
 
 export interface BillingInfo {
@@ -305,7 +306,7 @@ function ManualApi({ onDone, login }: { onDone: () => void; login?: string }) {
   const [done, setDone] = useState<{ display_number: string; templates: string[]; webhook_url: string; verify_token: string | null } | null>(null);
   const act = useAction();
   if (!open) return <p className="small"><button className="link" onClick={() => setOpen(true)}>{login ? "Set their WhatsApp API" : "I have my own WhatsApp API"}</button>
-    {!login && <> · or message us and we'll set it up for you</>}</p>;
+    {!login && <> · or <a href={supportWa("Hi, please set up our own WhatsApp API on Ease My Bill")} target="_blank" rel="noreferrer">message us on {SUPPORT_LABEL}</a> and we'll set it up for you</>}</p>;
   return (
     <div className="sub-form">
       <p className="muted small">From Meta's WhatsApp Manager / your Meta app: the phone number ID, a permanent (system user) token, the WhatsApp Business Account ID,

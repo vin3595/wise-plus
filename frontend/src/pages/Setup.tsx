@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { SupportLine } from "../components/Brand";
 import { useSession } from "../session";
 import { Button, ErrorText, Field, Input, useAction } from "../ui";
 
@@ -32,6 +33,7 @@ export default function Setup() {
           <Button disabled={busy || !id.trim()}>Continue</Button>
         </form>
         <p className="muted center">New restaurant? <Link to="/signup">Create your account</Link></p>
+        <SupportLine />
       </div>
     </div>
   );

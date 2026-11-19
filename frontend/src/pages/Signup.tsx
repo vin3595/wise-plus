@@ -5,7 +5,7 @@ import { useSession } from "../session";
 import type { TokenOut } from "../types";
 import { Button, ErrorText, Field, Input, useAction } from "../ui";
 import { ServicePicker } from "./Services";
-import { EmbLogo } from "../components/Brand";
+import { EmbLogo, SupportLine } from "../components/Brand";
 
 export default function Signup() {
   const { signedIn } = useSession();
@@ -79,6 +79,7 @@ export default function Signup() {
         <Button disabled={busy || idStatus?.available === false}>Send verification code</Button>
       </form>
       <p className="muted center">Already set up? <Link to="/setup">Sign in</Link></p>
+      <SupportLine />
     </div></div>
   );
 }

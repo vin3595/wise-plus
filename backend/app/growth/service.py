@@ -32,6 +32,11 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def support() -> str:
+    p = get_settings().support_phone[-10:]
+    return f"+91 {p[:5]} {p[5:]}" if len(p) == 10 else p
+
+
 def site() -> str:
     return get_settings().public_base_url.rstrip("/")
 
@@ -227,13 +232,13 @@ def wants_demo(phone10: str) -> bool:
 TRIAL = [
     ("day1", lambda t: t.created_at + timedelta(days=1), lambda t: (
         f"Welcome to {BRAND}, {t.name}! Quick start: 1) add your menu (Setup › Menu, or import a photo) 2) bill your first order "
-        f"3) turn on bills on WhatsApp. Any trouble, just reply here.")),
+        f"3) turn on bills on WhatsApp. Any trouble? WhatsApp or call {support()}.")),
     ("day3", lambda t: t.created_at + timedelta(days=3), None),          # only if no bill yet (see below)
     ("end4", lambda t: t.trial_ends_at - timedelta(days=4), lambda t: (
         f"Your {BRAND} free trial ends on {t.trial_ends_at.astimezone(IST):%d %b}. Keep everything running: choose a plan under "
         f"Settings › Billing. Founding offer: everything for ₹4,999 for the first year.")),
     ("end1", lambda t: t.trial_ends_at - timedelta(days=1), lambda t: (
-        f"Your {BRAND} trial ends tomorrow. Pick a plan under Settings › Billing so billing doesn't stop. Questions? Reply here.")),
+        f"Your {BRAND} trial ends tomorrow. Pick a plan under Settings › Billing so billing doesn't stop. Questions? WhatsApp or call {support()}.")),
     ("ended", lambda t: t.trial_ends_at + timedelta(days=1), lambda t: (
         f"Your {BRAND} trial has ended. Your menu, bills and data are safe: choose a plan under Settings › Billing to carry on.")),
 ]

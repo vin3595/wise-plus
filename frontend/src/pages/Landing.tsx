@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
-import { EmbLogo } from "../components/Brand";
+import { EmbLogo, SUPPORT_LABEL, supportWa } from "../components/Brand";
 import "./landing.css";
 
 interface Info { bundle_paise: number; founding_paise: number; founding_slots: number; founding_left: number; trial_days: number;
@@ -175,7 +175,7 @@ export default function Landing() {
 
       <footer className="lp-foot">
         <EmbLogo height={26} />
-        <p>Made in Jodhpur for Indian restaurants and cafés.{info?.whatsapp ? <> WhatsApp: <a href={`https://wa.me/${info.whatsapp}?text=${encodeURIComponent("Hi, I'd like to know more about Ease My Bill")}`}>+{info.whatsapp}</a></> : null}</p>
+        <p>Made in Jodhpur for Indian restaurants and cafés. WhatsApp or call: <a href={supportWa("Hi, I'd like to know more about Ease My Bill")}>{SUPPORT_LABEL}</a></p>
         <p className="lp-small"><a href="/setup">Sign in</a> · <a href={trialHref}>Start free trial</a></p>
         <p className="lp-small"><a href="/pricing">Pricing</a> · <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a> · <a href="/refunds">Refunds &amp; cancellation</a> · <a href="/delivery">Delivery</a> · <a href="/contact">Contact us</a></p>
       </footer>
