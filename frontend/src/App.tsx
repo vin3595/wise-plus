@@ -259,6 +259,10 @@ export default function App() {
         <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={loginId ? <Login /> : <Navigate to="/setup" replace />} />
         <Route path="/setup" element={<Setup />} />
+        {/* reached by a redirect from "/": App's checks above read window.location, which doesn't re-render */}
+        <Route path="/start" element={<Landing />} />
+        <Route path="/admin/*" element={<Admin />} />
+        {POLICY_PATHS.map((p) => <Route key={p} path={p} element={<Policies page={p.slice(1)} />} />)}
         <Route path="*" element={<Navigate to={loginId ? "/login" : /easemybill\.com$/.test(location.hostname) ? "/start" : "/setup"} replace />} />
       </Routes>
     );
