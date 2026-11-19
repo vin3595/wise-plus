@@ -52,15 +52,13 @@ def manifest(login_id: str) -> JSONResponse:
     icons = [{"src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
              {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
              {"src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}]
-    if b.logo_url:
-        icons = [{"src": b.logo_url, "sizes": "192x192", "purpose": "any"},
-                 {"src": b.logo_url, "sizes": "512x512", "purpose": "any"}, *icons]
+    # wise-plus: the installed app always carries the Ease My Bill icon (the restaurant's logo is inside the app).
     start = f"/?r={b.login_id}"
     return JSONResponse(
         {
             "id": start,
-            "name": b.app_name,
-            "short_name": b.app_name[:12],
+            "name": "Ease My Bill" if b.app_name == "Ease My Bill" else f"{b.app_name} · Ease My Bill",
+            "short_name": "Ease My Bill",
             "description": f"{b.app_name} billing, KOT and kitchen screens",
             "start_url": start,
             "scope": "/",

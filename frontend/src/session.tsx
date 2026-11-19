@@ -28,13 +28,13 @@ function applyBranding(b: PublicBranding | null) {
   const root = document.documentElement;
   root.style.setProperty("--brand", b?.primary_color || "#138996");
   root.dataset.theme = b?.ui_theme || "ease";
-  document.title = b?.app_name || "Ease My Bill";
+  document.title = b?.app_name && b.app_name !== "Ease My Bill" ? `${b.app_name} · Ease My Bill` : "Ease My Bill";
   document.querySelector('meta[name="theme-color"]')?.setAttribute("content", b?.primary_color || "#138996");
   const manifest = document.getElementById("app-manifest");
   manifest?.setAttribute("href", b ? `/api/public/tenants/${b.login_id}/manifest.webmanifest` : "/manifest.webmanifest");
-  const icon = b?.logo_url || "/icon.svg";
-  document.getElementById("app-touch-icon")?.setAttribute("href", b?.logo_url || "/apple-touch-icon.png");
-  document.querySelector('link[rel="icon"]')?.setAttribute("href", icon);
+  // The app icon is always Ease My Bill's; the restaurant's logo shows inside the app.
+  document.getElementById("app-touch-icon")?.setAttribute("href", "/apple-touch-icon.png");
+  document.querySelector('link[rel="icon"]')?.setAttribute("href", "/icon.svg");
 }
 
 async function detectLoginId(): Promise<string | null> {

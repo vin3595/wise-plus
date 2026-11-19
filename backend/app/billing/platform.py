@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
+from ..config import get_settings
 from ..db import system_session
 from ..deps import Auth
 from ..models import Outlet, Tenant
@@ -165,7 +166,7 @@ def razorpay_keys(_adm: str = Depends(require_admin)) -> dict:
     from . import rz
     k = rz.keys()
     return {"key_id": k["key_id"] or None, "has_secret": bool(k["key_secret"]), "has_webhook_secret": bool(k["webhook_secret"]),
-            "webhook_url": "https://plus.easemybill.com/api/public/billing/razorpay"}
+            "webhook_url": get_settings().public_base_url.rstrip("/") + "/api/public/billing/razorpay"}
 
 
 @router.post("/razorpay")
@@ -185,5 +186,5 @@ def set_razorpay_keys(body: dict, _adm: str = Depends(require_admin)) -> dict:
     if not rz.keys()["webhook_secret"] or body.get("new_webhook_secret"):
         vals["webhook_secret"] = secrets.token_urlsafe(24)
     rz.save_keys(vals)
-    return {"ok": True, "key_id": kid, "webhook_url": "https://plus.easemybill.com/api/public/billing/razorpay",
+    return {"ok": True, "key_id": kid, "webhook_url": get_settings().public_base_url.rstrip("/") + "/api/public/billing/razorpay",
             "webhook_secret": vals.get("webhook_secret")}     # shown once, to paste into Razorpay › Webhooks

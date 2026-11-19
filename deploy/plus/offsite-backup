@@ -81,7 +81,7 @@ used=$(df --output=pcent / | tail -1 | tr -dc 0-9)
 [ "${used:-0}" -ge 85 ] && problems+=("disk is ${used}% full")
 
 # 6. WhatsApp sending (the app's own check: token, number quality, failures). An email, because WhatsApp may be what's down.
-wa=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 https://plus.easemybill.com/api/health/whatsapp || echo 000)
+wa=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 https://www.easemybill.com/api/health/whatsapp || echo 000)
 [ "$wa" = "503" ] && problems+=("WhatsApp isn't sending properly: open Settings › Billing › All restaurants")
 
 if [ ${#problems[@]} -gt 0 ]; then
