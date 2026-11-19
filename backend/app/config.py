@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     migrate_database_url: str = "postgresql+psycopg://wise_owner:wise_owner@localhost:5432/wise"
 
     jwt_secret: str = "change-me-in-production"
-    owner_token_hours: int = 24 * 30
+    owner_token_hours: int = 24 * 7     # owners and managers sign in again once a week
     staff_token_hours: int = 16
 
     otp_provider: str = "console"  # console (dev: code shown in the browser) | box (code in the log) | msg91 | fast2sms
