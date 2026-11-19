@@ -13,9 +13,16 @@ type Tab = "restaurants" | "leads" | "razorpay" | "whatsapp";
 export default function Admin() {
   const [phone, setPhone] = useState<string | null>(null);
   const [checked, setChecked] = useState(false);
-  const [tab, setTab] = useState<Tab>(() => (location.hash.slice(1) as Tab) || "restaurants");
+  const [tab, setTab] = useState<Tab>(() => (location.hash.slice(1).startsWith("link=") ? "whatsapp" : (location.hash.slice(1) as Tab)) || "restaurants");
   useEffect(() => {
     document.title = "Ease My Bill admin";
+    const link = new URLSearchParams(location.hash.slice(1)).get("link");   // one-time sign-in link from the server
+    if (link) {
+      history.replaceState(null, "", "/admin");
+      api<{ token: string; phone: string }>("/admin/login/link", { body: { code: link } })
+        .then((r) => { adminTokenStore.set(r.token); setPhone(r.phone); }).catch(() => undefined).finally(() => setChecked(true));
+      return;
+    }
     if (!adminTokenStore.get()) { setChecked(true); return; }
     api<{ phone: string }>("/admin/me").then((r) => setPhone(r.phone)).catch(() => adminTokenStore.clear()).finally(() => setChecked(true));
   }, []);

@@ -90,3 +90,33 @@ def verify(body: VerifyIn) -> dict:
 @router.get("/me")
 def me(authorization: str | None = Header(default=None)) -> dict:
     return {"phone": require_admin(authorization)}
+
+
+class LinkIn(BaseModel):
+    code: str = Field(min_length=20, max_length=80)
+
+
+@router.post("/login/link")
+def login_link(body: LinkIn) -> dict:
+    """One-time sign-in link made on the server (wiseplus admin-link): for when the admin phone can't get a code.
+    Single use, 15 minutes."""
+    import hashlib
+    import hmac
+    import time
+
+    from sqlalchemy import text
+    with system_session() as db:
+        row = db.execute(text("select value_enc from platform_secrets where key = 'admin_link'")).first()
+        db.execute(text("delete from platform_secrets where key = 'admin_link'"))
+    if not row:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "This link has been used or has expired")
+    try:
+        digest, until = row[0].split(":")
+    except ValueError:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "This link has been used or has expired") from None
+    ok = hmac.compare_digest(digest, hashlib.sha256(body.code.encode()).hexdigest()) and time.time() < float(until)
+    phones = sorted(admin_phones())
+    if not ok or not phones:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "This link has been used or has expired")
+    token = create_token({"sub": f"admin:{phones[0]}", "tid": "platform", "adm": True}, get_settings().jwt_secret, 12)
+    return {"token": token, "phone": phones[0]}
