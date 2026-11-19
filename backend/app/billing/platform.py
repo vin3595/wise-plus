@@ -260,3 +260,69 @@ def set_wa_sender(body: dict, _adm: str = Depends(require_admin)) -> dict:
     for k, v in vals.items():          # this process now; the others on restart
         setattr(s, k, v)
     return {"ok": True, "display_number": shown, "name": r.get("verified_name"), "verified": r.get("code_verification_status")}
+
+
+# ---------------------------------------------------------------- login codes: how sign-in codes reach people
+
+def _save_platform(vals: dict[str, str]) -> None:
+    from ..whatsapp.numbers import seal
+    from .models import PlatformSecret
+    with system_session() as db:
+        for k, v in vals.items():
+            row = db.get(PlatformSecret, k)
+            if row:
+                row.value_enc = seal(v)
+            else:
+                db.add(PlatformSecret(key=k, value_enc=seal(v)))
+    s = get_settings()
+    for k, v in vals.items():          # this worker now; the others within a minute
+        setattr(s, k, v)
+
+
+@router.get("/login-codes")
+def login_codes(_adm: str = Depends(require_admin)) -> dict:
+    s = get_settings()
+    phone = s.phone_otp or ("sms" if s.otp_provider in ("fast2sms", "msg91") else "whatsapp")
+    return {"phone": phone, "has_sms_key": bool(s.fast2sms_api_key or (s.msg91_auth_key and s.msg91_template_id)),
+            "mail_user": s.mail_user or None, "has_mail_password": bool(s.mail_password),
+            "whatsapp_ready": bool(s.wa_token and s.wa_phone_number_id)}
+
+
+@router.post("/login-codes")
+def set_login_codes(body: dict, _adm: str = Depends(require_admin)) -> dict:
+    """Mobile numbers: WhatsApp or SMS (Fast2SMS key). Email: a Gmail address and its Google app password,
+    checked by signing in to Gmail and sending a test email to that same address."""
+    s = get_settings()
+    vals: dict[str, str] = {}
+    phone = str(body.get("phone") or "").strip()
+    if phone:
+        if phone not in ("whatsapp", "sms"):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Choose WhatsApp or SMS")
+        vals["phone_otp"] = phone
+    key = str(body.get("sms_key") or "").strip()
+    if key:
+        vals["fast2sms_api_key"] = key
+    if phone == "sms" and not (key or s.fast2sms_api_key or (s.msg91_auth_key and s.msg91_template_id)):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "For SMS, paste your Fast2SMS API key first")
+    user = str(body.get("mail_user") or "").strip().lower()
+    pw = str(body.get("mail_password") or "").replace(" ", "").strip()
+    tested = None
+    if user or pw:
+        user = user or s.mail_user
+        pw = pw or s.mail_password
+        if "@" not in user or len(pw) < 8:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Enter the Gmail address and its 16-letter app password")
+        from ..services.otp import send_mail
+        trial = s.model_copy(update={"mail_user": user, "mail_password": pw})
+        try:
+            send_mail(user, "Ease My Bill can now email sign-in codes",
+                      "This is a test from Ease My Bill. Sign-in codes will be sent from this address.", settings=trial)
+        except Exception as e:  # noqa: BLE001
+            msg = "Gmail didn't accept that app password" if "535" in str(e) or "Username" in str(e) else f"Couldn't send a test email ({e})"
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, msg) from e
+        vals.update({"mail_user": user, "mail_password": pw})
+        tested = user
+    if not vals:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Nothing to save")
+    _save_platform(vals)
+    return {"ok": True, "test_email_to": tested, **login_codes(_adm)}

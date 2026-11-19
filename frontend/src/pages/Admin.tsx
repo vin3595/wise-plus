@@ -8,7 +8,7 @@ import Leads from "./Leads";
 // Ease My Bill admin, at /admin. Its own sign-in (WISE_PLATFORM_ADMIN_PHONES), separate from every restaurant,
 // your own included: restaurants, leads and the Razorpay account restaurants pay you through.
 
-type Tab = "restaurants" | "leads" | "razorpay" | "whatsapp";
+type Tab = "restaurants" | "leads" | "razorpay" | "whatsapp" | "codes";
 
 export default function Admin() {
   const [phone, setPhone] = useState<string | null>(null);
@@ -29,7 +29,7 @@ export default function Admin() {
   useEffect(() => { history.replaceState(null, "", `#${tab}`); }, [tab]);
   if (!checked) return <div className="splash">Loading…</div>;
   if (!phone) return <AdminLogin onIn={setPhone} />;
-  const tabs: [Tab, string][] = [["restaurants", "Restaurants"], ["leads", "Leads"], ["razorpay", "Your Razorpay"], ["whatsapp", "Your WhatsApp"]];
+  const tabs: [Tab, string][] = [["restaurants", "Restaurants"], ["leads", "Leads"], ["razorpay", "Your Razorpay"], ["whatsapp", "Your WhatsApp"], ["codes", "Login codes"]];
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "16px" }}>
       <header className="row" style={{ justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
@@ -43,6 +43,7 @@ export default function Admin() {
       {tab === "leads" && <Leads />}
       {tab === "razorpay" && <YourRazorpay />}
       {tab === "whatsapp" && <YourWhatsApp />}
+      {tab === "codes" && <LoginCodes />}
     </div>
   );
 }
@@ -87,7 +88,7 @@ function YourWhatsApp() {
   return (
     <Card title="Your WhatsApp number (Ease My Bill's sender)">
       <p className="small">Sending from: <strong>{k.display_number ? `+${k.display_number}` : "not set"}</strong> · phone number ID {k.phone_number_id || "—"}</p>
-      {done ? <p className="ok-text">Saved and checked with Meta ✓ +{done.display_number}{done.name ? ` (${done.name})` : ""}. It switches over when the server restarts — tell Claude "saved".</p> : <>
+      {done ? <p className="ok-text">Saved and checked with Meta ✓ +{done.display_number}{done.name ? ` (${done.name})` : ""}. It's used within a minute.</p> : <>
         <p className="muted small">Meta Business Suite › Settings › System users › EaseMyBillAPI › Generate token → Copy. App secret: developers.facebook.com › Ease My Bill › App settings › Basic.</p>
         <div className="row wrap">
           <Field label={k.has_token ? "Permanent token (saved — leave blank)" : "Permanent token"}><Input type="password" value={f.token} onChange={(e) => setF({ ...f, token: e.target.value.trim() })} autoComplete="off" placeholder="EAA…" /></Field>
@@ -102,4 +103,53 @@ function YourWhatsApp() {
       </>}
     </Card>
   );
+}
+
+/** How sign-in codes reach people: a mobile number gets WhatsApp or SMS, an email address gets an email from your Gmail. */
+function LoginCodes() {
+  type Info = { phone: "whatsapp" | "sms"; has_sms_key: boolean; mail_user: string | null; has_mail_password: boolean; whatsapp_ready: boolean };
+  const [k, setK] = useState<Info | null>(null);
+  const [f, setF] = useState({ sms_key: "", mail_user: "", mail_password: "" });
+  const [msg, setMsg] = useState<string | null>(null);
+  const act = useAction();
+  const load = () => api<Info>("/platform/login-codes").then((x) => { setK(x); setF((o) => ({ ...o, mail_user: o.mail_user || x.mail_user || "easemybills@gmail.com" })); }).catch(() => setK(null));
+  useEffect(() => { load(); }, []);
+  if (!k) return <p className="muted">Loading…</p>;
+  const save = (body: Record<string, string>, done: string) => act.run(async () => {
+    const r = await api<Info & { test_email_to: string | null }>("/platform/login-codes", { body });
+    setK(r); setMsg(r.test_email_to ? `Saved ✓ A test email went to ${r.test_email_to}.` : done);
+    setF((o) => ({ ...o, sms_key: "", mail_password: "" }));
+  });
+  return (<>
+    <Card title="Codes to a mobile number">
+      <p className="small">When someone signs in or signs up with their mobile number, the code goes by:</p>
+      <div className="row" style={{ gap: 8 }}>
+        <Button variant={k.phone === "whatsapp" ? undefined : "ghost"} disabled={act.busy} onClick={() => save({ phone: "whatsapp" }, "Mobile codes now go on WhatsApp ✓")}>WhatsApp</Button>
+        <Button variant={k.phone === "sms" ? undefined : "ghost"} disabled={act.busy || !k.has_sms_key} onClick={() => save({ phone: "sms" }, "Mobile codes now go by SMS ✓")}>SMS</Button>
+      </div>
+      <p className="muted small">{k.phone === "whatsapp" ? "WhatsApp, with SMS as backup when an SMS key is saved." : "SMS through Fast2SMS."}{!k.has_sms_key && " To use SMS, add a Fast2SMS API key below."}</p>
+      <div className="row wrap">
+        <Field label={k.has_sms_key ? "Fast2SMS API key (saved — paste to change)" : "Fast2SMS API key"} hint="fast2sms.com › Dev API › copy the API key">
+          <Input type="password" value={f.sms_key} onChange={(e) => setF({ ...f, sms_key: e.target.value.trim() })} autoComplete="off" />
+        </Field>
+      </div>
+      <Button variant="ghost" disabled={act.busy || f.sms_key.length < 20} onClick={() => save({ sms_key: f.sms_key }, "SMS key saved ✓")}>Save SMS key</Button>
+    </Card>
+    <Card title="Codes to an email address (Gmail)">
+      <p className="small">{k.mail_user && k.has_mail_password ? <>On ✓ Codes are emailed from <strong>{k.mail_user}</strong>.</> : "Off: people who type an email address can't get a code yet."}</p>
+      <ol className="small muted" style={{ paddingLeft: 18 }}>
+        <li>Sign in to that Gmail on your phone or laptop. 2-Step Verification must be on (myaccount.google.com › Security).</li>
+        <li>Open <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer">myaccount.google.com/apppasswords</a>, type the name <em>Ease My Bill</em> and tap Create.</li>
+        <li>Copy the 16-letter password Google shows and paste it here.</li>
+      </ol>
+      <div className="row wrap">
+        <Field label="Gmail address"><Input type="email" value={f.mail_user} onChange={(e) => setF({ ...f, mail_user: e.target.value.trim() })} autoComplete="off" /></Field>
+        <Field label={k.has_mail_password ? "App password (saved — paste to change)" : "App password"}><Input type="password" value={f.mail_password} onChange={(e) => setF({ ...f, mail_password: e.target.value })} autoComplete="off" placeholder="abcd efgh ijkl mnop" /></Field>
+      </div>
+      <Button disabled={act.busy || !f.mail_user.includes("@") || f.mail_password.replace(/\s/g, "").length < 16} onClick={() => save({ mail_user: f.mail_user, mail_password: f.mail_password }, "Saved ✓")}>
+        {act.busy ? "Checking with Gmail…" : "Check and save"}</Button>
+    </Card>
+    <ErrorText error={act.error} />
+    {msg && <p className="ok-text">{msg}</p>}
+  </>);
 }

@@ -58,12 +58,12 @@ def signup_start(body: SignupStart) -> OtpSent:
         if body.login_id and db.scalar(select(Tenant.id).where(Tenant.login_id == body.login_id)) is not None:
             raise HTTPException(status.HTTP_409_CONFLICT, "That login ID is taken")
         try:
-            code = otp.issue(db, body.phone, "signup")
+            code = otp.issue(db, body.email if body.via == "email" else body.phone, "signup")
         except otp.OtpError as e:
             error = e
     if error:
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, str(error))
-    return OtpSent(sent_to=mask_identifier("phone", body.phone), dev_otp=_dev_code(code))
+    return OtpSent(sent_to=mask_identifier(body.via, body.email if body.via == "email" else body.phone), dev_otp=_dev_code(code))
 
 
 @router.post("/signup/verify", response_model=TokenOut)
@@ -74,7 +74,7 @@ def signup_verify(body: SignupVerify) -> TokenOut:
     with system_session() as db:
         _check_signup_open(db)
         try:
-            otp.verify(db, body.phone, "signup", body.otp)
+            otp.verify(db, body.email if body.via == "email" else body.phone, "signup", body.otp)
         except otp.OtpError as e:
             error = e  # keep the session committing so the failed attempt is counted
         if error is None:

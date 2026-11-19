@@ -73,12 +73,58 @@ def _deliver_via(provider: str, identifier: str, code: str) -> None:
     _deliver(identifier, code, s.model_copy(update={"otp_provider": provider}))
 
 
+def send_mail(to: str, subject: str, text: str, html: str | None = None, settings=None) -> None:
+    """Email through the Gmail account set in admin › Login codes (Google app password, STARTTLS on 587)."""
+    import smtplib
+    from email.message import EmailMessage
+    from email.utils import formataddr
+    s = settings or get_settings()
+    msg = EmailMessage()
+    msg["From"] = formataddr(("Ease My Bill", s.mail_user))
+    msg["To"] = to
+    msg["Subject"] = subject
+    msg.set_content(text)
+    if html:
+        msg.add_alternative(html, subtype="html")
+    with smtplib.SMTP(s.mail_host, s.mail_port, timeout=15) as smtp:
+        smtp.starttls()
+        smtp.login(s.mail_user, s.mail_password)
+        smtp.send_message(msg)
+
+
+def _email_code(to: str, code: str) -> None:
+    mins = get_settings().otp_ttl_minutes
+    send_mail(to, f"{code} is your Ease My Bill code",
+              f"Your Ease My Bill code is {code}\n\nIt works for {mins} minutes. Don't share it with anyone.\n"
+              f"If you didn't ask for it, ignore this email.",
+              f"""<div style="font-family:Arial,sans-serif;max-width:420px">
+<p>Your Ease My Bill code is</p><p style="font-size:32px;font-weight:bold;letter-spacing:6px;margin:8px 0">{code}</p>
+<p style="color:#555">It works for {mins} minutes. Don't share it with anyone.<br>If you didn't ask for it, ignore this email.</p></div>""")
+
+
 def _deliver(identifier: str, code: str, settings=None) -> None:
     s = settings or get_settings()
-    if s.otp_provider in ("console", "box") or "@" in identifier:
-        # Email delivery (SMTP/SES) is a TODO; console mode is for local development.
-        log.warning("OTP for %s: %s", identifier, code)
+    if "@" in identifier:
+        to = identifier.rsplit(":", 1)[-1]
+        if s.mail_user and s.mail_password:
+            try:
+                _email_code(to, code)
+            except Exception:  # noqa: BLE001
+                log.exception("email OTP send failed")
+                raise OtpError("Couldn't email the code right now. Try your mobile number.") from None
+            return
+        if s.otp_provider in ("console", "box"):
+            log.warning("OTP for %s: %s", identifier, code)    # development only
+            return
+        raise OtpError("Codes by email aren't switched on yet. Use your mobile number.")
+    if s.otp_provider in ("console", "box"):
+        log.warning("OTP for %s: %s", identifier, code)        # development only
         return
+    if settings is None and s.phone_otp in ("whatsapp", "sms"):   # the admin's pick for mobile numbers
+        prov = "whatsapp" if s.phone_otp == "whatsapp" else ("fast2sms" if s.fast2sms_api_key else "msg91")
+        if prov != s.otp_provider:
+            _deliver_via(prov, identifier, code)
+            return
     if s.otp_provider == "msg91":
         # MSG91 OTP API: template must contain the ##OTP## placeholder.
         resp = httpx.post(

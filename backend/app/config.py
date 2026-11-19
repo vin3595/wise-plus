@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     msg91_auth_key: str = ""
     msg91_template_id: str = ""
     fast2sms_api_key: str = ""
+    phone_otp: str = ""            # wise-plus admin choice for codes to a mobile: whatsapp | sms ("" = otp_provider)
+    mail_user: str = ""            # Gmail address codes are emailed from (admin › Login codes)
+    mail_password: str = ""        # its Google app password
+    mail_host: str = "smtp.gmail.com"
+    mail_port: int = 587
     # WhatsApp Cloud API (Meta), wise-plus. Empty token = WhatsApp off.
     wa_token: str = ""              # permanent (system user) access token
     wa_phone_number_id: str = ""    # the business number's ID in Meta
@@ -73,6 +78,8 @@ class Settings(BaseSettings):
 
 # wise-plus: Ease My Bill's own WhatsApp sender, pasted at /admin (sealed in platform_secrets), wins over the server file.
 PLATFORM_WA_KEYS = ("wa_token", "wa_phone_number_id", "wa_business_id", "wa_app_secret", "wa_app_id", "wa_display_number")
+PLATFORM_CODE_KEYS = ("phone_otp", "mail_user", "mail_password", "fast2sms_api_key")   # admin › Login codes
+_ENGINE = None
 
 
 def _platform_overrides(s: "Settings") -> None:
@@ -83,22 +90,38 @@ def _platform_overrides(s: "Settings") -> None:
         from cryptography.fernet import Fernet
         from sqlalchemy import create_engine, text
         f = Fernet(base64.urlsafe_b64encode(hashlib.sha256(("wa-numbers:" + s.jwt_secret).encode()).digest()))
-        eng = create_engine(s.database_url, pool_pre_ping=True)
-        try:
-            with eng.connect() as c:
-                c.execute(text("select set_config('app.bypass_rls', 'on', false)"))
-                rows = c.execute(text("select key, value_enc from platform_secrets where key like 'wa_%'")).all()
-        finally:
-            eng.dispose()
+        global _ENGINE
+        if _ENGINE is None:
+            _ENGINE = create_engine(s.database_url, pool_pre_ping=True, pool_size=1, max_overflow=0)
+        with _ENGINE.connect() as c:
+            c.execute(text("select set_config('app.bypass_rls', 'on', false)"))
+            rows = c.execute(text("select key, value_enc from platform_secrets where key like 'wa_%' "
+                                  "or key in ('phone_otp', 'mail_user', 'mail_password', 'fast2sms_api_key')")).all()
         for k, v in rows:
-            if k in PLATFORM_WA_KEYS:
+            if k in PLATFORM_WA_KEYS or k in PLATFORM_CODE_KEYS:
                 setattr(s, k, f.decrypt(v.encode()).decode())
     except Exception:  # noqa: BLE001 - no table yet / no database (tests, first start): the server file stands
         pass
 
 
 @lru_cache
-def get_settings() -> Settings:
+def _cached() -> Settings:
     s = Settings()
     _platform_overrides(s)
     return s
+
+
+_LAST = [0.0]
+
+
+def get_settings() -> Settings:
+    """The settings, with keys saved in admin re-read at most once a minute (so every worker picks them up)."""
+    import time
+    s = _cached()
+    if time.monotonic() - _LAST[0] > 60:
+        _LAST[0] = time.monotonic()
+        _platform_overrides(s)
+    return s
+
+
+get_settings.cache_clear = _cached.cache_clear   # tests reset settings this way

@@ -107,3 +107,23 @@ def test_new_razorpay_webhook_secret(client, monkeypatch):
     assert r.status_code == 200 and len(r.json()["webhook_secret"]) > 20
     assert saved["webhook_secret"] == r.json()["webhook_secret"]
     assert r.json()["webhook_url"].endswith("/api/public/billing/razorpay")
+
+
+def test_admin_login_codes(client, monkeypatch):
+    from app.services import otp as otp_mod
+    adm = admin_tok(client, monkeypatch)
+    g = client.get("/api/platform/login-codes", headers=h(adm)).json()
+    assert g["phone"] in ("whatsapp", "sms")
+    assert client.post("/api/platform/login-codes", headers=h(adm), json={"phone": "sms"}).status_code == 422   # no SMS key yet
+    monkeypatch.setattr(otp_mod, "send_mail", lambda *a, **k: (_ for _ in ()).throw(Exception("535 Username and Password not accepted")))
+    r = client.post("/api/platform/login-codes", headers=h(adm), json={"mail_user": "a@gmail.com", "mail_password": "abcd efgh ijkl mnop"})
+    assert r.status_code == 422 and "app password" in r.json()["detail"]
+    monkeypatch.setattr(otp_mod, "send_mail", lambda *a, **k: None)
+    r = client.post("/api/platform/login-codes", headers=h(adm), json={"mail_user": "a@gmail.com", "mail_password": "abcd efgh ijkl mnop"}).json()
+    assert r["test_email_to"] == "a@gmail.com" and r["has_mail_password"]
+    from sqlalchemy import text
+    from app.config import get_settings
+    from app.db import system_session
+    with system_session() as db:
+        db.execute(text("delete from platform_secrets where key in ('mail_user', 'mail_password', 'phone_otp')"))
+    monkeypatch.setattr(get_settings(), "mail_user", ""); monkeypatch.setattr(get_settings(), "mail_password", "")

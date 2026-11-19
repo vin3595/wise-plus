@@ -1220,3 +1220,25 @@ def test_signup_without_login_id_gets_a_6_digit_code(client):
     lid = r.json()["tenant"]["login_id"]
     assert len(lid) == 6 and lid.isdigit()
     assert client.get(f"/api/auth/outlets?login_id={lid}").status_code == 200
+
+
+def test_signup_code_by_email_and_gmail_delivery(client, monkeypatch):
+    from app.config import get_settings
+    from app.services import otp as otp_mod
+    body = {"restaurant_name": "Mail Cafe", "owner_name": "Ravi", "email": "ravi@mailcafe.in", "phone": "9811122244", "via": "email"}
+    st = client.post("/api/auth/signup/start", json=body).json()
+    assert st["sent_to"].endswith("@mailcafe.in")
+    r = client.post("/api/auth/signup/verify", json={**body, "otp": st["dev_otp"]})
+    assert r.status_code == 200, r.text
+    # with Gmail set, the code is emailed (not logged)
+    sent = []
+    monkeypatch.setattr(otp_mod, "send_mail", lambda to, subj, text, html=None, settings=None: sent.append((to, subj)))
+    s = get_settings()
+    monkeypatch.setattr(s, "mail_user", "x@gmail.com"); monkeypatch.setattr(s, "mail_password", "abcdabcdabcdabcd")
+    monkeypatch.setattr(s, "otp_provider", "whatsapp")
+    otp_mod._deliver("tid:ravi@mailcafe.in", "123456")
+    assert sent == [("ravi@mailcafe.in", "123456 is your Ease My Bill code")]
+    monkeypatch.setattr(s, "mail_password", "")
+    import pytest as _p
+    with _p.raises(otp_mod.OtpError):
+        otp_mod._deliver("tid:ravi@mailcafe.in", "123456")
