@@ -165,6 +165,7 @@ export default function Billing() {
       <ReferCard />
       <WhatsAppNumber />
       <YourData />
+      {b.platform_admin && <YourRazorpay />}
       {b.platform_admin && <AllRestaurants />}
     </div>
   );
@@ -329,6 +330,43 @@ function ManualApi({ onDone, login }: { onDone: () => void; login?: string }) {
   );
 }
 
+
+/** Only you: the Razorpay account Ease My Bill's own ₹999 plans are charged to. */
+function YourRazorpay() {
+  const [k, setK] = useState<{ key_id: string | null; has_secret: boolean; has_webhook_secret: boolean; webhook_url: string } | null>(null);
+  const [f, setF] = useState({ key_id: "", key_secret: "" });
+  const [done, setDone] = useState<{ key_id: string; webhook_url: string; webhook_secret: string | null } | null>(null);
+  const [open, setOpen] = useState(false);
+  const act = useAction();
+  const load = () => api<NonNullable<typeof k>>("/platform/razorpay").then(setK).catch(() => setK(null));
+  useEffect(() => { load(); }, []);
+  if (!k) return null;
+  const ready = !!(k.key_id && k.has_secret);
+  return (
+    <Card title="Your Razorpay (Ease My Bill's own billing)">
+      <p className="small">{ready ? <>Connected: <code>{k.key_id}</code>. Restaurants can pay for their plan.</> : "Not connected yet: restaurants can't pay for a plan until you add your keys."}
+        {ready && !k.has_webhook_secret ? " Webhook secret missing." : ""}</p>
+      {done ? <div className="ok-text small">
+          <p>Saved and checked with Razorpay ✓</p>
+          {done.webhook_secret && <p>Now in Razorpay › Account &amp; Settings › Webhooks › Add new webhook:<br />
+            URL <code>{done.webhook_url}</code><br />Secret <code>{done.webhook_secret}</code> (shown once)<br />
+            Events: all <em>subscription.*</em> events, <em>payment.captured</em> and <em>order.paid</em>.</p>}
+        </div>
+        : !open ? <p className="small"><button className="link" onClick={() => setOpen(true)}>{ready ? "Change keys" : "Add your keys"}</button></p>
+        : <div className="sub-form">
+            <p className="muted small">Razorpay › Account &amp; Settings › Websites &amp; API keys. Use the live Key Id and its Key Secret.</p>
+            <div className="row wrap">
+              <Field label="Key Id"><Input value={f.key_id} placeholder="rzp_live_…" onChange={(e) => setF({ ...f, key_id: e.target.value.trim() })} autoComplete="off" /></Field>
+              <Field label="Key Secret"><Input type="password" value={f.key_secret} onChange={(e) => setF({ ...f, key_secret: e.target.value.trim() })} autoComplete="off" /></Field>
+            </div>
+            <ErrorText error={act.error} />
+            <div className="row"><Button disabled={act.busy || !f.key_id.startsWith("rzp_") || f.key_secret.length < 10} onClick={() => act.run(async () => {
+              setDone(await api("/platform/razorpay", { body: f })); setF({ key_id: "", key_secret: "" }); load();
+            })}>{act.busy ? "Checking…" : "Check and save"}</Button><Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button></div>
+          </div>}
+    </Card>
+  );
+}
 
 /** A restaurant's own link: each restaurant that joins with it and pays gives both a month free. */
 function ReferCard() {

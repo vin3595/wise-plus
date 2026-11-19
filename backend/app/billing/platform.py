@@ -162,3 +162,38 @@ def set_whatsapp_for(login_id: str, body: dict, auth: Auth = Depends(get_auth), 
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Phone number id, token (and WABA id) please") from e
     return manual_connect(tid, data)
+
+
+# ---------------------------------------------------------------- your Razorpay, for Ease My Bill's own billing
+
+@router.get("/razorpay")
+def razorpay_keys(auth: Auth = Depends(get_auth), db: Session = Depends(get_db)) -> dict:
+    from . import rz
+    if not is_admin(db, auth):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+    k = rz.keys()
+    return {"key_id": k["key_id"] or None, "has_secret": bool(k["key_secret"]), "has_webhook_secret": bool(k["webhook_secret"]),
+            "webhook_url": "https://plus.easemybill.com/api/public/billing/razorpay"}
+
+
+@router.post("/razorpay")
+def set_razorpay_keys(body: dict, auth: Auth = Depends(get_auth), db: Session = Depends(get_db)) -> dict:
+    """Paste the live Key Id and Key Secret; they're checked with Razorpay before they're kept."""
+    import secrets
+    from . import rz
+    if not is_admin(db, auth):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Not found")
+    kid = str(body.get("key_id") or "").strip()
+    sec = str(body.get("key_secret") or "").strip()
+    if not kid.startswith("rzp_") or len(sec) < 10:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Paste the Key Id (starts rzp_live_) and the Key Secret")
+    try:
+        rz.call("GET", "/plans?count=1", auth=(kid, sec))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Razorpay didn't accept those keys ({e})") from e
+    vals = {"key_id": kid, "key_secret": sec}
+    if not rz.keys()["webhook_secret"] or body.get("new_webhook_secret"):
+        vals["webhook_secret"] = secrets.token_urlsafe(24)
+    rz.save_keys(vals)
+    return {"ok": True, "key_id": kid, "webhook_url": "https://plus.easemybill.com/api/public/billing/razorpay",
+            "webhook_secret": vals.get("webhook_secret")}     # shown once, to paste into Razorpay › Webhooks

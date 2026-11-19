@@ -38,3 +38,40 @@ def test_platform_usage_only_for_house_owner(client, monkeypatch):
     assert "across all restaurants" in r.text and "Meta cost" in r.text
     r = wr.reply_rich("91" + other["phone"], "credits")
     assert "across all restaurants" not in r.text
+
+
+def test_platform_owner_pastes_razorpay_keys(client, monkeypatch):
+    from sqlalchemy import text
+
+    from app.billing import rz
+    from app.config import get_settings
+    from app.db import system_session
+    house = setup(client)
+    other = setup(client)
+    monkeypatch.setattr(get_settings(), "house_tenants", house["login"])
+    with system_session() as db:
+        db.execute(text("delete from platform_secrets"))
+    seen = []
+
+    def fake(method, path, body=None, auth=None):
+        seen.append(auth)
+        if auth and auth[1] == "wrong-secret-x":
+            raise RuntimeError("Razorpay: Authentication failed")
+        return {"items": []}
+    monkeypatch.setattr(rz, "call", fake)
+    assert client.post("/api/platform/razorpay", headers=h(other["tok"]), json={"key_id": "rzp_live_a", "key_secret": "s" * 20}).status_code == 404
+    r = client.post("/api/platform/razorpay", headers=h(house["tok"]), json={"key_id": "rzp_live_a", "key_secret": "wrong-secret-x"})
+    assert r.status_code == 422 and "didn't accept" in r.json()["detail"]
+    r = client.post("/api/platform/razorpay", headers=h(house["tok"]), json={"key_id": "rzp_live_a", "key_secret": "s" * 20}).json()
+    assert r["ok"] and len(r["webhook_secret"]) > 20
+    k = rz.keys()
+    assert k == {"key_id": "rzp_live_a", "key_secret": "s" * 20, "webhook_secret": r["webhook_secret"]} and rz.configured()
+    with system_session() as db:
+        assert "s" * 20 not in str(db.execute(text("select value_enc from platform_secrets")).all())   # sealed, not plain
+    g = client.get("/api/platform/razorpay", headers=h(house["tok"])).json()
+    assert g["key_id"] == "rzp_live_a" and g["has_secret"] and "key_secret" not in g
+    # pasting again keeps the webhook secret unless asked for a new one
+    r2 = client.post("/api/platform/razorpay", headers=h(house["tok"]), json={"key_id": "rzp_live_b", "key_secret": "t" * 20}).json()
+    assert r2["webhook_secret"] is None and rz.keys()["webhook_secret"] == r["webhook_secret"]
+    with system_session() as db:
+        db.execute(text("delete from platform_secrets"))

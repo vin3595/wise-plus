@@ -80,7 +80,7 @@ def billing(auth: Auth = Depends(get_auth), db: Session = Depends(get_db)) -> di
         "packs": [{"key": k, **v} for k, v in PACKS.items()],
         "messages": msgs(db, t), "msg_packs": [{"key": k, **v} for k, v in MSG_PACKS.items()],
         "platform_admin": __import__("app.billing.platform", fromlist=["is_admin"]).is_admin(db, auth),
-        "ready": rz.configured(), "key_id": rz.get_settings().billing_rz_key_id or None,
+        "ready": rz.configured(), "key_id": rz.keys()["key_id"] or None,
     }
 
 
@@ -137,7 +137,7 @@ def subscribe(body: PlanIn, auth: Auth = Depends(require(Perm.tenant_settings)),
     s.pending = {"subscription_id": r["id"], "modules": q["modules"], "period": q["period"], "amount_paise": q["amount_paise"],
                  "start_at": _ts(start), "outlets": q["outlets"]}
     db.flush()
-    return {"subscription_id": r["id"], "key_id": rz.get_settings().billing_rz_key_id, "quote": q, "starts": _ts(start),
+    return {"subscription_id": r["id"], "key_id": rz.keys()["key_id"], "quote": q, "starts": _ts(start),
             "name": t.name, "email": t.owner_email, "phone": t.owner_phone}
 
 
@@ -182,7 +182,7 @@ def verify(body: SubVerifyIn, auth: Auth = Depends(require(Perm.tenant_settings)
     if not s or not s.pending or s.pending.get("subscription_id") != body.razorpay_subscription_id:
         raise HTTPException(status.HTTP_409_CONFLICT, "That payment isn't for the plan being set up. Try again from Billing.")
     msg = f"{body.razorpay_payment_id}|{body.razorpay_subscription_id}".encode()
-    if not rz.hmac_ok(msg, body.razorpay_signature, rz.get_settings().billing_rz_key_secret):
+    if not rz.hmac_ok(msg, body.razorpay_signature, rz.keys()["key_secret"]):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Payment couldn't be verified")
     _activate(db, t, s)
     audit.record(db, t.id, auth.user_id, "subscribe", "billing", t.id, after={"modules": s.modules, "period": s.period})
@@ -213,7 +213,7 @@ def buy_pack(pack: str, auth: Auth = Depends(require(Perm.tenant_settings)), db:
     t = _tenant(db, auth)
     o = rz.call("POST", "/orders", {"amount": p["paise"], "currency": "INR", "receipt": f"{'msg' if 'messages' in p else 'scan'}-{uuid.uuid4().hex[:12]}",
                                     "notes": {"tenant_id": str(t.id), "pack": pack}})
-    return {"order_id": o["id"], "key_id": rz.get_settings().billing_rz_key_id, "amount_paise": p["paise"], "scans": p.get("scans"),
+    return {"order_id": o["id"], "key_id": rz.keys()["key_id"], "amount_paise": p["paise"], "scans": p.get("scans"),
             "messages": p.get("messages"),
             "name": t.name, "email": t.owner_email, "phone": t.owner_phone}
 
@@ -237,7 +237,7 @@ def _credit_pack(db: Session, tenant_id, order_id: str, payment_id: str, pack: s
 @router.post("/packs/verify")
 def verify_pack(body: PackVerifyIn, auth: Auth = Depends(require(Perm.tenant_settings)), db: Session = Depends(get_db)) -> dict:
     msg = f"{body.razorpay_order_id}|{body.razorpay_payment_id}".encode()
-    if not rz.hmac_ok(msg, body.razorpay_signature, rz.get_settings().billing_rz_key_secret):
+    if not rz.hmac_ok(msg, body.razorpay_signature, rz.keys()["key_secret"]):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Payment couldn't be verified")
     o = rz.call("GET", f"/orders/{body.razorpay_order_id}")
     notes = o.get("notes") or {}
@@ -252,7 +252,7 @@ async def webhook(request: Request) -> dict:
     """Razorpay tells us about renewals, failures and cancellations (and pack payments, if checkout
     closed before the app could confirm)."""
     raw = await request.body()
-    if not rz.hmac_ok(raw, request.headers.get("x-razorpay-signature"), rz.get_settings().billing_rz_webhook_secret):
+    if not rz.hmac_ok(raw, request.headers.get("x-razorpay-signature"), rz.keys()["webhook_secret"]):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Bad signature")
     ev = json.loads(raw)
     kind = ev.get("event", "")
