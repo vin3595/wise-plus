@@ -71,6 +71,34 @@ class Settings(BaseSettings):
     live_updates: bool = True      # push changes to screens (Postgres LISTEN/NOTIFY + Server-Sent Events)
 
 
+# wise-plus: Ease My Bill's own WhatsApp sender, pasted at /admin (sealed in platform_secrets), wins over the server file.
+PLATFORM_WA_KEYS = ("wa_token", "wa_phone_number_id", "wa_business_id", "wa_app_secret", "wa_app_id", "wa_display_number")
+
+
+def _platform_overrides(s: "Settings") -> None:
+    try:
+        import base64
+        import hashlib
+
+        from cryptography.fernet import Fernet
+        from sqlalchemy import create_engine, text
+        f = Fernet(base64.urlsafe_b64encode(hashlib.sha256(("wa-numbers:" + s.jwt_secret).encode()).digest()))
+        eng = create_engine(s.database_url, pool_pre_ping=True)
+        try:
+            with eng.connect() as c:
+                c.execute(text("select set_config('app.bypass_rls', 'on', false)"))
+                rows = c.execute(text("select key, value_enc from platform_secrets where key like 'wa_%'")).all()
+        finally:
+            eng.dispose()
+        for k, v in rows:
+            if k in PLATFORM_WA_KEYS:
+                setattr(s, k, f.decrypt(v.encode()).decode())
+    except Exception:  # noqa: BLE001 - no table yet / no database (tests, first start): the server file stands
+        pass
+
+
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    s = Settings()
+    _platform_overrides(s)
+    return s

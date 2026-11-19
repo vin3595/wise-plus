@@ -188,3 +188,58 @@ def set_razorpay_keys(body: dict, _adm: str = Depends(require_admin)) -> dict:
     rz.save_keys(vals)
     return {"ok": True, "key_id": kid, "webhook_url": get_settings().public_base_url.rstrip("/") + "/api/public/billing/razorpay",
             "webhook_secret": vals.get("webhook_secret")}     # shown once, to paste into Razorpay › Webhooks
+
+
+# ---------------------------------------------------------------- Ease My Bill's own WhatsApp number (the shared sender)
+
+@router.get("/whatsapp-sender")
+def wa_sender(_adm: str = Depends(require_admin)) -> dict:
+    s = get_settings()
+    return {"phone_number_id": s.wa_phone_number_id or None, "waba_id": s.wa_business_id or None, "app_id": s.wa_app_id or None,
+            "display_number": s.wa_display_number or None, "has_token": bool(s.wa_token), "has_app_secret": bool(s.wa_app_secret),
+            "webhook_url": s.public_base_url.rstrip("/") + "/api/whatsapp/webhook", "verify_token": s.wa_verify_token or None}
+
+
+@router.post("/whatsapp-sender")
+def set_wa_sender(body: dict, _adm: str = Depends(require_admin)) -> dict:
+    """Paste the permanent (system user) token, the phone number ID and WABA ID; checked with Meta, kept sealed.
+    The API restarts to pick it up (sudo wiseplus-cloud restart) — or it is used from the next restart."""
+    import httpx
+
+    from ..config import PLATFORM_WA_KEYS
+    from ..whatsapp.numbers import seal
+    from .models import PlatformSecret
+    s = get_settings()
+    tok = str(body.get("token") or "").strip()
+    pid = str(body.get("phone_number_id") or "").strip()
+    waba = str(body.get("waba_id") or "").strip()
+    sec = str(body.get("app_secret") or "").strip()
+    app_id = str(body.get("app_id") or "").strip()
+    if not (tok.startswith("EAA") and pid.isdigit()):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Paste the token (starts EAA) and the phone number ID (digits)")
+    try:
+        r = httpx.get(f"https://graph.facebook.com/{s.wa_graph_version}/{pid}", params={"access_token": tok,
+                      "fields": "display_phone_number,verified_name,code_verification_status"}, timeout=20).json()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Couldn't reach Meta ({type(e).__name__}). Try again.") from e
+    if "error" in r:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"Meta refused: {r['error'].get('message', 'unknown error')}")
+    shown = "".join(ch for ch in r.get("display_phone_number", "") if ch.isdigit())
+    vals = {"wa_token": tok, "wa_phone_number_id": pid, "wa_display_number": shown}
+    if waba.isdigit():
+        vals["wa_business_id"] = waba
+    if sec:
+        vals["wa_app_secret"] = sec
+    if app_id.isdigit():
+        vals["wa_app_id"] = app_id
+    with system_session() as db:
+        for k, v in vals.items():
+            assert k in PLATFORM_WA_KEYS
+            row = db.get(PlatformSecret, k)
+            if row:
+                row.value_enc = seal(v)
+            else:
+                db.add(PlatformSecret(key=k, value_enc=seal(v)))
+    for k, v in vals.items():          # this process now; the others on restart
+        setattr(s, k, v)
+    return {"ok": True, "display_number": shown, "name": r.get("verified_name"), "verified": r.get("code_verification_status")}
