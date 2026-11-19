@@ -49,6 +49,9 @@ export default function Signup() {
           </Field>
           <ErrorText error={error} />
           <Button disabled={busy || otp.length !== 6}>Start now</Button>
+          <button type="button" className="link" disabled={busy} onClick={() => { setOtp("");
+            run(async () => setSent(await api("/auth/signup/start", { body: { ...form, modules, via } }))); }}>Send a new code</button>
+          {" · "}
           <button type="button" className="link" onClick={() => setSent(null)}>Edit details</button>
           {via === "phone" && <> · <button type="button" className="link" disabled={busy} onClick={() => { setVia("email");
             run(async () => setSent(await api("/auth/signup/start", { body: { ...form, modules, via: "email" } }))); }}>Email me the code instead</button></>}

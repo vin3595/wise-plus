@@ -75,6 +75,9 @@ function OtpLogin() {
       </Field>
       <ErrorText error={error} />
       <Button disabled={busy || otp.length !== 6}>Sign in</Button>
+      <button type="button" className="link" disabled={busy} onClick={() => { setOtp("");
+        run(async () => setSent(await api("/auth/otp/request", { body: { login_id: loginId, identifier } }))); }}>Send a new code</button>
+      {" · "}
       <button type="button" className="link" onClick={() => { setSent(null); setOtp(""); }}>Change number or email</button>
     </form>
   );
