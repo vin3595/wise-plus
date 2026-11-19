@@ -21,6 +21,7 @@ from .stockplus import router as stockplus  # wise-plus: stock app extras (trans
 from .routers import accounts, ads, roles, events, cash, dayclose, inventory, loyalty, offline, payments, sms, report_tables, bill_edits, auth, billing, menu, menu_import, orders, printing, public, qr, reports, tenant, users
 
 logging.basicConfig(level=logging.INFO)
+logging.getLogger("httpx").setLevel(logging.WARNING)   # its INFO lines carry full URLs, tokens included
 
 
 def create_app() -> FastAPI:
