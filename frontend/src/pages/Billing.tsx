@@ -326,7 +326,11 @@ export function YourRazorpay() {
             URL <code>{done.webhook_url}</code><br />Secret <code>{done.webhook_secret}</code> (shown once)<br />
             Events: all <em>subscription.*</em> events, <em>payment.captured</em> and <em>order.paid</em>.</p>}
         </div>
-        : !open ? <p className="small"><button className="link" onClick={() => setOpen(true)}>{ready ? "Change keys" : "Add your keys"}</button></p>
+        : !open ? <p className="small"><button className="link" onClick={() => setOpen(true)}>{ready ? "Change keys" : "Add your keys"}</button>
+            {ready && <> · <button className="link" disabled={act.busy} onClick={() => act.run(async () => {
+              const w = await api<{ webhook_secret: string; webhook_url: string }>("/platform/razorpay/webhook-secret", { body: {} });
+              setDone({ key_id: k.key_id || "", ...w }); load();
+            })}>Get webhook secret</button></>}</p>
         : <div className="sub-form">
             <p className="muted small">Razorpay › Account &amp; Settings › Websites &amp; API keys. Use the live Key Id and its Key Secret.</p>
             <div className="row wrap">

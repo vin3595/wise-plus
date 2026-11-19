@@ -95,3 +95,15 @@ def test_platform_owner_pastes_razorpay_keys(client, monkeypatch):
     assert r2["webhook_secret"] is None and rz.keys()["webhook_secret"] == r["webhook_secret"]
     with system_session() as db:
         db.execute(text("delete from platform_secrets"))
+
+
+def test_new_razorpay_webhook_secret(client, monkeypatch):
+    from app.billing import rz
+    monkeypatch.setattr(rz, "configured", lambda: True)
+    saved = {}
+    monkeypatch.setattr(rz, "save_keys", lambda v: saved.update(v))
+    adm = admin_tok(client, monkeypatch)
+    r = client.post("/api/platform/razorpay/webhook-secret", headers=h(adm), json={})
+    assert r.status_code == 200 and len(r.json()["webhook_secret"]) > 20
+    assert saved["webhook_secret"] == r.json()["webhook_secret"]
+    assert r.json()["webhook_url"].endswith("/api/public/billing/razorpay")

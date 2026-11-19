@@ -190,6 +190,18 @@ def set_razorpay_keys(body: dict, _adm: str = Depends(require_admin)) -> dict:
             "webhook_secret": vals.get("webhook_secret")}     # shown once, to paste into Razorpay › Webhooks
 
 
+@router.post("/razorpay/webhook-secret")
+def new_razorpay_webhook_secret(_adm: str = Depends(require_admin)) -> dict:
+    """A fresh webhook secret, shown once: paste it into Razorpay › Webhooks (the old one stops working)."""
+    import secrets
+    from . import rz
+    if not rz.configured():
+        raise HTTPException(status.HTTP_409_CONFLICT, "Add your Razorpay keys first")
+    sec = secrets.token_urlsafe(24)
+    rz.save_keys({"webhook_secret": sec})
+    return {"webhook_secret": sec, "webhook_url": get_settings().public_base_url.rstrip("/") + "/api/public/billing/razorpay"}
+
+
 # ---------------------------------------------------------------- Ease My Bill's own WhatsApp number (the shared sender)
 
 @router.get("/whatsapp-sender")
