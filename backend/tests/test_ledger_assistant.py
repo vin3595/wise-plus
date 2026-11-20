@@ -43,7 +43,7 @@ def shop():
         assert r.status_code == 201, r.text
         return r.json()
 
-    buy(vad, van, "tub 5L", 4, 140000, "2026-10-20", "TS005001")      # ₹350 a tub
+    buy(vad, van, "tub 5L", 4, 140000, "2026-10-28", "TS005001")      # ₹350 a tub
     buy(vad, van, "tub 5L", 4, 151656, "2026-11-07", "TS005689")      # ₹379.14 a tub, 1,592.39 with GST
     buy(kanha, bc, "box", 2, 217688, "2026-11-07", "5043")            # 2,285.72 with GST
     return {"c": c, "h": h, "tok": tok, "login": login, "phone": phone, "out": out, "kanha": kanha, "vad": vad}
@@ -85,7 +85,7 @@ def test_dues_payments_and_answers(shop):
     t = ask("last order from vadilal")
     assert "TS005689" in t and "Super Vanilla Bulk 5L: 4 tub 5L" in t and "2 bill(s)" in t
     t = ask("price vanilla")
-    assert "₹379.14 per tub 5L" in t and "₹350 per tub 5L on 20 Oct" in t and "▲ 8.3%" in t
+    assert "₹379.14 per tub 5L" in t and "₹350 per tub 5L on 28 Oct" in t and "▲ 8.3%" in t
     assert "Which item?" in ask("price xyzzy pqr") or "No item" in ask("price xyzzy pqr")
     assert "What do you need" in ask("help") and "Ask me" in ask("how") and "didn't get" in ask("weather")
     assert "No bills yet" in ask("sales")
