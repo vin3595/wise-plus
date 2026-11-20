@@ -57,7 +57,7 @@
 
 /* ease (default in wise-plus): the Ease My Bill look - cool slate-white, white cards with a soft shadow,
    Inter for text, Space Grotesk for headings and numbers, 12px corners. */
-[data-theme="ease"] :is(.shell, .auth-page, .ps), html:not([data-theme]) :is(.shell, .auth-page, .ps) {
+[data-theme="ease"] :is(.shell, .auth-page, .ps) {
   --bg: #f8fafc;
   --card: #ffffff;
   --card-2: #f4f6f9;
@@ -83,6 +83,39 @@
   --panel-shadow: 0 1px 3px rgba(15, 23, 41, 0.06), 0 1px 2px rgba(15, 23, 41, 0.04);
   --cart-bg: var(--card); --cart-ink: var(--ink);
   --scheme: light;
+}
+
+/* velvet (default in Ease My Bill): night-bar look - charcoal, dusty purple, gold.
+   Gold is the action colour here (buttons, the active page), purple the highlight; "ease" keeps the original look. */
+[data-theme="velvet"] :is(.shell, .auth-page, .ps), html:not([data-theme]) :is(.shell, .auth-page, .ps) {
+  --brand: #f2c14e;
+  --brand-ink: #2b2b2e;
+  --purple: #6b5b7b;
+  --bg: #2b2b2e;
+  --card: #34343a;
+  --card-2: #3c3b43;
+  --well: #26262a;
+  --line: rgba(245, 241, 232, 0.1);
+  --line-2: rgba(245, 241, 232, 0.18);
+  --ink: #f5f1e8;
+  --ink-2: #cbc3d6;
+  --ink-3: #9b93a8;
+  --wash: color-mix(in srgb, #6b5b7b 45%, #34343a);
+  --mint: #7fd39b; --amber: #f2c14e; --berry: #f28b8b; --sky: #b3a5cc;
+  --pay-cash: #7fd39b; --pay-cash-ink: #1f1f22;
+  --pay-upi: #b3a5cc;  --pay-upi-ink: #1f1f22;
+  --pay-card: #f2c14e; --pay-card-ink: #2b2b2e;
+  --top-bg: rgba(35, 35, 38, 0.92); --top-ink: #f5f1e8;
+  --nav-bg: #26262a; --nav-active: #f2c14e;
+  --r-s: 8px; --r-m: 10px; --r-l: 12px; --r-tile: 12px;
+  --font-ui: "Inter Variable", "Inter", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-num: "Space Grotesk", "Inter Variable", "Segoe UI", sans-serif;
+  --font-name: "Space Grotesk", "Inter Variable", "Segoe UI", sans-serif;
+  --name-size: 1.08rem; --name-weight: 600; --name-case: none;
+  --key-shadow: none;
+  --panel-shadow: 0 1px 0 rgba(255, 255, 255, 0.03), 0 6px 16px -10px rgba(0, 0, 0, 0.6);
+  --cart-bg: var(--card); --cart-ink: var(--ink);
+  --scheme: dark;
 }
 
 /* board */
@@ -209,7 +242,7 @@
 }
 body:has(.shell), body:has(.auth-page), body:has(.ps) { background: var(--bg, #d9dcdf); }
 [data-theme="steel"] body:has(.shell) { background: #d9dcdf; }
-:is([data-theme="ease"], html:not([data-theme])) body:has(:is(.shell, .auth-page)) { background: #f8fafc; }
+[data-theme="ease"] body:has(:is(.shell, .auth-page)) { background: #f8fafc; }
 [data-theme="board"] body:has(:is(.shell, .auth-page)) { background: #1d2a24; }
 [data-theme="irani"] body:has(:is(.shell, .auth-page)) { background: #e9efe9; }
 [data-theme="swiss"] body:has(:is(.shell, .auth-page)) { background: #fff; }
@@ -429,45 +462,115 @@ body:has(.shell), body:has(.auth-page), body:has(.ps) { background: var(--bg, #d
 [data-theme="irani"] .shell .qty-ctl button { box-shadow: none; }
 
 /* ease: the Ease My Bill feel - quiet surfaces, a teal glow at the top, shadcn-style controls */
-:is([data-theme="ease"], html:not([data-theme])) .shell {
+[data-theme="ease"] .shell {
   background: radial-gradient(1200px 400px at 20% 0%, color-mix(in srgb, var(--brand) 12%, transparent) 0%, color-mix(in srgb, var(--brand) 5%, transparent) 35%, transparent 70%), #f8fafc;
 }
-:is([data-theme="ease"], html:not([data-theme])) .shell h1, :is([data-theme="ease"], html:not([data-theme])) .auth-page h1 { font-weight: 600; font-size: 1.85rem; letter-spacing: -0.02em; line-height: 1.15; }
-:is([data-theme="ease"], html:not([data-theme])) .shell :is(.card > h2:first-child, .card-head h2) { font-size: 1.12rem; font-weight: 600; letter-spacing: -0.01em; }
-:is([data-theme="ease"], html:not([data-theme])) :is(.shell, .auth-page) .btn { font-weight: 600; font-size: 0.92rem; padding: 0.55rem 1rem; transition: background-color 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.06s; }
-:is([data-theme="ease"], html:not([data-theme])) :is(.shell, .auth-page) .btn-primary:hover:not(:disabled) { filter: none; background: color-mix(in srgb, var(--brand) 90%, black); }
-:is([data-theme="ease"], html:not([data-theme])) :is(.shell, .auth-page) .btn-ghost { background: var(--card); border: 1px solid var(--line-2); }
-:is([data-theme="ease"], html:not([data-theme])) :is(.shell, .auth-page) .btn-ghost:hover:not(:disabled) { background: var(--wash); border-color: color-mix(in srgb, var(--brand) 30%, var(--line-2)); }
-:is([data-theme="ease"], html:not([data-theme])) :is(.shell, .auth-page) .input { border: 1px solid var(--line-2); box-shadow: var(--key-shadow); }
-:is([data-theme="ease"], html:not([data-theme])) :is(.shell, .auth-page) .input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 16%, transparent); }
-:is([data-theme="ease"], html:not([data-theme])) .shell :is(.tabs, .seg) { background: var(--card-2); border-color: var(--line); }
-:is([data-theme="ease"], html:not([data-theme])) .shell :is(.tabs, .seg) button.active { background: var(--card); color: var(--ink); box-shadow: 0 1px 3px rgba(15, 23, 41, 0.1); }
-:is([data-theme="ease"], html:not([data-theme])) .shell .choice { border: 1px solid var(--line-2); background: var(--card); }
-:is([data-theme="ease"], html:not([data-theme])) .shell .choice.on { border-color: var(--brand); background: var(--wash); color: color-mix(in srgb, var(--brand) 70%, black); }
-:is([data-theme="ease"], html:not([data-theme])) .shell .card { padding: 1.2rem 1.3rem; }
-:is([data-theme="ease"], html:not([data-theme])) .shell .stat { padding: 0.95rem 1.05rem; }
-:is([data-theme="ease"], html:not([data-theme])) .shell .stat > span:first-child { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-3); font-weight: 500; }
-:is([data-theme="ease"], html:not([data-theme])) .shell .stat strong { font-size: 1.75rem; font-weight: 600; letter-spacing: -0.02em; }
-:is([data-theme="ease"], html:not([data-theme])) .shell .table th { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; background: var(--card-2); }
-:is([data-theme="ease"], html:not([data-theme])) .shell .table tbody tr:hover td { background: color-mix(in srgb, var(--card-2) 70%, transparent); }
-:is([data-theme="ease"], html:not([data-theme])) .shell .badge { background: var(--card-2); border-color: var(--line); color: var(--ink-2); font-weight: 600; }
-:is([data-theme="ease"], html:not([data-theme])) .shell .banner { border-radius: var(--r-l); }
-:is([data-theme="ease"], html:not([data-theme])) .shell .page-tabs a.on { background: var(--wash); color: color-mix(in srgb, var(--brand) 75%, black); border-color: color-mix(in srgb, var(--brand) 35%, white); }
-:is([data-theme="ease"], html:not([data-theme])) .shell .subtabs button.on { color: var(--ink); }
-:is([data-theme="ease"], html:not([data-theme])) .shell .modal { border: 1px solid var(--line); box-shadow: 0 24px 60px -20px rgba(15, 23, 41, 0.35); }
-:is([data-theme="ease"], html:not([data-theme])) .shell .modal-back { background: rgba(15, 23, 41, 0.4); backdrop-filter: blur(2px); }
+[data-theme="ease"] .shell h1, [data-theme="ease"] .auth-page h1 { font-weight: 600; font-size: 1.85rem; letter-spacing: -0.02em; line-height: 1.15; }
+[data-theme="ease"] .shell :is(.card > h2:first-child, .card-head h2) { font-size: 1.12rem; font-weight: 600; letter-spacing: -0.01em; }
+[data-theme="ease"] :is(.shell, .auth-page) .btn { font-weight: 600; font-size: 0.92rem; padding: 0.55rem 1rem; transition: background-color 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.06s; }
+[data-theme="ease"] :is(.shell, .auth-page) .btn-primary:hover:not(:disabled) { filter: none; background: color-mix(in srgb, var(--brand) 90%, black); }
+[data-theme="ease"] :is(.shell, .auth-page) .btn-ghost { background: var(--card); border: 1px solid var(--line-2); }
+[data-theme="ease"] :is(.shell, .auth-page) .btn-ghost:hover:not(:disabled) { background: var(--wash); border-color: color-mix(in srgb, var(--brand) 30%, var(--line-2)); }
+[data-theme="ease"] :is(.shell, .auth-page) .input { border: 1px solid var(--line-2); box-shadow: var(--key-shadow); }
+[data-theme="ease"] :is(.shell, .auth-page) .input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 16%, transparent); }
+[data-theme="ease"] .shell :is(.tabs, .seg) { background: var(--card-2); border-color: var(--line); }
+[data-theme="ease"] .shell :is(.tabs, .seg) button.active { background: var(--card); color: var(--ink); box-shadow: 0 1px 3px rgba(15, 23, 41, 0.1); }
+[data-theme="ease"] .shell .choice { border: 1px solid var(--line-2); background: var(--card); }
+[data-theme="ease"] .shell .choice.on { border-color: var(--brand); background: var(--wash); color: color-mix(in srgb, var(--brand) 70%, black); }
+[data-theme="ease"] .shell .card { padding: 1.2rem 1.3rem; }
+[data-theme="ease"] .shell .stat { padding: 0.95rem 1.05rem; }
+[data-theme="ease"] .shell .stat > span:first-child { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-3); font-weight: 500; }
+[data-theme="ease"] .shell .stat strong { font-size: 1.75rem; font-weight: 600; letter-spacing: -0.02em; }
+[data-theme="ease"] .shell .table th { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; background: var(--card-2); }
+[data-theme="ease"] .shell .table tbody tr:hover td { background: color-mix(in srgb, var(--card-2) 70%, transparent); }
+[data-theme="ease"] .shell .badge { background: var(--card-2); border-color: var(--line); color: var(--ink-2); font-weight: 600; }
+[data-theme="ease"] .shell .banner { border-radius: var(--r-l); }
+[data-theme="ease"] .shell .page-tabs a.on { background: var(--wash); color: color-mix(in srgb, var(--brand) 75%, black); border-color: color-mix(in srgb, var(--brand) 35%, white); }
+[data-theme="ease"] .shell .subtabs button.on { color: var(--ink); }
+[data-theme="ease"] .shell .modal { border: 1px solid var(--line); box-shadow: 0 24px 60px -20px rgba(15, 23, 41, 0.35); }
+[data-theme="ease"] .shell .modal-back { background: rgba(15, 23, 41, 0.4); backdrop-filter: blur(2px); }
 /* counter */
-:is([data-theme="ease"], html:not([data-theme])) .shell .pos-cats button { font-family: var(--font-ui); font-size: 0.95rem; font-weight: 600; box-shadow: inset 3px 0 0 var(--cat, var(--line-2)), var(--key-shadow); border-color: var(--line); }
-:is([data-theme="ease"], html:not([data-theme])) .shell .pos-cats button.active { background: var(--wash); border-color: color-mix(in srgb, var(--brand) 40%, white); color: var(--ink); box-shadow: inset 4px 0 0 var(--cat, var(--brand)); }
-:is([data-theme="ease"], html:not([data-theme])) .shell .tile { border-color: var(--line); box-shadow: var(--panel-shadow), inset 4px 0 0 var(--cat); transition: box-shadow 0.15s, transform 0.06s; }
-:is([data-theme="ease"], html:not([data-theme])) .shell .tile:hover { box-shadow: 0 4px 14px -6px rgba(15, 23, 41, 0.18), inset 4px 0 0 var(--cat); }
-:is([data-theme="ease"], html:not([data-theme])) .shell .tile:active { transform: scale(0.985); }
-:is([data-theme="ease"], html:not([data-theme])) .shell .tile-price, :is([data-theme="ease"], html:not([data-theme])) .shell .tile-sizes button strong { font-weight: 600; font-size: 1.2rem; }
-:is([data-theme="ease"], html:not([data-theme])) .shell .pos-cart { border-color: var(--line); }
-:is([data-theme="ease"], html:not([data-theme])) .shell .cart-total strong { font-weight: 600; font-size: 2.6rem; letter-spacing: -0.03em; }
-:is([data-theme="ease"], html:not([data-theme])) .shell .pay { font-weight: 600; font-size: 1.25rem; }
-:is([data-theme="ease"], html:not([data-theme])) .shell .qty-ctl { border-color: var(--line); background: var(--card-2); }
-:is([data-theme="ease"], html:not([data-theme])) .shell .qty-ctl button { background: var(--card); }
-:is([data-theme="ease"], html:not([data-theme])) .auth-page { background: radial-gradient(1000px 420px at 50% 0%, color-mix(in srgb, var(--brand) 14%, transparent), transparent 70%), #f8fafc; }
-:is([data-theme="ease"], html:not([data-theme])) .auth-card { border-color: var(--line); box-shadow: 0 10px 40px -18px rgba(15, 23, 41, 0.25); }
-:is([data-theme="ease"], html:not([data-theme])) .auth-page .pin-pad button { font-weight: 600; font-size: 1.6rem; border-color: var(--line); }
+[data-theme="ease"] .shell .pos-cats button { font-family: var(--font-ui); font-size: 0.95rem; font-weight: 600; box-shadow: inset 3px 0 0 var(--cat, var(--line-2)), var(--key-shadow); border-color: var(--line); }
+[data-theme="ease"] .shell .pos-cats button.active { background: var(--wash); border-color: color-mix(in srgb, var(--brand) 40%, white); color: var(--ink); box-shadow: inset 4px 0 0 var(--cat, var(--brand)); }
+[data-theme="ease"] .shell .tile { border-color: var(--line); box-shadow: var(--panel-shadow), inset 4px 0 0 var(--cat); transition: box-shadow 0.15s, transform 0.06s; }
+[data-theme="ease"] .shell .tile:hover { box-shadow: 0 4px 14px -6px rgba(15, 23, 41, 0.18), inset 4px 0 0 var(--cat); }
+[data-theme="ease"] .shell .tile:active { transform: scale(0.985); }
+[data-theme="ease"] .shell .tile-price, [data-theme="ease"] .shell .tile-sizes button strong { font-weight: 600; font-size: 1.2rem; }
+[data-theme="ease"] .shell .pos-cart { border-color: var(--line); }
+[data-theme="ease"] .shell .cart-total strong { font-weight: 600; font-size: 2.6rem; letter-spacing: -0.03em; }
+[data-theme="ease"] .shell .pay { font-weight: 600; font-size: 1.25rem; }
+[data-theme="ease"] .shell .qty-ctl { border-color: var(--line); background: var(--card-2); }
+[data-theme="ease"] .shell .qty-ctl button { background: var(--card); }
+[data-theme="ease"] .auth-page { background: radial-gradient(1000px 420px at 50% 0%, color-mix(in srgb, var(--brand) 14%, transparent), transparent 70%), #f8fafc; }
+[data-theme="ease"] .auth-card { border-color: var(--line); box-shadow: 0 10px 40px -18px rgba(15, 23, 41, 0.25); }
+[data-theme="ease"] .auth-page .pin-pad button { font-weight: 600; font-size: 1.6rem; border-color: var(--line); }
+
+[data-theme="velvet"] .shell .badge { background: var(--card-2); border-color: var(--line-2); color: var(--ink-2); }
+[data-theme="velvet"] .shell :is(.badge.edited, .sens, .sms-st.st-queued, .status-pill.st-preparing) { background: rgba(242, 217, 139, 0.14); color: #f2d98b; border-color: rgba(242, 217, 139, 0.35); }
+[data-theme="velvet"] .shell :is(.badge.ok-badge, .status-pill.st-ready) { background: rgba(143, 207, 138, 0.15); color: #a9dda5; border-color: rgba(143, 207, 138, 0.35); }
+[data-theme="velvet"] .shell :is(.badge.addon, .sms-st.st-failed) { background: rgba(239, 139, 116, 0.14); color: #f3a693; }
+[data-theme="velvet"] .shell :is(.badge.qr, .badge.kiosk) { background: rgba(156, 192, 234, 0.14); color: #b9d2f0; border-color: rgba(156, 192, 234, 0.3); }
+[data-theme="velvet"] .shell :is(.status-pill, .status-pill.st-new) { background: var(--card-2); color: var(--ink-2); }
+[data-theme="velvet"] .shell .banner { background: var(--wash); border-color: var(--line-2); }
+[data-theme="velvet"] .shell :is(.banner.warn, .pending, .offline-bar.warn, .checklist li.warn, .dev-note) { background: rgba(242, 217, 139, 0.1); border-color: rgba(242, 217, 139, 0.35); color: var(--ink); }
+[data-theme="velvet"] .shell :is(.banner.ok-banner, .shift-bar.closed, .sent) { background: rgba(143, 207, 138, 0.1); border-color: rgba(143, 207, 138, 0.35); color: var(--ink); }
+[data-theme="velvet"] .shell :is(.checklist li.block, .offline-bar.off) { background: rgba(239, 139, 116, 0.1); border-color: rgba(239, 139, 116, 0.4); color: var(--ink); }
+[data-theme="velvet"] .shell :is(.table tr.row-warn td, .table.access td.changed, .fix-lines li.edited) { background: rgba(242, 217, 139, 0.08); }
+[data-theme="velvet"] .shell :is(.table tr.row-bad td) { background: rgba(239, 139, 116, 0.1); }
+[data-theme="velvet"] .shell .fix-lines li.added { background: rgba(143, 207, 138, 0.08); }
+[data-theme="velvet"] .shell .rep-table tfoot td { background: var(--card-2); }
+[data-theme="velvet"] .shell .art-drawn { background: color-mix(in srgb, var(--tint) 22%, #23322b); }
+[data-theme="velvet"] .shell :is(.upi-toast, .upi-chip, .upi-list) { background: var(--card); color: var(--ink); }
+[data-theme="velvet"] body:has(:is(.shell, .auth-page)) { background: #2b2b2e; }
+/* counter */
+[data-theme="velvet"] .shell h1, [data-theme="velvet"] .auth-page h1 { font-weight: 600; font-size: 1.85rem; letter-spacing: -0.02em; line-height: 1.15; }
+[data-theme="velvet"] .shell :is(.card > h2:first-child, .card-head h2) { font-size: 1.12rem; font-weight: 600; letter-spacing: -0.01em; }
+[data-theme="velvet"] :is(.shell, .auth-page) .btn { font-weight: 600; font-size: 0.92rem; padding: 0.55rem 1rem; transition: background-color 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.06s; }
+[data-theme="velvet"] :is(.shell, .auth-page) .btn-primary:hover:not(:disabled) { filter: none; background: color-mix(in srgb, var(--brand) 88%, white); }
+[data-theme="velvet"] :is(.shell, .auth-page) .btn-ghost { background: var(--card); border: 1px solid var(--line-2); }
+[data-theme="velvet"] :is(.shell, .auth-page) .btn-ghost:hover:not(:disabled) { background: var(--wash); border-color: color-mix(in srgb, var(--brand) 30%, var(--line-2)); }
+[data-theme="velvet"] :is(.shell, .auth-page) .input { border: 1px solid var(--line-2); box-shadow: var(--key-shadow); }
+[data-theme="velvet"] :is(.shell, .auth-page) .input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 16%, transparent); }
+[data-theme="velvet"] .shell :is(.tabs, .seg) { background: var(--card-2); border-color: var(--line); }
+[data-theme="velvet"] .shell :is(.tabs, .seg) button.active { background: var(--card); color: var(--ink); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); }
+[data-theme="velvet"] .shell .choice { border: 1px solid var(--line-2); background: var(--card); }
+[data-theme="velvet"] .shell .choice.on { border-color: var(--brand); background: var(--wash); color: var(--ink); }
+[data-theme="velvet"] .shell .card { padding: 1.2rem 1.3rem; }
+[data-theme="velvet"] .shell .stat { padding: 0.95rem 1.05rem; }
+[data-theme="velvet"] .shell .stat > span:first-child { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-3); font-weight: 500; }
+[data-theme="velvet"] .shell .stat strong { font-size: 1.75rem; font-weight: 600; letter-spacing: -0.02em; }
+[data-theme="velvet"] .shell .table th { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; background: var(--card-2); }
+[data-theme="velvet"] .shell .table tbody tr:hover td { background: color-mix(in srgb, var(--card-2) 70%, transparent); }
+[data-theme="velvet"] .shell .badge { background: var(--card-2); border-color: var(--line); color: var(--ink-2); font-weight: 600; }
+[data-theme="velvet"] .shell .banner { border-radius: var(--r-l); }
+[data-theme="velvet"] .shell .page-tabs a.on { background: var(--wash); color: var(--ink); border-color: color-mix(in srgb, var(--brand) 35%, white); }
+[data-theme="velvet"] .shell .subtabs button.on { color: var(--ink); }
+[data-theme="velvet"] .shell .modal { border: 1px solid var(--line); box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.35); }
+[data-theme="velvet"] .shell .modal-back { background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(2px); }
+/* counter */
+[data-theme="velvet"] .shell .pos-cats button { font-family: var(--font-ui); font-size: 0.95rem; font-weight: 600; box-shadow: inset 3px 0 0 var(--cat, var(--line-2)), var(--key-shadow); border-color: var(--line); }
+[data-theme="velvet"] .shell .pos-cats button.active { background: var(--wash); border-color: color-mix(in srgb, var(--brand) 40%, var(--card)); color: var(--ink); box-shadow: inset 4px 0 0 var(--cat, var(--brand)); }
+[data-theme="velvet"] .shell .tile { border-color: var(--line); box-shadow: var(--panel-shadow), inset 4px 0 0 var(--cat); transition: box-shadow 0.15s, transform 0.06s; }
+[data-theme="velvet"] .shell .tile:hover { box-shadow: 0 4px 14px -6px rgba(0, 0, 0, 0.18), inset 4px 0 0 var(--cat); }
+[data-theme="velvet"] .shell .tile:active { transform: scale(0.985); }
+[data-theme="velvet"] .shell .tile-price, [data-theme="velvet"] .shell .tile-sizes button strong { font-weight: 600; font-size: 1.2rem; }
+[data-theme="velvet"] .shell .pos-cart { border-color: var(--line); }
+[data-theme="velvet"] .shell .cart-total strong { font-weight: 600; font-size: 2.6rem; letter-spacing: -0.03em; }
+[data-theme="velvet"] .shell .pay { font-weight: 600; font-size: 1.25rem; }
+[data-theme="velvet"] .shell .qty-ctl { border-color: var(--line); background: var(--card-2); }
+[data-theme="velvet"] .shell .qty-ctl button { background: var(--card); }
+[data-theme="velvet"] .auth-page { background: radial-gradient(1000px 420px at 50% 0%, color-mix(in srgb, var(--brand) 14%, transparent), transparent 70%), #2b2b2e; }
+[data-theme="velvet"] .auth-card { border-color: var(--line); box-shadow: 0 10px 40px -18px rgba(0, 0, 0, 0.25); }
+[data-theme="velvet"] .auth-page .pin-pad button { font-weight: 600; font-size: 1.6rem; border-color: var(--line); }
+
+/* velvet: the Ease My Bill night look (see tokens above) */
+[data-theme="velvet"] .shell { background: radial-gradient(1100px 420px at 15% 0%, rgba(107, 91, 123, 0.38), transparent 70%), #2b2b2e; }
+[data-theme="velvet"] .auth-page { background: radial-gradient(900px 420px at 50% 0%, rgba(107, 91, 123, 0.45), transparent 70%), #2b2b2e; }
+[data-theme="velvet"] :is(.shell, .drawer) .side-link.active { background: color-mix(in srgb, #6b5b7b 55%, transparent); color: #fff; box-shadow: inset 3px 0 0 #f2c14e; }
+[data-theme="velvet"] .shell :is(.tabs, .seg) button.active { background: #6b5b7b; color: #fff; }
+[data-theme="velvet"] .shell .pos-cats button.active { background: #6b5b7b; color: #fff; border-color: #6b5b7b; }
+[data-theme="velvet"] :is(.shell, .auth-page) .btn-primary { color: #2b2b2e; }
+[data-theme="velvet"] :is(.shell, .auth-page) a:not(.btn) { text-decoration-color: rgba(242, 193, 78, 0.7); }
+[data-theme="velvet"] .shell h1 { color: #f5f1e8; }
+[data-theme="velvet"] .shell .stat strong { color: #f2c14e; }
+[data-theme="velvet"] .auth-card { background: var(--card); border-color: var(--line); }

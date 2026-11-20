@@ -7,6 +7,9 @@ interface Info { bundle_paise: number; founding_paise: number; founding_slots: n
   msgs_per_outlet: number; pixel_id: string | null; whatsapp: string | null }
 declare global { interface Window { fbq?: (...a: unknown[]) => void; _fbq?: unknown } }
 
+/** The website's look: "velvet" = charcoal, dusty purple and gold; "classic" = the original white and teal. */
+const LOOK: "velvet" | "classic" = "velvet";
+
 const rs = (p: number) => "₹" + (p / 100).toLocaleString("en-IN", { maximumFractionDigits: 0 });
 const FEATURES: [string, string, string][] = [
   ["💬", "Bills on WhatsApp", "Every bill reaches your customer on WhatsApp the moment it's paid, with a 1-tap rating. No paper rolls to run out of."],
@@ -80,7 +83,7 @@ export default function Landing() {
   const d = (iso: string) => new Date(iso + (iso.length === 10 ? "T12:00:00" : "")).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" });
 
   return (
-    <div className="lp">
+    <div className={`lp${LOOK === "velvet" ? " velvet" : ""}`}>
       <header className="lp-top">
         <a href="/start" className="lp-logo" aria-label="Ease My Bill"><EmbLogo height={34} /></a>
         <nav><a href="#pricing">Pricing</a><a href="/setup" className="lp-signin">Sign in</a><a href={trialHref} className="lp-btn sm">Start free</a></nav>

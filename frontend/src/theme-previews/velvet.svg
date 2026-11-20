@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400">
+  <defs><radialGradient id="g" cx="15%" cy="0%" r="80%"><stop offset="0" stop-color="#6b5b7b" stop-opacity=".55"/><stop offset="1" stop-color="#2b2b2e" stop-opacity="0"/></radialGradient></defs>
+  <rect width="640" height="400" fill="#2b2b2e"/><rect width="640" height="400" fill="url(#g)"/>
+  <rect width="150" height="400" fill="#26262a"/>
+  <rect x="14" y="70" width="122" height="30" rx="8" fill="#6b5b7b"/><rect x="14" y="70" width="4" height="30" fill="#f2c14e"/>
+  <rect x="24" y="118" width="90" height="10" rx="5" fill="#cbc3d6" opacity=".5"/><rect x="24" y="146" width="70" height="10" rx="5" fill="#cbc3d6" opacity=".5"/>
+  <rect x="24" y="174" width="80" height="10" rx="5" fill="#cbc3d6" opacity=".5"/>
+  <text x="172" y="58" font-family="Arial, sans-serif" font-size="30" font-weight="700" fill="#f5f1e8">Today</text>
+  <rect x="172" y="84" width="140" height="84" rx="12" fill="#34343a"/><text x="186" y="110" font-family="Arial" font-size="13" fill="#9b93a8">SALES</text>
+  <text x="186" y="148" font-family="Arial" font-size="28" font-weight="700" fill="#f2c14e">₹18,420</text>
+  <rect x="326" y="84" width="140" height="84" rx="12" fill="#34343a"/><text x="340" y="110" font-family="Arial" font-size="13" fill="#9b93a8">BILLS</text>
+  <text x="340" y="148" font-family="Arial" font-size="28" font-weight="700" fill="#f2c14e">113</text>
+  <rect x="172" y="186" width="294" height="120" rx="12" fill="#34343a"/>
+  <rect x="190" y="206" width="180" height="10" rx="5" fill="#f5f1e8" opacity=".7"/><rect x="190" y="230" width="230" height="10" rx="5" fill="#cbc3d6" opacity=".4"/>
+  <rect x="190" y="254" width="200" height="10" rx="5" fill="#cbc3d6" opacity=".4"/>
+  <rect x="172" y="324" width="150" height="44" rx="10" fill="#f2c14e"/><text x="196" y="352" font-family="Arial" font-size="17" font-weight="700" fill="#2b2b2e">New bill</text>
+  <rect x="336" y="324" width="130" height="44" rx="10" fill="#6b5b7b"/><text x="362" y="352" font-family="Arial" font-size="17" font-weight="700" fill="#fff">Reports</text>
+  <rect x="484" y="84" width="140" height="284" rx="12" fill="#34343a"/>
+  <rect x="500" y="104" width="108" height="56" rx="10" fill="#3c3b43"/><rect x="500" y="170" width="108" height="56" rx="10" fill="#3c3b43"/>
+  <rect x="500" y="236" width="108" height="56" rx="10" fill="#3c3b43"/>
+</svg>

@@ -27,9 +27,9 @@ const Ctx = createContext<Session | null>(null);
 function applyBranding(b: PublicBranding | null) {
   const root = document.documentElement;
   root.style.setProperty("--brand", b?.primary_color || "#138996");
-  root.dataset.theme = b?.ui_theme || "ease";
+  root.dataset.theme = b?.ui_theme || "velvet";
   document.title = b?.app_name && b.app_name !== "Ease My Bill" ? `${b.app_name} · Ease My Bill` : "Ease My Bill";
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", b?.primary_color || "#138996");
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", (b?.ui_theme || "velvet") === "velvet" ? "#2b2b2e" : (b?.primary_color || "#138996"));
   const manifest = document.getElementById("app-manifest");
   manifest?.setAttribute("href", b ? `/api/public/tenants/${b.login_id}/manifest.webmanifest` : "/manifest.webmanifest");
   // The app icon is always Ease My Bill's; the restaurant's logo shows inside the app.

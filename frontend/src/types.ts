@@ -468,7 +468,7 @@ export interface SelfOrderStatus {
   upi_link: string | null;
 }
 
-export type UiTheme = "ease" | "steel" | "board" | "irani" | "swiss" | "shake";
+export type UiTheme = "velvet" | "ease" | "steel" | "board" | "irani" | "swiss" | "shake";
 
 /** What cash taken out of / put into a drawer was for. */
 export type CashPurpose = "expense" | "drawing" | "supplier" | "topup" | "change" | "other";

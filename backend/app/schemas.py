@@ -81,7 +81,7 @@ class TenantOut(ORM):
     app_name: str | None
     logo_url: str | None
     primary_color: str
-    ui_theme: str = "ease"
+    ui_theme: str = "velvet"
     modules: list[str] | None = None      # wise-plus: None = everything
     custom_domain: str | None
     show_powered_by: bool
@@ -97,7 +97,7 @@ class PublicBranding(BaseModel):
     app_name: str
     logo_url: str | None
     primary_color: str
-    ui_theme: str = "ease"
+    ui_theme: str = "velvet"
     show_powered_by: bool
     brands: list[BrandOut]
 
@@ -107,7 +107,7 @@ class BrandingUpdate(BaseModel):
     app_name: str | None = Field(default=None, max_length=60)
     primary_color: str | None = None
     gstin: str | None = None
-    ui_theme: str | None = Field(default=None, pattern=r"^(ease|steel|board|irani|swiss|shake)$")
+    ui_theme: str | None = Field(default=None, pattern=r"^(velvet|ease|steel|board|irani|swiss|shake)$")
 
     _v_color = field_validator("primary_color")(lambda v: v if v is None else validate_hex_color(v))
     _v_gstin = field_validator("gstin")(lambda v: validate_gstin(v))
