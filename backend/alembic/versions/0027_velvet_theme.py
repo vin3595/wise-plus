@@ -14,6 +14,7 @@ depends_on = None
 
 def upgrade() -> None:
     op.execute("alter table tenants alter column ui_theme set default 'velvet'")
+    op.execute("select set_config('app.bypass_rls', 'on', true)")      # every business, not just one
     op.execute("update tenants set ui_theme = 'velvet' where ui_theme = 'ease'")
 
 
