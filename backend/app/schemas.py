@@ -81,7 +81,7 @@ class TenantOut(ORM):
     app_name: str | None
     logo_url: str | None
     primary_color: str
-    ui_theme: str = "velvet"
+    ui_theme: str = "ease"
     modules: list[str] | None = None      # wise-plus: None = everything
     custom_domain: str | None
     show_powered_by: bool
@@ -97,7 +97,7 @@ class PublicBranding(BaseModel):
     app_name: str
     logo_url: str | None
     primary_color: str
-    ui_theme: str = "velvet"
+    ui_theme: str = "ease"
     show_powered_by: bool
     brands: list[BrandOut]
 

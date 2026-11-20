@@ -50,7 +50,7 @@ export default function Branding() {
         <p className="muted small">For the staff screens: counter, kitchen, setup. Your logo and brand colour stay in every look. Customer screens and printed bills don't change.</p>
         <div className="theme-picks">
           {THEMES.map((th) => (
-            <button key={th.id} type="button" className={`theme-pick ${(t?.ui_theme || "velvet") === th.id ? "on" : ""}`} aria-pressed={(t?.ui_theme || "velvet") === th.id}
+            <button key={th.id} type="button" className={`theme-pick ${(t?.ui_theme || "ease") === th.id ? "on" : ""}`} aria-pressed={(t?.ui_theme || "ease") === th.id}
               disabled={look.busy} onClick={() => look.run(async () => afterChange(await api<Tenant>("/tenant/branding", { method: "PATCH", body: { ui_theme: th.id as UiTheme } })))}>
               <img src={th.preview} alt="" />
               <strong>{th.name}</strong>

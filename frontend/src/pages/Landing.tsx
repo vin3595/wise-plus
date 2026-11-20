@@ -8,7 +8,7 @@ interface Info { bundle_paise: number; founding_paise: number; founding_slots: n
 declare global { interface Window { fbq?: (...a: unknown[]) => void; _fbq?: unknown } }
 
 /** The website's look: "velvet" = charcoal, dusty purple and gold; "classic" = the original white and teal. */
-const LOOK: "velvet" | "classic" = "velvet";
+const LOOK: "velvet" | "classic" = "classic";
 
 const rs = (p: number) => "₹" + (p / 100).toLocaleString("en-IN", { maximumFractionDigits: 0 });
 const FEATURES: [string, string, string][] = [

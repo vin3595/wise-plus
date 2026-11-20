@@ -57,7 +57,7 @@
 
 /* ease (default in wise-plus): the Ease My Bill look - cool slate-white, white cards with a soft shadow,
    Inter for text, Space Grotesk for headings and numbers, 12px corners. */
-[data-theme="ease"] :is(.shell, .auth-page, .ps) {
+[data-theme="ease"] :is(.shell, .auth-page, .ps), html:not([data-theme]) :is(.shell, .auth-page, .ps) {
   --bg: #f8fafc;
   --card: #ffffff;
   --card-2: #f4f6f9;
@@ -87,7 +87,7 @@
 
 /* velvet (default in Ease My Bill): night-bar look - charcoal, dusty purple, gold.
    Gold is the action colour here (buttons, the active page), purple the highlight; "ease" keeps the original look. */
-[data-theme="velvet"] :is(.shell, .auth-page, .ps), html:not([data-theme]) :is(.shell, .auth-page, .ps) {
+[data-theme="velvet"] :is(.shell, .auth-page, .ps) {
   --brand: #f2c14e;
   --brand-ink: #2b2b2e;
   --purple: #6b5b7b;
@@ -242,7 +242,7 @@
 }
 body:has(.shell), body:has(.auth-page), body:has(.ps) { background: var(--bg, #d9dcdf); }
 [data-theme="steel"] body:has(.shell) { background: #d9dcdf; }
-[data-theme="ease"] body:has(:is(.shell, .auth-page)) { background: #f8fafc; }
+:is([data-theme="ease"], html:not([data-theme])) body:has(:is(.shell, .auth-page)) { background: #f8fafc; }
 [data-theme="board"] body:has(:is(.shell, .auth-page)) { background: #1d2a24; }
 [data-theme="irani"] body:has(:is(.shell, .auth-page)) { background: #e9efe9; }
 [data-theme="swiss"] body:has(:is(.shell, .auth-page)) { background: #fff; }

@@ -987,7 +987,7 @@ def test_upi_paytm_dynamic_qr(client, monkeypatch):
 def test_ui_theme(client):
     t = signup(client, "themetest", "9829000066")
     tok = t["token"]
-    assert client.get("/api/public/tenants/themetest").json()["ui_theme"] == "velvet"   # Ease My Bill default: the night look
+    assert client.get("/api/public/tenants/themetest").json()["ui_theme"] == "ease"   # Ease My Bill default: the original look
     assert client.patch("/api/tenant/branding", headers=h(tok), json={"ui_theme": "neon"}).status_code == 422
     assert client.patch("/api/tenant/branding", headers=h(tok), json={"ui_theme": "board"}).json()["ui_theme"] == "board"
     assert client.get("/api/public/tenants/themetest").json()["ui_theme"] == "board"

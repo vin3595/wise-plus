@@ -9,8 +9,8 @@ import type { UiTheme } from "./types";
 
 /** The looks of the staff app (styles in theme.css). Previews are real screenshots of the counter. */
 export const THEMES: { id: UiTheme; name: string; about: string; preview: string }[] = [
-  { id: "velvet", name: "Ease My Bill night", about: "The Ease My Bill look: charcoal, dusty purple and gold. Easy on the eyes at the counter, day or night.", preview: velvet },
-  { id: "ease", name: "Ease classic", about: "The original Ease My Bill look: cool white, soft cards, clean type, in your brand colour.", preview: ease },
+  { id: "ease", name: "Ease", about: "The Ease My Bill look: cool white, soft cards, clean type, in your brand colour.", preview: ease },
+  { id: "velvet", name: "Night (purple and gold)", about: "Charcoal, dusty purple and gold. Easy on the eyes at the counter, day or night.", preview: velvet },
   { id: "steel", name: "Steel", about: "The commercial kitchen: brushed steel panels, solid keys, stencil numbers. Light, calm under bright lights.", preview: steel },
   { id: "board", name: "Menu board", about: "The cafe chalkboard: green slate, chalk lettering, prices with dotted leaders. Dark and easy on the eyes at night.", preview: board },
   { id: "irani", name: "Irani cafe", about: "Checkered floor, black outlines, red signage. Loud, old-school, impossible to mis-tap.", preview: irani },
