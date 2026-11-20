@@ -574,3 +574,6 @@ body:has(.shell), body:has(.auth-page), body:has(.ps) { background: var(--bg, #d
 [data-theme="velvet"] .shell h1 { color: #f5f1e8; }
 [data-theme="velvet"] .shell .stat strong { color: #f2c14e; }
 [data-theme="velvet"] .auth-card { background: var(--card); border-color: var(--line); }
+/* the Ease My Bill wordmark is dark ink: give it a light chip on the night look */
+[data-theme="velvet"] :is(.shell, .auth-page) :is(.emb-logo, .powered-emb img) { background: #f5f1e8; border-radius: 8px; padding: 3px 7px; box-sizing: content-box; }
+[data-theme="velvet"] .auth-page .seg button.active, [data-theme="velvet"] .auth-page :is(.tabs, .seg) button.active { background: #6b5b7b; color: #fff; }
