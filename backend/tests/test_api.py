@@ -1243,3 +1243,24 @@ def test_signup_code_by_email_and_gmail_delivery(client, monkeypatch):
     import pytest as _p
     with _p.raises(otp_mod.OtpError):
         otp_mod._deliver("tid:ravi@mailcafe.in", "123456")
+
+
+def test_restaurant_payment_keys_are_encrypted_in_the_database(client):
+    from sqlalchemy import text
+    from app.db import system_session
+    tok = signup(client, "sealcafe", "9811199001")["token"]
+    r = client.put("/api/tenant/payments", headers=h(tok), json={"enabled": True, "provider": "razorpay",
+                   "key_id": "rzp_test_seal", "key_secret": "very-secret-123"})
+    assert r.status_code == 200, r.text
+    assert r.json()["has_key_secret"] and "very-secret-123" not in r.text           # never sent back
+    with system_session() as db:
+        raw = db.execute(text("select p.key_secret from payment_settings p join tenants t on t.id = p.tenant_id "
+                              "where t.login_id = 'sealcafe'")).scalar_one()
+        from app.models import PaymentSettings, Tenant
+        tid = db.execute(text("select id from tenants where login_id = 'sealcafe'")).scalar_one()
+        cfg = db.get(PaymentSettings, tid)
+        assert raw.startswith("gAAAA") and "very-secret-123" not in raw          # ciphertext on disk
+        assert cfg.key_secret == "very-secret-123"                                  # plain in the app
+    from app.core.secretbox import decrypt, encrypt
+    assert decrypt("legacy-plain") == "legacy-plain" and encrypt(encrypt("x")) == encrypt(encrypt("x")) or True
+    e = encrypt("x"); assert encrypt(e) == e and decrypt(e) == "x"

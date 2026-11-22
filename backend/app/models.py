@@ -10,6 +10,7 @@ import uuid
 import secrets
 from datetime import date, datetime
 
+from .core.secretbox import EncryptedText
 from sqlalchemy import (
     BigInteger, Boolean, CheckConstraint, Date, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func, text,
 )
@@ -682,8 +683,8 @@ class PaymentSettings(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     provider: Mapped[str] = mapped_column(String(10), default="test", nullable=False)   # razorpay | paytm | test (no money)
     key_id: Mapped[str | None] = mapped_column(String(40))
-    key_secret: Mapped[str | None] = mapped_column(String(80))
-    webhook_secret: Mapped[str | None] = mapped_column(String(80))
+    key_secret: Mapped[str | None] = mapped_column(EncryptedText)          # encrypted in the database
+    webhook_secret: Mapped[str | None] = mapped_column(EncryptedText)
     # Secret part of this restaurant's webhook URL (/api/public/razorpay/<key>).
     webhook_key: Mapped[str] = mapped_column(String(32), unique=True, nullable=False, default=lambda: secrets.token_urlsafe(16))
     # Razorpay POS card machines (a separate Razorpay POS account: username + app key per restaurant).
@@ -691,10 +692,10 @@ class PaymentSettings(Base):
     pos_provider: Mapped[str] = mapped_column(String(12), default="test", server_default="test", nullable=False)  # razorpay_pos | test
     pos_live: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)       # False: Razorpay's demo server
     pos_username: Mapped[str | None] = mapped_column(String(40))
-    pos_app_key: Mapped[str | None] = mapped_column(String(80))
+    pos_app_key: Mapped[str | None] = mapped_column(EncryptedText)
     # Paytm Dynamic QR (the restaurant's own Paytm for Business MID and merchant key).
     paytm_mid: Mapped[str | None] = mapped_column(String(40))
-    paytm_key: Mapped[str | None] = mapped_column(String(40))
+    paytm_key: Mapped[str | None] = mapped_column(EncryptedText)
     paytm_client_id: Mapped[str | None] = mapped_column(String(8))
     paytm_live: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     # How long a QR stays payable. Paytm's default is 10 minutes; longer needs Paytm to allow it.
@@ -968,7 +969,7 @@ class SmsSettings(Base):
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id"), primary_key=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     provider: Mapped[str] = mapped_column(String(10), default="log", nullable=False)  # msg91 | log (testing)
-    msg91_auth_key: Mapped[str | None] = mapped_column(String(80))
+    msg91_auth_key: Mapped[str | None] = mapped_column(EncryptedText)
     sender_id: Mapped[str | None] = mapped_column(String(6))
     template_ids: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)  # kind -> MSG91 template id
     send_bill: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
