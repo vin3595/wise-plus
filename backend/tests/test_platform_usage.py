@@ -52,11 +52,17 @@ def test_platform_usage_only_for_house_owner(client, monkeypatch):
                        {"i": uuid.uuid4(), "t": tid, "k": kind, "p": purpose, "tp": tpl})
     from app.config import get_settings
     get_settings().wa_bill_template = "bill_receipt"
+    from app import ai_usage
+    from app.purchases_ai.gemini import _note_usage
+    with ai_usage.scope(tid, "bill"):
+        _note_usage("gemini-3.5-flash-lite", 1_000_000, 0)          # US$0.30
     u = client.get("/api/platform/usage", headers=h(adm)).json()
     me = next(r for r in u["restaurants"] if r["login_id"] == other["login"])
     assert me["sent"] == {"bill": 2, "promo": 1} and me["failed"] == 1
     assert me["meta_cost_paise"] == round(2 * 11.5 + 86.31) and me["bill_msgs_free"] == 0
     assert me["your_cost_paise"] == 25 + 95 + 15 + 25 and me["credits_used"] == 2 + 6 + 1
+    assert me["ai_calls"] == 1 and me["ai_cost_paise"] == round(0.30 * get_settings().usd_inr * 100)
+    assert me["ai_by_kind"] == {"bill": me["ai_cost_paise"]} and u["total"]["ai_cost_paise"] >= me["ai_cost_paise"]
     assert me["paid_paise"] == round(9 * 19.9) and me["emb_pays_paise"] == 25          # Ease My Bill pays the sign-in code only
     assert next(r for r in u["restaurants"] if r["login_id"] == house["login"])["bill_msgs_free"] is None   # house: unlimited
     assert client.get("/api/platform/usage", headers=h(adm), params={"month": "bad"}).status_code == 422

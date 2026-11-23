@@ -79,6 +79,14 @@ def usage(month: str | None = None) -> dict:
                 x["emb"] += F2S_PAISE[cls] * n            # Ease My Bill's own: codes, and messages for no restaurant
             else:
                 x["credits"] += cr * n
+        ai: dict = {}
+        for tid, purpose, calls, usd in db.execute(text(
+                "select tenant_id, purpose, count(*), coalesce(sum(usd), 0) from ai_usage where created_at >= :a and created_at < :b "
+                "group by 1, 2"), {"a": start, "b": end}):
+            x = ai.setdefault(tid, {"calls": 0, "usd": 0.0, "by": {}})
+            x["calls"] += calls
+            x["usd"] += float(usd)
+            x["by"][purpose] = round(float(usd) * get_settings().usd_inr * 100)
         own = {t for (t,) in db.execute(text("select tenant_id from wa_numbers where status = 'active'"))}
         outlets = dict(db.execute(select(Outlet.tenant_id, func.count()).where(Outlet.is_active.is_(True), Outlet.is_training.is_(False))
                                   .group_by(Outlet.tenant_id)).all())
@@ -110,7 +118,11 @@ def usage(month: str | None = None) -> dict:
                 "paid_paise": 0 if unlimited else round(spend.get(t.id, {}).get("credits", 0) * CREDIT_PAISE),
                 "emb_pays_paise": round(spend.get(t.id, {}).get("emb", 0)) + (round(spend.get(t.id, {}).get("cost", 0)) if unlimited else 0),
                 "by_class": spend.get(t.id, {}).get("by", {}),
+                "ai_cost_paise": round(ai.get(t.id, {}).get("usd", 0) * get_settings().usd_inr * 100),
+                "ai_calls": ai.get(t.id, {}).get("calls", 0), "ai_by_kind": ai.get(t.id, {}).get("by", {}),
             })
+            sc = rows[-1]["scans_used"]
+            rows[-1]["ai_per_scan_paise"] = round(rows[-1]["ai_by_kind"].get("bill", 0) + rows[-1]["ai_by_kind"].get("bill-wa", 0)) // sc if sc else None
     tot = {"sent": sum(sum(r["sent"].values()) for r in rows), "meta_cost_paise": sum(r["meta_cost_paise"] for r in rows),
            "credits_left": sum(r["credits_left"] or 0 for r in rows), "restaurants": len(rows),
            "running_out": sum(1 for r in rows if r["left_this_month"] is not None and r["left_this_month"] <= max(1, (r["bill_msgs_free"] or 0) // 5))}
@@ -120,6 +132,12 @@ def usage(month: str | None = None) -> dict:
                 "emb_pays_paise": sum(r["emb_pays_paise"] for r in rows) + round(platform_own.get("cost", 0)),
                 "emb_own_msgs": sum(platform_own.get("by", {}).values())})
     tot["margin_paise"] = tot["paid_paise"] - (tot["your_cost_paise"] - tot["emb_pays_paise"])
+    tot["ai_cost_paise"] = round(sum(x["usd"] for x in ai.values()) * get_settings().usd_inr * 100)
+    tot["ai_calls"] = sum(x["calls"] for x in ai.values())
+    scans = sum(r["scans_used"] for r in rows)
+    bill_ai = sum(r["ai_by_kind"].get("bill", 0) + r["ai_by_kind"].get("bill-wa", 0) for r in rows)
+    tot["scans"] = scans
+    tot["ai_per_scan_paise"] = round(bill_ai / scans, 2) if scans else None
     from ..whatsapp.health import status as wa_status
     allt: dict = {}
     for r in rows:

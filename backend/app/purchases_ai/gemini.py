@@ -89,7 +89,13 @@ USAGE: list[dict] = []
 
 def _note_usage(model: str, tin: int, tout: int) -> None:
     pin, pout = PRICES.get(model, (0.0, 0.0))
-    USAGE.append({"model": model, "in": tin, "out": tout, "usd": tin * pin / 1e6 + tout * pout / 1e6})
+    usd = tin * pin / 1e6 + tout * pout / 1e6
+    USAGE.append({"model": model, "in": tin, "out": tout, "usd": usd})
+    try:
+        from app.ai_usage import record          # wise-plus: kept per restaurant, for cost per scan in admin
+        record(model, tin, tout, usd)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _resolve_model(model_id: str | None) -> str:

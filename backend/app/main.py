@@ -40,6 +40,8 @@ def create_app() -> FastAPI:
     )
     from .activity import install as _activity
     _activity(app)          # every change by a signed-in person goes in the activity log
+    from .ai_usage import install as _ai_usage
+    _ai_usage(app)          # what each AI read costs, per restaurant
 
     @app.exception_handler(IntegrityError)
     async def integrity_error(_: Request, exc: IntegrityError) -> JSONResponse:

@@ -74,6 +74,12 @@ def _gate():
 
 
 async def read_sent_bill(chosen: tuple, phone10: str, media_id: str, mime: str, filename: str, caption: str = "") -> Reply:
+    from ..ai_usage import scope
+    with scope(chosen[0], "bill-wa"):
+        return await _read_sent_bill_scoped(chosen, phone10, media_id, mime, filename, caption)
+
+
+async def _read_sent_bill_scoped(chosen: tuple, phone10: str, media_id: str, mime: str, filename: str, caption: str = "") -> Reply:
     async with _gate():
         return await _read_sent_bill(chosen, phone10, media_id, mime, filename, caption)
 

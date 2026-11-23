@@ -166,9 +166,11 @@ interface PRow { tenant_id: string; name: string; login_id: string; state: strin
   credits_left: number | null; left_this_month: number | null; sent: Record<string, number>; failed: number; meta_cost_paise: number;
   scans_used: number; scans_free: number | null; scans_bought_left: number; packs_bought: number; own_number: boolean;
   delivery: { total: number; delivered_pct: number | null; read_pct: number | null; failed_pct: number | null }; fail_reasons: { why: string; count: number }[];
-  your_cost_paise: number; credits_used: number; paid_paise: number; emb_pays_paise: number; by_class: Record<string, number> }
+  your_cost_paise: number; credits_used: number; paid_paise: number; emb_pays_paise: number; by_class: Record<string, number>;
+  ai_cost_paise: number; ai_calls: number; ai_by_kind: Record<string, number>; ai_per_scan_paise: number | null }
 interface PUsage { month: string; restaurants: PRow[]; total: { sent: number; meta_cost_paise: number; credits_left: number; restaurants: number; running_out: number;
   your_cost_paise: number; paid_paise: number; emb_pays_paise: number; margin_paise: number; emb_own_msgs: number;
+  ai_cost_paise: number; ai_calls: number; scans: number; ai_per_scan_paise: number | null;
   delivery: PRow["delivery"] };
   health: { ok: boolean; configured: boolean; number: { number?: string; quality?: string; tier?: string; status?: string; name_status?: string; at?: string } | null;
     day: { sent: number; failed: number }; problem: { at: string; message: string } | null } | null }
@@ -196,6 +198,12 @@ export function AllRestaurants() {
           <div><div className="small muted">You paid (sign-in codes{u.total.emb_own_msgs ? ", your own" : ""})</div><strong className="big">{formatPaise(u.total.emb_pays_paise)}</strong></div>
           <div><div className="small muted">Margin on restaurants' messages</div><strong className={`big ${u.total.margin_paise < 0 ? "error-text" : ""}`}>{formatPaise(u.total.margin_paise)}</strong></div>
         </div>
+        <div className="row wrap" style={{ gap: 16, margin: "8px 0" }}>
+          <div><div className="small muted">Bill scans this month</div><strong className="big">{u.total.scans.toLocaleString("en-IN")}</strong></div>
+          <div><div className="small muted">AI cost (all reads)</div><strong className="big">{formatPaise(u.total.ai_cost_paise)}</strong></div>
+          <div><div className="small muted">Average per bill scan</div><strong className="big">{u.total.ai_per_scan_paise === null ? "—" : `₹${(u.total.ai_per_scan_paise / 100).toFixed(2)}`}</strong></div>
+          <div><div className="small muted">AI calls</div><strong className="big">{u.total.ai_calls.toLocaleString("en-IN")}</strong></div>
+        </div>
         <p><strong>{u.total.sent.toLocaleString("en-IN")}</strong> messages sent ·
           {" "}<strong>{u.total.credits_left.toLocaleString("en-IN")}</strong> bought credits unused · {u.total.restaurants} restaurants
           {u.total.running_out ? <strong className="error-text"> · {u.total.running_out} running out</strong> : null}</p>
@@ -208,7 +216,7 @@ export function AllRestaurants() {
             {k === "sent" ? "Most sent" : k === "left" ? "Least left" : "Name"}</button>)}</div>
         <div className="table-wrap"><table className="table">
           <thead><tr><th>Restaurant</th><th>Plan</th><th className="num">WhatsApp bills</th><th className="num">Bought credits left</th>
-            <th className="num">Sent (bills · broadcasts)</th><th className="num">Reached</th><th className="num">Cost to you</th><th className="num">They paid</th><th className="num">Scans</th></tr></thead>
+            <th className="num">Sent (bills · broadcasts)</th><th className="num">Reached</th><th className="num">Cost to you</th><th className="num">They paid</th><th className="num">Scans</th><th className="num">AI cost</th></tr></thead>
           <tbody>{rows.map((r) => (
             <tr key={r.tenant_id} className={low(r) ? "warn-row" : ""}>
               <td><strong>{r.name}</strong><div className="small muted">{r.login_id} · {r.outlets} outlet{r.outlets === 1 ? "" : "s"}{r.own_number ? " · own number" : ""}</div>
@@ -223,10 +231,14 @@ export function AllRestaurants() {
               <td className="num">{formatPaise(r.paid_paise)}<div className="small muted">{r.credits_used} credits</div>
                 {r.emb_pays_paise > 0 && <div className="small muted">you: {formatPaise(r.emb_pays_paise)}</div>}</td>
               <td className="num">{r.scans_used}{r.scans_free !== null ? ` / ${r.scans_free}` : ""}{r.scans_bought_left ? <div className="small muted">+{r.scans_bought_left} bought</div> : null}</td>
+              <td className="num">{formatPaise(r.ai_cost_paise)}{r.ai_per_scan_paise !== null && <div className="small muted">₹{(r.ai_per_scan_paise / 100).toFixed(2)}/scan</div>}
+                {Object.keys(r.ai_by_kind).length > 0 && <div className="small muted" title="bill · WhatsApp bill · slip · sheet · bank · statement">
+                  {Object.entries(r.ai_by_kind).map(([k, v]) => `${k} ${formatPaise(v)}`).join(" · ")}</div>}</td>
             </tr>))}</tbody>
         </table></div>
         <p className="muted small">Only you see this. Cost to you is at Fast2SMS's rates: ₹0.25 a bill, code or utility message, ₹0.95 marketing, about ₹0.15 a chat reply.
-          Restaurants pay from prepaid credits (₹0.199 each): a bill 2, an offer or marketing message 6, a chat reply 1. You pay only for sign-in codes. Small grey numbers under the cost: utility · marketing · chat · codes.</p>
+          Restaurants pay from prepaid credits (₹0.199 each): a bill 2, an offer or marketing message 6, a chat reply 1. You pay only for sign-in codes. Small grey numbers under the cost: utility · marketing · chat · codes.
+          AI cost is Google's price for every read (bill scans, petty slips, daily sheets, bank and supplier statements), counted from 23 Nov 2026, in ₹ at the rate set on the server.</p>
       </>}
     </Card>
   );

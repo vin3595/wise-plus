@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     msg91_auth_key: str = ""
     msg91_template_id: str = ""
     fast2sms_api_key: str = ""
+    usd_inr: float = 88.0          # wise-plus: for showing AI (scan) costs in rupees
     google_client_id: str = ""     # wise-plus: "Sign in with Google" (Google Cloud › OAuth client ID, web), set in admin
     phone_otp: str = ""            # wise-plus admin choice for codes to a mobile: whatsapp | sms ("" = otp_provider)
     mail_user: str = ""            # Gmail address codes are emailed from (admin › Login codes)
