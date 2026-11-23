@@ -54,8 +54,10 @@ def test_missing_template_id_and_refusal(f2s, monkeypatch):
         client.send_template("9829000001", "login_code", ["1"])
 
 
-def test_free_text_still_goes_to_meta(f2s, monkeypatch):
+def test_free_text_goes_as_update_template(f2s, monkeypatch):
     seen = []
     monkeypatch.setattr(client, "_post_meta", lambda p, _f=False: seen.append(p) or {})
-    client.send_text("9829000001", "hi")
-    assert seen and not f2s
+    client.send_text("9829000001", "Your order\nis ready")
+    assert not seen
+    p = f2s[0][1]["params"]
+    assert p["message_id"] == "12" and p["variables_values"] == "Ease My Bill|Your order · is ready"

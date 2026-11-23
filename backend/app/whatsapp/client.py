@@ -210,9 +210,32 @@ def _post_f2s(payload: dict, _fallback: bool = False) -> dict:
 
 
 def _post(payload: dict, _fallback: bool = False) -> dict:
-    if payload.get("type") == "template" and f2s_ready() and _via.get() in (None, get_settings().wa_phone_number_id) and not _own_number():
-        return _post_f2s(payload, _fallback)
+    if f2s_ready() and _via.get() in (None, get_settings().wa_phone_number_id) and not _own_number():
+        if payload.get("type") == "template":
+            return _post_f2s(payload, _fallback)
+        text = _as_text(payload)          # Fast2SMS sends templates only: free text goes as the approved 'update' template
+        tpl = get_settings().wa_update_template
+        if text and tpl in f2s_templates():
+            return _post_f2s({"to": payload.get("to"), "type": "template", "template": {"name": tpl, "language": {"code": "en"},
+                              "components": [{"type": "body", "parameters": [{"type": "text", "text": _brand()[:60]},
+                                                                             {"type": "text", "text": _flatten(text)}]}]}}, True)
     return _post_meta(payload, _fallback)
+
+
+def _as_text(payload: dict) -> str:
+    """The words of a non-template message (text, buttons/list, picture or file with its link)."""
+    k = payload.get("type")
+    if k == "text":
+        return (payload.get("text") or {}).get("body", "")
+    if k == "interactive":
+        it = payload.get("interactive") or {}
+        act = it.get("action") or {}
+        opts = [b["reply"]["title"] for b in act.get("buttons", [])] + [r["title"] for s in act.get("sections", []) for r in s.get("rows", [])]
+        return ((it.get("body") or {}).get("text", "") + (" · Reply: " + " / ".join(opts) if opts else ""))
+    if k in ("image", "document"):
+        m = payload.get(k) or {}
+        return " ".join(x for x in (m.get("caption"), m.get("link")) if x)
+    return ""
 
 
 def _own_number() -> bool:
