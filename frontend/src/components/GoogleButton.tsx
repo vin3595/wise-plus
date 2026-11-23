@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { api } from "../api";
+import { useNavigate } from "react-router-dom";
+import { api, ApiError } from "../api";
 
 // "Sign in with Google" (Google Identity Services). Shown only when the client ID is set in admin › Login codes.
 // onCredential gets Google's ID token; the server checks it with Google.
@@ -52,8 +53,18 @@ export function GoogleButton({ onCredential, text = "signin_with" }: { onCredent
   );
 }
 
-/** Google sign-in for an existing business; when one Gmail runs several, asks which. */
-export function useGoogleLogin(signedIn: (t: any) => Promise<void>) {   // eslint-disable-line @typescript-eslint/no-explicit-any
+/** Name and Gmail from Google's sign-in token (only for showing; the server checks the token itself). */
+export function googleProfile(cred: string): { email: string; name: string } {
+  try {
+    const p = JSON.parse(decodeURIComponent(escape(atob(cred.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")))));
+    return { email: p.email || "", name: p.name || "" };
+  } catch { return { email: "", name: "" }; }
+}
+
+/** Google sign-in: an existing business opens; a new Gmail goes straight to setting up its business;
+ *  when one Gmail runs several businesses, asks which. */
+export function useGoogleLogin(signedIn: (t: any) => Promise<void>, onNew?: (cred: string) => void) {   // eslint-disable-line @typescript-eslint/no-explicit-any
+  const nav = useNavigate();
   const [choices, setChoices] = useState<{ cred: string; list: [string, string][] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const go = async (cred: string, login_id?: string) => {
@@ -63,6 +74,7 @@ export function useGoogleLogin(signedIn: (t: any) => Promise<void>) {   // eslin
       setChoices(null);
     } catch (e) {
       const msg = (e as Error).message || "";
+      if (e instanceof ApiError && e.status === 404) { if (onNew) onNew(cred); else nav("/signup", { state: { credential: cred } }); return; }
       if (msg.startsWith("choose:")) {
         setChoices({ cred, list: msg.slice(7).split(",").map((x) => x.split("=") as [string, string]) });
       } else setError(msg);

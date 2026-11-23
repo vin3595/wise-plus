@@ -1,14 +1,16 @@
 import { useState, type ChangeEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { api } from "../api";
 import { useSession } from "../session";
 import type { TokenOut } from "../types";
 import { Button, ErrorText, Field, FieldGroup, Input, useAction } from "../ui";
 import { EmbLogo, SupportLine } from "../components/Brand";
-import { GoogleButton } from "../components/GoogleButton";
+import { GoogleButton, googleProfile, useGoogleLogin } from "../components/GoogleButton";
 
 export default function Signup() {
   const { signedIn } = useSession();
+  const [googleCred, setGoogleCred] = useState<string | null>((useLocation().state as { credential?: string } | null)?.credential || null);
+  const g = useGoogleLogin(signedIn, setGoogleCred);
   const qp = new URLSearchParams(location.search);
   const ref = (qp.get("ref") || "").toUpperCase() || null;      // wise-plus: someone's referral link
   const [form, setForm] = useState({ restaurant_name: "", owner_name: "", email: "", phone: qp.get("phone") || "" });
@@ -61,6 +63,29 @@ export default function Signup() {
     );
   }
 
+  if (googleCred) {
+    const who = googleProfile(googleCred);
+    return (
+      <div className="auth-page"><div className="auth-card">
+        <div className="auth-brand"><EmbLogo height={52} /></div>
+        <h1>Set up your business</h1>
+        <p className="muted">Signing up as <b>{who.email}</b>. Free for 14 days, then ₹999/month per outlet.</p>
+        <form onSubmit={(e) => {
+          e.preventDefault();
+          run(async () => setMade(await api<TokenOut>("/auth/signup/google", { body: {
+            credential: googleCred, restaurant_name: form.restaurant_name, owner_name: form.owner_name || who.name || null, phone: form.phone, modules, ref } })));
+        }}>
+          <Field label="Business name"><Input value={form.restaurant_name} onChange={set("restaurant_name")} autoFocus required /></Field>
+          <Field label="Mobile number" hint="Bills, summaries and alerts come here on WhatsApp"><Input inputMode="tel" value={form.phone} onChange={set("phone")} required /></Field>
+          <ErrorText error={error && (error.includes("didn't work") ? "Google sign-in timed out. Tap Google again." : error)} />
+          <Button disabled={busy}>Create my account</Button>
+        </form>
+        {error && error.includes("didn't work") && <GoogleButton text="continue_with" onCredential={setGoogleCred} />}
+        <p className="muted center small"><button className="link" onClick={() => setGoogleCred(null)}>Use a different way</button></p>
+      </div></div>
+    );
+  }
+
   return (
     <div className="auth-page"><div className="auth-card">
       <div className="auth-brand"><EmbLogo height={52} /></div>
@@ -83,12 +108,9 @@ export default function Signup() {
         </FieldGroup>
         <Button disabled={busy}>Send verification code</Button>
       </form>
-      <GoogleButton text="signup_with" onCredential={(credential) => run(async () => {
-        if (form.restaurant_name.trim().length < 2 || form.phone.replace(/\D/g, "").length < 10)
-          throw new Error("Fill in the business name and mobile number first, then tap Google");
-        setMade(await api<TokenOut>("/auth/signup/google", { body: { credential, restaurant_name: form.restaurant_name, owner_name: form.owner_name || null, phone: form.phone, modules, ref } }));
-      })} />
-      <p className="muted center small">With Google you don't need a code: fill in the business name and mobile, then tap the Google button. Your Gmail becomes your sign-in.</p>
+      <GoogleButton text="signup_with" onCredential={(c) => g.go(c)} />
+      {g.picker}
+      <ErrorText error={g.error} />
       <p className="muted center">Already set up? <Link to="/setup">Sign in</Link></p>
       <SupportLine />
     </div></div>
