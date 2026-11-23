@@ -178,11 +178,13 @@ def verify(body: SubVerifyIn, auth: Auth = Depends(require(Perm.tenant_settings)
     """Checkout finished: check Razorpay's signature, then the plan is on straight away."""
     t = _tenant(db, auth)
     s = sub_for(db, t.id)
-    if not s or not s.pending or s.pending.get("subscription_id") != body.razorpay_subscription_id:
-        raise HTTPException(status.HTTP_409_CONFLICT, "That payment isn't for the plan being set up. Try again from Billing.")
     msg = f"{body.razorpay_payment_id}|{body.razorpay_subscription_id}".encode()
     if not rz.hmac_ok(msg, body.razorpay_signature, rz.keys()["key_secret"]):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Payment couldn't be verified")
+    if s and s.rz_subscription_id == body.razorpay_subscription_id and s.status in ("authenticated", "active"):
+        return billing(auth, db)          # Razorpay's webhook got here first and already switched the plan on
+    if not s or not s.pending or s.pending.get("subscription_id") != body.razorpay_subscription_id:
+        raise HTTPException(status.HTTP_409_CONFLICT, "That payment isn't for the plan being set up. Try again from Billing.")
     _activate(db, t, s)
     audit.record(db, t.id, auth.user_id, "subscribe", "billing", t.id, after={"modules": s.modules, "period": s.period})
     return billing(auth, db)

@@ -69,7 +69,7 @@ export default function Signup() {
       <div className="auth-page"><div className="auth-card">
         <div className="auth-brand"><EmbLogo height={52} /></div>
         <h1>Set up your business</h1>
-        <p className="muted">Signing up as <b>{who.email}</b>. Free for 14 days, then ₹999/month per outlet.</p>
+        <p className="muted">Signing up as <b>{who.email}</b>. Free for 30 days, then ₹999/month per outlet.</p>
         <form onSubmit={(e) => {
           e.preventDefault();
           run(async () => setMade(await api<TokenOut>("/auth/signup/google", { body: {
@@ -90,7 +90,7 @@ export default function Signup() {
     <div className="auth-page"><div className="auth-card">
       <div className="auth-brand"><EmbLogo height={52} /></div>
       <h1>Start free</h1>
-      <p className="muted">Billing, stock, supplier bill scans and WhatsApp, all in one plan: <b>₹999/month per outlet</b>. Free for 14 days, ready in a minute.</p>
+      <p className="muted">Billing, stock, supplier bill scans and WhatsApp, all in one plan: <b>₹999/month per outlet</b>. Free for 30 days, ready in a minute.</p>
       <form onSubmit={(e) => {
         e.preventDefault();
         run(async () => setSent(await api("/auth/signup/start", { body: { ...form, modules, via } })));
