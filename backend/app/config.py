@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     msg91_auth_key: str = ""
     msg91_template_id: str = ""
     fast2sms_api_key: str = ""
+    google_client_id: str = ""     # wise-plus: "Sign in with Google" (Google Cloud › OAuth client ID, web), set in admin
     phone_otp: str = ""            # wise-plus admin choice for codes to a mobile: whatsapp | sms ("" = otp_provider)
     mail_user: str = ""            # Gmail address codes are emailed from (admin › Login codes)
     mail_password: str = ""        # its Google app password
@@ -82,7 +83,7 @@ class Settings(BaseSettings):
 # wise-plus: Ease My Bill's own WhatsApp sender, pasted at /admin (sealed in platform_secrets), wins over the server file.
 PLATFORM_WA_KEYS = ("wa_token", "wa_phone_number_id", "wa_business_id", "wa_app_secret", "wa_app_id", "wa_display_number",
                     "wa_provider", "wa_f2s_number_id", "wa_f2s_templates")
-PLATFORM_CODE_KEYS = ("phone_otp", "mail_user", "mail_password", "fast2sms_api_key")   # admin › Login codes
+PLATFORM_CODE_KEYS = ("phone_otp", "mail_user", "mail_password", "fast2sms_api_key", "google_client_id")   # admin › Login codes
 _ENGINE = None
 
 
@@ -100,7 +101,7 @@ def _platform_overrides(s: "Settings") -> None:
         with _ENGINE.connect() as c:
             c.execute(text("select set_config('app.bypass_rls', 'on', false)"))
             rows = c.execute(text("select key, value_enc from platform_secrets where key like 'wa_%' "
-                                  "or key in ('phone_otp', 'mail_user', 'mail_password', 'fast2sms_api_key')")).all()
+                                  "or key in ('phone_otp', 'mail_user', 'mail_password', 'fast2sms_api_key', 'google_client_id')")).all()
         for k, v in rows:
             if k in PLATFORM_WA_KEYS or k in PLATFORM_CODE_KEYS:
                 setattr(s, k, f.decrypt(v.encode()).decode())

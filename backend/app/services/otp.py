@@ -120,11 +120,9 @@ def _deliver(identifier: str, code: str, settings=None) -> None:
     if s.otp_provider in ("console", "box"):
         log.warning("OTP for %s: %s", identifier, code)        # development only
         return
-    if settings is None and s.phone_otp in ("whatsapp", "sms"):   # the admin's pick for mobile numbers
-        prov = "whatsapp" if s.phone_otp == "whatsapp" else ("fast2sms" if s.fast2sms_api_key else "msg91")
-        if prov != s.otp_provider:
-            _deliver_via(prov, identifier, code)
-            return
+    if settings is None and s.otp_provider != "whatsapp":   # wise-plus: codes to a mobile go on WhatsApp only
+        _deliver_via("whatsapp", identifier, code)
+        return
     if s.otp_provider == "msg91":
         # MSG91 OTP API: template must contain the ##OTP## placeholder.
         resp = httpx.post(
@@ -165,11 +163,6 @@ def _deliver(identifier: str, code: str, settings=None) -> None:
                     {"type": "button", "sub_type": "url", "index": "0", "parameters": [{"type": "text", "text": code}]}]}})
         except Exception:  # noqa: BLE001
             log.exception("WhatsApp OTP send failed")
-            # wise-plus: never stranded on a sign-in code: SMS when an SMS service is set up (codes are never logged)
-            if s.fast2sms_api_key or (s.msg91_auth_key and s.msg91_template_id):
-                prov = "fast2sms" if s.fast2sms_api_key else "msg91"
-                _deliver_via(prov, identifier, code)
-                return
             raise OtpError("Couldn't send the code on WhatsApp right now. Try again.") from None
         return
     raise OtpError(f"Unknown OTP provider {s.otp_provider!r}")

@@ -4,6 +4,7 @@ import { useSession } from "../session";
 import type { TokenOut } from "../types";
 import { Button, ErrorText, Field, Input, Select, useAction } from "../ui";
 import { EmbMark, PoweredBy, SupportLine } from "../components/Brand";
+import { GoogleButton, useGoogleLogin } from "../components/GoogleButton";
 
 type Mode = "staff" | "owner";
 
@@ -43,6 +44,7 @@ function DeviceFooter() {
 
 function OtpLogin() {
   const { loginId, signedIn } = useSession();
+  const g = useGoogleLogin(signedIn);
   const [identifier, setIdentifier] = useState("");
   const [otp, setOtp] = useState("");
   const [sent, setSent] = useState<{ sent_to: string; dev_otp: string | null } | null>(null);
@@ -54,11 +56,14 @@ function OtpLogin() {
         e.preventDefault();
         run(async () => setSent(await api("/auth/otp/request", { body: { login_id: loginId, identifier } })));
       }}>
-        <Field label="Email or mobile number">
+        <Field label="Gmail or mobile number">
           <Input value={identifier} onChange={(e) => setIdentifier(e.target.value)} inputMode="email" autoFocus required />
         </Field>
         <ErrorText error={error} />
         <Button disabled={busy}>Send code</Button>
+        <GoogleButton onCredential={(c) => g.go(c, loginId || undefined)} />
+        {g.picker}
+        <ErrorText error={g.error} />
       </form>
     );
   }

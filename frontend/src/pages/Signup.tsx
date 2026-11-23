@@ -5,6 +5,7 @@ import { useSession } from "../session";
 import type { TokenOut } from "../types";
 import { Button, ErrorText, Field, FieldGroup, Input, useAction } from "../ui";
 import { EmbLogo, SupportLine } from "../components/Brand";
+import { GoogleButton } from "../components/GoogleButton";
 
 export default function Signup() {
   const { signedIn } = useSession();
@@ -26,7 +27,7 @@ export default function Signup() {
         <h1>You're all set</h1>
         <p className="muted">Your login ID is</p>
         <p style={{ fontSize: "2.4rem", fontWeight: 700, letterSpacing: "0.2em", margin: "0.2em 0" }}>{made.tenant.login_id}</p>
-        <p className="muted small">Note it down. You and your staff type it once on each phone or tablet, then sign in with your mobile number.</p>
+        <p className="muted small">Note it down. You and your staff type it once on each phone or tablet, then sign in with your Gmail or mobile number.</p>
         <Button onClick={() => signedIn(made)}>Continue</Button>
       </div></div>
     );
@@ -37,7 +38,7 @@ export default function Signup() {
       <div className="auth-page"><div className="auth-card">
         <div className="auth-brand"><EmbLogo height={52} /></div>
         <h1>{via === "email" ? "Check your email" : "Verify your mobile"}</h1>
-        <p className="muted">We sent a 6-digit code to {sent.sent_to}.{via === "email" ? " Check your inbox (and spam)." : " Check WhatsApp or SMS."}</p>
+        <p className="muted">We sent a 6-digit code to {sent.sent_to}.{via === "email" ? " Check your inbox (and spam)." : " Check WhatsApp."}</p>
         {sent.dev_otp && <p className="dev-note">Development mode code: <strong>{sent.dev_otp}</strong></p>}
         <form onSubmit={(e) => {
           e.preventDefault();
@@ -71,7 +72,7 @@ export default function Signup() {
       }}>
         <Field label="Business name"><Input value={form.restaurant_name} onChange={set("restaurant_name")} required /></Field>
         <Field label="Your name"><Input value={form.owner_name} onChange={set("owner_name")} required /></Field>
-        <Field label="Email"><Input type="email" value={form.email} onChange={set("email")} required /></Field>
+        <Field label="Gmail"><Input type="email" value={form.email} onChange={set("email")} required /></Field>
         <Field label="Mobile number"><Input inputMode="tel" value={form.phone} onChange={set("phone")} required /></Field>
         <ErrorText error={error} />
         <FieldGroup label="Send the code to">
@@ -82,6 +83,12 @@ export default function Signup() {
         </FieldGroup>
         <Button disabled={busy}>Send verification code</Button>
       </form>
+      <GoogleButton text="signup_with" onCredential={(credential) => run(async () => {
+        if (form.restaurant_name.trim().length < 2 || form.phone.replace(/\D/g, "").length < 10)
+          throw new Error("Fill in the business name and mobile number first, then tap Google");
+        setMade(await api<TokenOut>("/auth/signup/google", { body: { credential, restaurant_name: form.restaurant_name, owner_name: form.owner_name || null, phone: form.phone, modules, ref } }));
+      })} />
+      <p className="muted center small">With Google you don't need a code: fill in the business name and mobile, then tap the Google button. Your Gmail becomes your sign-in.</p>
       <p className="muted center">Already set up? <Link to="/setup">Sign in</Link></p>
       <SupportLine />
     </div></div>

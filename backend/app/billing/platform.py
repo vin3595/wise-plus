@@ -347,7 +347,8 @@ def login_codes(_adm: str = Depends(require_admin)) -> dict:
     phone = s.phone_otp or ("sms" if s.otp_provider in ("fast2sms", "msg91") else "whatsapp")
     return {"phone": phone, "has_sms_key": bool(s.fast2sms_api_key or (s.msg91_auth_key and s.msg91_template_id)),
             "mail_user": s.mail_user or None, "has_mail_password": bool(s.mail_password),
-            "whatsapp_ready": bool(s.wa_token and s.wa_phone_number_id) or s.wa_provider == "fast2sms"}
+            "whatsapp_ready": bool(s.wa_token and s.wa_phone_number_id) or s.wa_provider == "fast2sms",
+            "google_client_id": s.google_client_id or None}
 
 
 @router.post("/login-codes")
@@ -366,6 +367,11 @@ def set_login_codes(body: dict, _adm: str = Depends(require_admin)) -> dict:
         vals["fast2sms_api_key"] = key
     if phone == "sms" and not (key or s.fast2sms_api_key or (s.msg91_auth_key and s.msg91_template_id)):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "For SMS, paste your Fast2SMS API key first")
+    gid = str(body.get("google_client_id") or "").strip()
+    if gid:
+        if not gid.endswith(".apps.googleusercontent.com"):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Paste the Client ID (it ends in .apps.googleusercontent.com)")
+        vals["google_client_id"] = gid
     user = str(body.get("mail_user") or "").strip().lower()
     pw = str(body.get("mail_password") or "").replace(" ", "").strip()
     tested = None

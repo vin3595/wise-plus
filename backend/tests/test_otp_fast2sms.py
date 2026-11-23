@@ -28,12 +28,14 @@ def _setup(monkeypatch, resp):
     return seen
 
 
-def test_fast2sms_sends_code_on_otp_route(monkeypatch):
-    seen = _setup(monkeypatch, _Resp(200, {"return": True, "request_id": "x"}))
-    otp._deliver("9876543210", "123456")
-    assert seen["url"].endswith("/dev/bulkV2")
-    assert seen["params"]["route"] == "otp" and seen["params"]["variables_values"] == "123456"
-    assert seen["params"]["numbers"] == "9876543210" and seen["params"]["authorization"] == "KEY123"
+def test_mobile_codes_go_on_whatsapp_only(monkeypatch):
+    seen = _setup(monkeypatch, _Resp(200, {"return": True}))
+    from app.whatsapp import client
+    sent = []
+    monkeypatch.setattr(client, "_post", lambda p, _f=False: sent.append(p) or {})
+    otp._deliver("f7efe195-770c-48bb-9c79-c44978eae2e6:7725986613", "392229")
+    assert not seen                                  # no SMS, even with an SMS key saved
+    assert sent[0]["to"] == "917725986613" and sent[0]["template"]["components"][0]["parameters"][0]["text"] == "392229"
 
 
 def test_fast2sms_failure_is_a_clear_error(monkeypatch):
@@ -42,7 +44,3 @@ def test_fast2sms_failure_is_a_clear_error(monkeypatch):
         otp._deliver("9876543210", "123456")
 
 
-def test_fast2sms_strips_the_restaurant_prefix(monkeypatch):
-    seen = _setup(monkeypatch, _Resp(200, {"return": True}))
-    otp._deliver("f7efe195-770c-48bb-9c79-c44978eae2e6:7725986613", "392229")
-    assert seen["params"]["numbers"] == "7725986613"

@@ -33,12 +33,28 @@ class SignupStart(BaseModel):
     _v_phone = field_validator("phone")(lambda v: normalize_phone(v))
 
 
+class GoogleLogin(BaseModel):
+    credential: str = Field(min_length=20, max_length=4096)   # Google's ID token from the sign-in button
+    login_id: str | None = None                               # only when one Gmail runs more than one business
+
+
+class GoogleSignup(BaseModel):
+    credential: str = Field(min_length=20, max_length=4096)
+    restaurant_name: str = Field(min_length=2, max_length=120)
+    owner_name: str | None = Field(default=None, max_length=120)
+    phone: str
+    modules: list[str] | None = None
+    ref: str | None = Field(default=None, max_length=20)
+
+    _v_phone = field_validator("phone")(lambda v: normalize_phone(v))
+
+
 class SignupVerify(SignupStart):
     otp: str = Field(min_length=6, max_length=6)
 
 
 class OtpRequest(BaseModel):
-    login_id: str
+    login_id: str | None = None   # wise-plus: left out, the business is found from the email / mobile
     identifier: str  # email or mobile
 
 

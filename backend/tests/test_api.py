@@ -1264,3 +1264,22 @@ def test_restaurant_payment_keys_are_encrypted_in_the_database(client):
     from app.core.secretbox import decrypt, encrypt
     assert decrypt("legacy-plain") == "legacy-plain" and encrypt(encrypt("x")) == encrypt(encrypt("x")) or True
     e = encrypt("x"); assert encrypt(e) == e and decrypt(e) == "x"
+
+
+def test_sign_in_with_google_and_without_login_id(client, monkeypatch):
+    """Google sign-in finds the business from the Gmail; a Gmail/mobile code works without the login ID."""
+    from app.routers import auth as auth_router
+    from app.config import get_settings
+    monkeypatch.setattr(get_settings(), "google_client_id", "x.apps.googleusercontent.com")
+    monkeypatch.setattr(auth_router, "_google_email", lambda c: ("gfounder@gmail.com", "G Founder"))
+    assert client.get("/api/auth/google").json()["client_id"] == "x.apps.googleusercontent.com"
+    r = client.post("/api/auth/google", json={"credential": "x" * 30})
+    assert r.status_code == 404
+    r = client.post("/api/auth/signup/google", json={"credential": "x" * 30, "restaurant_name": "G Cafe", "phone": "9876500011"})
+    assert r.status_code == 200, r.text
+    lid = r.json()["tenant"]["login_id"]
+    r = client.post("/api/auth/google", json={"credential": "x" * 30})
+    assert r.status_code == 200 and r.json()["tenant"]["login_id"] == lid and r.json()["user"]["name"] == "G Founder"
+    sent = client.post("/api/auth/otp/request", json={"identifier": "gfounder@gmail.com"}).json()
+    r = client.post("/api/auth/otp/verify", json={"identifier": "gfounder@gmail.com", "otp": sent["dev_otp"]})
+    assert r.status_code == 200 and r.json()["tenant"]["login_id"] == lid

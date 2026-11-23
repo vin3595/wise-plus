@@ -157,9 +157,9 @@ function WhatsAppFast2SMS() {
 
 /** How sign-in codes reach people: a mobile number gets WhatsApp or SMS, an email address gets an email from your Gmail. */
 function LoginCodes() {
-  type Info = { phone: "whatsapp" | "sms"; has_sms_key: boolean; mail_user: string | null; has_mail_password: boolean; whatsapp_ready: boolean };
+  type Info = { phone: "whatsapp" | "sms"; has_sms_key: boolean; mail_user: string | null; has_mail_password: boolean; whatsapp_ready: boolean; google_client_id: string | null };
   const [k, setK] = useState<Info | null>(null);
-  const [f, setF] = useState({ sms_key: "", mail_user: "", mail_password: "" });
+  const [f, setF] = useState({ sms_key: "", mail_user: "", mail_password: "", google_client_id: "" });
   const [msg, setMsg] = useState<string | null>(null);
   const act = useAction();
   const load = () => api<Info>("/platform/login-codes").then((x) => { setK(x); setF((o) => ({ ...o, mail_user: o.mail_user || x.mail_user || "easemybills@gmail.com" })); }).catch(() => setK(null));
@@ -168,22 +168,23 @@ function LoginCodes() {
   const save = (body: Record<string, string>, done: string) => act.run(async () => {
     const r = await api<Info & { test_email_to: string | null }>("/platform/login-codes", { body });
     setK(r); setMsg(r.test_email_to ? `Saved ✓ A test email went to ${r.test_email_to}.` : done);
-    setF((o) => ({ ...o, sms_key: "", mail_password: "" }));
+    setF((o) => ({ ...o, sms_key: "", mail_password: "", google_client_id: "" }));
   });
   return (<>
     <Card title="Codes to a mobile number">
-      <p className="small">When someone signs in or signs up with their mobile number, the code goes by:</p>
-      <div className="row" style={{ gap: 8 }}>
-        <Button variant={k.phone === "whatsapp" ? undefined : "ghost"} disabled={act.busy} onClick={() => save({ phone: "whatsapp" }, "Mobile codes now go on WhatsApp ✓")}>WhatsApp</Button>
-        <Button variant={k.phone === "sms" ? undefined : "ghost"} disabled={act.busy || !k.has_sms_key} onClick={() => save({ phone: "sms" }, "Mobile codes now go by SMS ✓")}>SMS</Button>
-      </div>
-      <p className="muted small">{k.phone === "whatsapp" ? "WhatsApp, with SMS as backup when an SMS key is saved." : "SMS through Fast2SMS."}{!k.has_sms_key && " To use SMS, add a Fast2SMS API key below."}</p>
+      <p className="small">{k.whatsapp_ready ? "On ✓ Codes to a mobile number go on WhatsApp (through Fast2SMS)." : "WhatsApp isn't set up yet: see Your WhatsApp."}</p>
+    </Card>
+    <Card title="Sign in with Google">
+      <p className="small">{k.google_client_id ? <>On ✓ The Google button shows on sign-in and sign-up.</> : "Off: add a Google Client ID to show the Google button."}</p>
+      <ol className="small muted" style={{ paddingLeft: 18 }}>
+        <li>Open <a href="https://console.cloud.google.com/auth/clients" target="_blank" rel="noreferrer">console.cloud.google.com › Google Auth Platform › Clients</a> (sign in with easemybills@gmail.com). If asked, set up the app: name <em>Ease My Bill</em>, audience <em>External</em>.</li>
+        <li>Create client › Web application › Authorised JavaScript origins: <code>https://www.easemybill.com</code> and <code>https://easemybill.com</code> › Create.</li>
+        <li>Copy the <em>Client ID</em> (ends in .apps.googleusercontent.com) and paste it here.</li>
+      </ol>
       <div className="row wrap">
-        <Field label={k.has_sms_key ? "Fast2SMS API key (saved — paste to change)" : "Fast2SMS API key"} hint="fast2sms.com › Dev API › copy the API key">
-          <Input type="password" value={f.sms_key} onChange={(e) => setF({ ...f, sms_key: e.target.value.trim() })} autoComplete="off" />
-        </Field>
+        <Field label="Google Client ID"><Input value={f.google_client_id} onChange={(e) => setF({ ...f, google_client_id: e.target.value.trim() })} autoComplete="off" placeholder={k.google_client_id || "…apps.googleusercontent.com"} /></Field>
       </div>
-      <Button variant="ghost" disabled={act.busy || f.sms_key.length < 20} onClick={() => save({ sms_key: f.sms_key }, "SMS key saved ✓")}>Save SMS key</Button>
+      <Button disabled={act.busy || !f.google_client_id.endsWith(".apps.googleusercontent.com")} onClick={() => save({ google_client_id: f.google_client_id }, "Saved ✓ The Google button is on.")}>Save</Button>
     </Card>
     <Card title="Codes to an email address (Gmail)">
       <p className="small">{k.mail_user && k.has_mail_password ? <>On ✓ Codes are emailed from <strong>{k.mail_user}</strong>.</> : "Off: people who type an email address can't get a code yet."}</p>

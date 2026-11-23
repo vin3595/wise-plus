@@ -16,7 +16,7 @@ from ..core.permissions import OTP_ROLES, Role
 from ..core.security import pin_lookup_key, verify_secret
 from ..db import system_session
 from ..models import Brand, Outlet, TaxGroup, Tenant, User, UserOutlet
-from ..schemas import OtpRequest, OtpSent, OtpVerify, PinLogin, SignupStart, SignupVerify, TokenOut
+from ..schemas import GoogleLogin, GoogleSignup, OtpRequest, OtpSent, OtpVerify, PinLogin, SignupStart, SignupVerify, TokenOut
 from ..modules import clean as clean_modules
 from ..services import audit, otp, throttle
 from ..services.first_outlet import first_outlet
@@ -81,28 +81,8 @@ def signup_verify(body: SignupVerify) -> TokenOut:
             login_id = body.login_id
             if login_id and db.scalar(select(Tenant.id).where(Tenant.login_id == login_id)) is not None:
                 raise HTTPException(status.HTTP_409_CONFLICT, "That login ID was just taken")
-            while not login_id:
-                c = new_login_code()
-                if db.scalar(select(Tenant.id).where(Tenant.login_id == c)) is None:
-                    login_id = c
-            tenant = Tenant(
-                login_id=login_id, name=body.restaurant_name, owner_email=body.email,
-                owner_phone=body.phone, app_name=body.restaurant_name,
-                trial_ends_at=datetime.now(timezone.utc) + timedelta(days=s.trial_days),
-                modules=clean_modules(body.modules, login_id) if body.modules is not None else None,
-            )
-            db.add(tenant)
-            db.flush()
-            brand = Brand(tenant_id=tenant.id, name=body.restaurant_name)
-            db.add(brand)
-            db.add(TaxGroup(tenant_id=tenant.id, name="GST 5%", cgst_bp=250, sgst_bp=250, is_default=True))
-            owner = User(tenant_id=tenant.id, name=body.owner_name, email=body.email, phone=body.phone,
-                         role=Role.owner.value, last_login_at=datetime.now(timezone.utc))
-            db.add(owner)
-            db.flush()
-            if tenant.modules is not None and "pos" not in tenant.modules:
-                first_outlet(db, tenant, brand)   # wise-plus: stock / bills / sheets work straight away
-            audit.record(db, tenant.id, owner.id, "signup", "tenant", tenant.id, after=audit.snapshot(tenant))
+            tenant, owner = _create_business(db, login_id, body.restaurant_name, body.owner_name, body.email, body.phone, body.modules)
+            login_id = tenant.login_id
             result = issue_token(db, owner, tenant)
             new_id = login_id
     if error:
@@ -119,8 +99,47 @@ def signup_verify(body: SignupVerify) -> TokenOut:
     return result
 
 
-def _find_tenant(db, login_id: str) -> Tenant | None:
-    return db.scalar(select(Tenant).where(Tenant.login_id == normalize_login_id(login_id)))
+def _create_business(db, login_id: str | None, name: str, owner_name: str, email: str, phone: str,
+                     modules: list[str] | None) -> tuple[Tenant, User]:
+    """A new restaurant / business with its owner (sign-up by code or with Google)."""
+    s = get_settings()
+    while not login_id:
+        c = new_login_code()
+        if db.scalar(select(Tenant.id).where(Tenant.login_id == c)) is None:
+            login_id = c
+    tenant = Tenant(login_id=login_id, name=name, owner_email=email, owner_phone=phone, app_name=name,
+                    trial_ends_at=datetime.now(timezone.utc) + timedelta(days=s.trial_days),
+                    modules=clean_modules(modules, login_id) if modules is not None else None)
+    db.add(tenant)
+    db.flush()
+    brand = Brand(tenant_id=tenant.id, name=name)
+    db.add(brand)
+    db.add(TaxGroup(tenant_id=tenant.id, name="GST 5%", cgst_bp=250, sgst_bp=250, is_default=True))
+    owner = User(tenant_id=tenant.id, name=owner_name, email=email, phone=phone,
+                 role=Role.owner.value, last_login_at=datetime.now(timezone.utc))
+    db.add(owner)
+    db.flush()
+    if tenant.modules is not None and "pos" not in tenant.modules:
+        first_outlet(db, tenant, brand)   # wise-plus: stock / bills / sheets work straight away
+    audit.record(db, tenant.id, owner.id, "signup", "tenant", tenant.id, after=audit.snapshot(tenant))
+    return tenant, owner
+
+
+def _accounts(db, kind: str, ident: str) -> list[tuple[Tenant, User]]:
+    """Every business where this email / mobile is an active owner or manager."""
+    col = User.email if kind == "email" else User.phone
+    rows = db.execute(select(Tenant, User).join(User, User.tenant_id == Tenant.id)
+                      .where(col == ident, User.is_active, Tenant.status != "suspended")).all()
+    return [(t, u) for t, u in rows if Role(u.role) in OTP_ROLES]
+
+
+def _find_tenant(db, login_id: str | None, kind: str | None = None, ident: str | None = None) -> Tenant | None:
+    if login_id:
+        return db.scalar(select(Tenant).where(Tenant.login_id == normalize_login_id(login_id)))
+    found = _accounts(db, kind, ident) if ident else []
+    if len(found) > 1:
+        raise HTTPException(status.HTTP_409_CONFLICT, "This runs more than one business. Type the business login ID too.")
+    return found[0][0] if found else None
 
 
 @router.post("/otp/request", response_model=OtpSent)
@@ -132,7 +151,7 @@ def otp_request(body: OtpRequest) -> OtpSent:
     error = None
     code = None
     with system_session() as db:
-        tenant = _find_tenant(db, body.login_id)
+        tenant = _find_tenant(db, body.login_id, kind, ident)
         user = None
         if tenant is not None:
             col = User.email if kind == "email" else User.phone
@@ -158,7 +177,7 @@ def otp_verify(body: OtpVerify) -> TokenOut:
     error = None
     result = None
     with system_session() as db:
-        tenant = _find_tenant(db, body.login_id)
+        tenant = _find_tenant(db, body.login_id, kind, ident)
         if tenant is None:
             error = otp.OtpError("Wrong code")
         else:
@@ -178,6 +197,64 @@ def otp_verify(body: OtpVerify) -> TokenOut:
     if error:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(error))
     assert result is not None
+    return result
+
+
+# ---------------------------------------------------------------- Sign in with Google
+
+@router.get("/google")
+def google_config() -> dict:
+    return {"client_id": get_settings().google_client_id or None}
+
+
+def _google_email(credential: str) -> tuple[str, str]:
+    """Check Google's ID token (signature, expiry and audience, by Google's tokeninfo) -> (email, name)."""
+    import httpx
+    s = get_settings()
+    if not s.google_client_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Sign in with Google isn't switched on yet")
+    try:
+        r = httpx.get("https://oauth2.googleapis.com/tokeninfo", params={"id_token": credential}, timeout=10)
+        info = r.json() if r.status_code == 200 else {}
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Couldn't reach Google. Try again.") from None
+    if info.get("aud") != s.google_client_id or info.get("iss") not in ("accounts.google.com", "https://accounts.google.com") \
+            or str(info.get("email_verified")).lower() != "true" or not info.get("email"):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Google sign-in didn't work. Try again.")
+    return normalize_identifier(info["email"])[1], str(info.get("name") or "")[:120]
+
+
+@router.post("/google", response_model=TokenOut)
+def google_login(body: GoogleLogin) -> TokenOut:
+    email, _ = _google_email(body.credential)
+    with system_session() as db:
+        found = _accounts(db, "email", email)
+        if body.login_id:
+            found = [(t, u) for t, u in found if t.login_id == normalize_login_id(body.login_id)]
+        if not found:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, f"No business uses {email} yet. Create your account first.")
+        if len(found) > 1:
+            raise HTTPException(status.HTTP_409_CONFLICT, "choose:" + ",".join(f"{t.login_id}={t.name}" for t, _ in found))
+        tenant, user = found[0]
+        user.last_login_at = datetime.now(timezone.utc)
+        audit.record(db, tenant.id, user.id, "login_google", "user", user.id)
+        return issue_token(db, user, tenant)
+
+
+@router.post("/signup/google", response_model=TokenOut)
+def google_signup(body: GoogleSignup) -> TokenOut:
+    email, gname = _google_email(body.credential)
+    with system_session() as db:
+        _check_signup_open(db)
+        tenant, owner = _create_business(db, None, body.restaurant_name, (body.owner_name or gname or body.restaurant_name)[:120],
+                                         email, body.phone, body.modules)
+        result = issue_token(db, owner, tenant)
+        tid = tenant.id
+    try:
+        from ..growth.service import on_signup
+        on_signup(tid, body.phone, body.ref)
+    except Exception:  # noqa: BLE001
+        logging.getLogger("wise.growth").exception("growth: sign-up hook")
     return result
 
 
