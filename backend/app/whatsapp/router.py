@@ -158,6 +158,43 @@ async def receive(request: Request, background: BackgroundTasks) -> dict:
     return {"ok": True}       # always 200 fast, or Meta keeps retrying
 
 
+@router.post("/fast2sms/{key}")
+async def receive_f2s(key: str, request: Request, background: BackgroundTasks) -> dict:
+    """Replies through Fast2SMS (their WhatsApp webhook, payload template set in their panel): text, button taps,
+    photos and PDFs go the same way as Meta's. The secret is in the address (Fast2SMS's new panel can't sign)."""
+    hook = get_settings().wa_f2s_hook
+    if not hook or not hmac.compare_digest(key, hook):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Wrong address")
+    raw = await request.body()
+    try:
+        d = json.loads(raw)
+    except ValueError:
+        from urllib.parse import parse_qsl
+        d = dict(parse_qsl(raw.decode(errors="replace")))
+    if isinstance(d, list):
+        d = d[0] if d else {}
+    if not isinstance(d, dict) or str(d.get("webhook_type", "")) != "incoming_message":
+        return {"ok": True}                      # delivery ticks: Fast2SMS keeps those in its report
+    frm = re.sub(r"\D", "", str(d.get("from") or ""))
+    mid = str(d.get("message_id") or "")
+    if not frm or (mid and mid in _seen):
+        return {"ok": True}
+    if mid:
+        _seen[mid] = None
+        while len(_seen) > 2000:
+            _seen.popitem(last=False)
+    kind = str(d.get("message_type") or "text").lower()
+    url = str(d.get("media_url") or "")
+    if kind in ("image", "document") and url.startswith("https://"):
+        background.add_task(handle_media, frm, "url:" + url, str(d.get("mime_type") or ""), "bill", str(d.get("caption") or ""), None)
+    else:
+        text = str(d.get("body") or d.get("caption") or "").strip()
+        if text:
+            background.add_task(handle, frm, text, str(d.get("name") or ""), None)
+    background.add_task(_seen_now, frm)
+    return {"ok": True}
+
+
 def _safe(fn, *args) -> None:
     try:
         fn(*args)

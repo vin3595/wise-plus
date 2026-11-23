@@ -354,7 +354,14 @@ def send_image(to: str, link: str, caption: str | None = None) -> dict:
 
 
 def get_media(media_id: str) -> tuple[bytes, str]:
-    """A photo or PDF someone sent us: (bytes, mime type). Meta gives a short-lived URL that needs the token."""
+    """A photo or PDF someone sent us: (bytes, mime type). Meta gives a short-lived URL that needs the token.
+    Through Fast2SMS the 'id' is 'url:' + their download link."""
+    if media_id.startswith("url:https://"):
+        r = httpx.get(media_id[4:], timeout=60, follow_redirects=True)
+        r.raise_for_status()
+        if len(r.content) > 16 * 1024 * 1024:
+            raise ValueError("file too large")
+        return r.content, r.headers.get("content-type", "application/octet-stream").split(";")[0]
     s = get_settings()
     h = {"Authorization": f"Bearer {_sender()[1]}"}
     meta = httpx.get(f"https://graph.facebook.com/{s.wa_graph_version}/{media_id}", headers=h, timeout=20)

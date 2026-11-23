@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     wa_provider: str = "meta"        # meta (Cloud API direct) | fast2sms (templates sent through Fast2SMS's WhatsApp API)
     wa_f2s_number_id: str = ""       # Fast2SMS: the phone_number_id of the number connected in their panel
     wa_f2s_templates: str = ""       # Fast2SMS: JSON {template name: message_id} from their panel
+    wa_f2s_hook: str = ""            # Fast2SMS: the secret in our webhook address (replies come in on it)
     wa_nightly_template: str = ""
     wa_bill_template: str = ""       # customers' bill with feedback buttons (4 body values, 3 quick replies)
     wa_promo_template: str = "promo_message"          # wise-plus: marketing broadcast ('Stop offers' button)
@@ -82,7 +83,7 @@ class Settings(BaseSettings):
 
 # wise-plus: Ease My Bill's own WhatsApp sender, pasted at /admin (sealed in platform_secrets), wins over the server file.
 PLATFORM_WA_KEYS = ("wa_token", "wa_phone_number_id", "wa_business_id", "wa_app_secret", "wa_app_id", "wa_display_number",
-                    "wa_provider", "wa_f2s_number_id", "wa_f2s_templates")
+                    "wa_provider", "wa_f2s_number_id", "wa_f2s_templates", "wa_f2s_hook")
 PLATFORM_CODE_KEYS = ("phone_otp", "mail_user", "mail_password", "fast2sms_api_key", "google_client_id")   # admin › Login codes
 _ENGINE = None
 

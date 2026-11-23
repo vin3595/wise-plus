@@ -61,3 +61,23 @@ def test_free_text_goes_as_update_template(f2s, monkeypatch):
     assert not seen
     p = f2s[0][1]["params"]
     assert p["message_id"] == "12" and p["variables_values"] == "Ease My Bill|Your order · is ready"
+
+
+def test_replies_through_fast2sms_webhook(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.whatsapp import router as wr
+    monkeypatch.setattr(get_settings(), "wa_f2s_hook", "s3cret-hook-key")
+    got = []
+    monkeypatch.setattr(wr, "handle", lambda *a: got.append(("text",) + a))
+    monkeypatch.setattr(wr, "handle_media", lambda *a: got.append(("media",) + a))
+    monkeypatch.setattr(wr, "_seen_now", lambda *a: None)
+    c = TestClient(app)
+    assert c.post("/api/whatsapp/fast2sms/wrong", json={}).status_code == 403
+    base = {"webhook_type": "incoming_message", "from": "919829000001", "phone_number_id": "555"}
+    assert c.post("/api/whatsapp/fast2sms/s3cret-hook-key", json={**base, "message_id": "m1", "message_type": "button", "body": "Stop offers"}).status_code == 200
+    c.post("/api/whatsapp/fast2sms/s3cret-hook-key", data={**base, "message_id": "m2", "message_type": "image", "media_url": "https://x/p.jpg", "mime_type": "image/jpeg"})
+    c.post("/api/whatsapp/fast2sms/s3cret-hook-key", json={**base, "message_id": "m1", "body": "dup"})
+    c.post("/api/whatsapp/fast2sms/s3cret-hook-key", json={"webhook_type": "status_update", "status": "read"})
+    assert got[0] == ("text", "919829000001", "Stop offers", "", None)
+    assert got[1][:3] == ("media", "919829000001", "url:https://x/p.jpg") and len(got) == 2
