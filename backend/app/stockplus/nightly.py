@@ -131,6 +131,16 @@ def summary_text(db: Session, day: date | None = None) -> Reply:
     return Reply("\n".join(lines), [("dues", "Dues"), ("sheet", "Last daily sheet"), ("nightly off", "Stop nightly")])
 
 
+def summary_totals(db: Session, day: date) -> dict:
+    """Sales and bill count across the restaurant's outlets for the day."""
+    tot = {"sales_paise": 0, "bills": 0}
+    for o in db.scalars(select(Outlet)).all():
+        _, x = outlet_lines(db, o, day)
+        for k in tot:
+            tot[k] += int(x.get(k) or 0)
+    return tot
+
+
 def _recipients(db: Session) -> list[tuple[uuid.UUID, str, str, str]]:
     """(tenant_id, restaurant name, phone, login_id) for everyone subscribed."""
     return db.execute(select(WaAlert.tenant_id, Tenant.name, User.phone, Tenant.login_id)
@@ -172,6 +182,11 @@ def run(day: date | None = None, force: bool = False) -> int:
                         texts[tid] = summary_text(db, day)
                 r = texts[tid]
                 client.send_options(phone, r.text, r.options)
+            elif s.wa_nightly_figures_template and s.wa_nightly_figures_template in client.f2s_templates():
+                with tenant_session(tid) as db:          # real figures: Meta counts it as utility (cheaper)
+                    tot = summary_totals(db, day)
+                client.send_template(phone, s.wa_nightly_figures_template,
+                                     [name, day.strftime("%d %b"), rs(tot["sales_paise"]).lstrip("₹"), str(tot["bills"])])
             elif s.wa_nightly_template:
                 client.send_template(phone, s.wa_nightly_template, [name])
             else:

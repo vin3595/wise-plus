@@ -10,6 +10,7 @@ from app.whatsapp import client
 class _R:
     def __init__(self, code, data):
         self.status_code, self._d, self.text = code, data, json.dumps(data)
+        self.content = self.text.encode()
 
     def json(self):
         return self._d
@@ -54,11 +55,16 @@ def test_missing_template_id_and_refusal(f2s, monkeypatch):
         client.send_template("9829000001", "login_code", ["1"])
 
 
-def test_free_text_goes_as_update_template(f2s, monkeypatch):
-    seen = []
+def test_free_text_is_a_chat_reply_then_falls_back_to_template(f2s, monkeypatch):
+    seen, posts = [], []
     monkeypatch.setattr(client, "_post_meta", lambda p, _f=False: seen.append(p) or {})
+    monkeypatch.setattr(client.httpx, "post", lambda url, **kw: posts.append((url, kw)) or _R(200, {"status": "success"}))
+    r = client.send_text("9829000001", "Thanks!")
+    assert r["session"] and posts[0][0].endswith("/dev/whatsapp-session")
+    assert posts[0][1]["params"] == {"phone_number_id": "555", "to": "919829000001"} and posts[0][1]["json"] == {"type": "text", "text": "Thanks!"}
+    assert not f2s and not seen
+    monkeypatch.setattr(client.httpx, "post", lambda url, **kw: _R(400, {"status": False, "message": "Session expired"}))
     client.send_text("9829000001", "Your order\nis ready")
-    assert not seen
     p = f2s[0][1]["params"]
     assert p["message_id"] == "12" and p["variables_values"] == "Ease My Bill|Your order · is ready"
 

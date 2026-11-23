@@ -209,11 +209,34 @@ def _post_f2s(payload: dict, _fallback: bool = False) -> dict:
     raise err
 
 
+def _post_f2s_session(payload: dict, text: str) -> dict:
+    """Free-form reply through Fast2SMS (POST /dev/whatsapp-session): only works within 24 hours of their last message."""
+    s = get_settings()
+    to = to_wa(str(payload.get("to", "")))
+    try:
+        r = httpx.post("https://www.fast2sms.com/dev/whatsapp-session", params={"phone_number_id": s.wa_f2s_number_id, "to": to},
+                       json={"type": "text", "text": text[:4000]}, timeout=20, headers={"Authorization": s.fast2sms_api_key})
+        data = r.json() if r.content else {}
+    except (httpx.HTTPError, ValueError) as e:
+        raise WaError(None, "Couldn't reach Fast2SMS (network)", str(e)[:200]) from e
+    ok = r.status_code < 300 and (data.get("status") in (True, "success") or data.get("return") is True)
+    if not ok:
+        raise WaError(131047, "Chat reply not accepted (outside the 24-hour window?)", str(data.get("message") or r.text)[:200])
+    rid = str(data.get("request_id") or data.get("message_id") or "") or None
+    _record({**payload, "type": "text"}, s.wa_f2s_number_id, rid, 1, None, False)
+    return {"messages": [{"id": rid}], "provider": "fast2sms", "session": True, **data}
+
+
 def _post(payload: dict, _fallback: bool = False) -> dict:
     if f2s_ready() and _via.get() in (None, get_settings().wa_phone_number_id) and not _own_number():
         if payload.get("type") == "template":
             return _post_f2s(payload, _fallback)
-        text = _as_text(payload)          # Fast2SMS sends templates only: free text goes as the approved 'update' template
+        text = _as_text(payload)
+        if text:
+            try:                          # inside the 24-hour window: a normal chat message (service rate, often free)
+                return _post_f2s_session(payload, text)
+            except WaError:
+                pass                      # window closed (or refused): the approved 'update' template instead
         tpl = get_settings().wa_update_template
         if text and tpl in f2s_templates():
             return _post_f2s({"to": payload.get("to"), "type": "template", "template": {"name": tpl, "language": {"code": "en"},

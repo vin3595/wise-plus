@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     wa_f2s_number_id: str = ""       # Fast2SMS: the phone_number_id of the number connected in their panel
     wa_f2s_templates: str = ""       # Fast2SMS: JSON {template name: message_id} from their panel
     wa_f2s_hook: str = ""            # Fast2SMS: the secret in our webhook address (replies come in on it)
+    wa_nightly_figures_template: str = "daily_sales"   # utility: name, date, sales, bills (used once it has a Fast2SMS ID)
     wa_nightly_template: str = ""
     wa_bill_template: str = ""       # customers' bill with feedback buttons (4 body values, 3 quick replies)
     wa_promo_template: str = "promo_message"          # wise-plus: marketing broadcast ('Stop offers' button)
