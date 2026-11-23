@@ -74,10 +74,12 @@ def test_replies_through_fast2sms_webhook(monkeypatch):
     monkeypatch.setattr(wr, "_seen_now", lambda *a: None)
     c = TestClient(app)
     assert c.post("/api/whatsapp/fast2sms/wrong", json={}).status_code == 403
+    import uuid
+    m1, m2 = uuid.uuid4().hex, uuid.uuid4().hex
     base = {"webhook_type": "incoming_message", "from": "919829000001", "phone_number_id": "555"}
-    assert c.post("/api/whatsapp/fast2sms/s3cret-hook-key", json={**base, "message_id": "m1", "message_type": "button", "body": "Stop offers"}).status_code == 200
-    c.post("/api/whatsapp/fast2sms/s3cret-hook-key", data={**base, "message_id": "m2", "message_type": "image", "media_url": "https://x/p.jpg", "mime_type": "image/jpeg"})
-    c.post("/api/whatsapp/fast2sms/s3cret-hook-key", json={**base, "message_id": "m1", "body": "dup"})
+    assert c.post("/api/whatsapp/fast2sms/s3cret-hook-key", json={**base, "message_id": m1, "message_type": "button", "body": "Stop offers"}).status_code == 200
+    c.post("/api/whatsapp/fast2sms/s3cret-hook-key", data={**base, "message_id": m2, "message_type": "image", "media_url": "https://x/p.jpg", "mime_type": "image/jpeg"})
+    c.post("/api/whatsapp/fast2sms/s3cret-hook-key", json={**base, "message_id": m1, "body": "dup"})
     c.post("/api/whatsapp/fast2sms/s3cret-hook-key", json={"webhook_type": "status_update", "status": "read"})
     assert got[0] == ("text", "919829000001", "Stop offers", "", None)
     assert got[1][:3] == ("media", "919829000001", "url:https://x/p.jpg") and len(got) == 2
