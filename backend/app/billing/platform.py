@@ -262,6 +262,68 @@ def set_wa_sender(body: dict, _adm: str = Depends(require_admin)) -> dict:
     return {"ok": True, "display_number": shown, "name": r.get("verified_name"), "verified": r.get("code_verification_status")}
 
 
+@router.get("/whatsapp-fast2sms")
+def wa_f2s(_adm: str = Depends(require_admin)) -> dict:
+    from ..whatsapp import client
+    s = get_settings()
+    names = [n for n in (s.wa_otp_template, s.wa_bill_template, s.wa_nightly_template, s.wa_promo_template,
+                         s.wa_promo_offer_template, s.wa_update_template, s.wa_growth_template) if n]
+    return {"on": s.wa_provider == "fast2sms", "ready": client.f2s_ready(), "has_key": bool(s.fast2sms_api_key),
+            "phone_number_id": s.wa_f2s_number_id or None, "templates": client.f2s_templates(), "names": list(dict.fromkeys(names))}
+
+
+@router.post("/whatsapp-fast2sms")
+def set_wa_f2s(body: dict, _adm: str = Depends(require_admin)) -> dict:
+    """Send WhatsApp templates through Fast2SMS: its API key (shared with SMS codes), the number's phone_number_id,
+    and each template's message_id from the Fast2SMS panel. on=false goes back to Meta directly."""
+    import json
+
+    import httpx
+    vals: dict[str, str] = {}
+    key = str(body.get("api_key") or "").strip()
+    if key:
+        try:
+            r = httpx.get("https://www.fast2sms.com/dev/wallet", headers={"Authorization": key}, timeout=15)
+            ok = r.status_code < 300 and (r.json() or {}).get("return") is True
+        except Exception:  # noqa: BLE001
+            ok = None                                     # couldn't check: keep it anyway
+        if ok is False:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Fast2SMS didn't accept that API key")
+        vals["fast2sms_api_key"] = key
+    pid = str(body.get("phone_number_id") or "").strip()
+    if pid:
+        if not pid.isdigit():
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "The phone number ID is digits only")
+        vals["wa_f2s_number_id"] = pid
+    if isinstance(body.get("templates"), dict):
+        t = {str(k): str(v).strip() for k, v in body["templates"].items() if str(v).strip()}
+        if any(not v.isdigit() for v in t.values()):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Template IDs are digits only")
+        vals["wa_f2s_templates"] = json.dumps(t)
+    if "on" in body:
+        vals["wa_provider"] = "fast2sms" if body.get("on") else "meta"
+    _save_platform(vals)
+    return wa_f2s(_adm)
+
+
+@router.post("/whatsapp-fast2sms/test")
+def test_wa_f2s(body: dict, _adm: str = Depends(require_admin)) -> dict:
+    """Send the 'update' template (or the one named) to a number the admin types, through Fast2SMS."""
+    from ..whatsapp import client
+    s = get_settings()
+    to = "".join(ch for ch in str(body.get("to") or "") if ch.isdigit())[-10:]
+    if len(to) != 10:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Type a 10-digit mobile number")
+    name = str(body.get("template") or s.wa_update_template)
+    params = [str(p) for p in body.get("params") or ["Ease My Bill", "Test message from Ease My Bill admin"]]
+    try:
+        r = client._post_f2s({"to": "91" + to, "type": "template", "template": {"name": name, "language": {"code": "en"},
+                              "components": [{"type": "body", "parameters": [{"type": "text", "text": p} for p in params]}]}})
+    except client.WaError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, e.reason) from e
+    return {"ok": True, "request_id": (r.get("messages") or [{}])[0].get("id")}
+
+
 # ---------------------------------------------------------------- login codes: how sign-in codes reach people
 
 def _save_platform(vals: dict[str, str]) -> None:
@@ -285,7 +347,7 @@ def login_codes(_adm: str = Depends(require_admin)) -> dict:
     phone = s.phone_otp or ("sms" if s.otp_provider in ("fast2sms", "msg91") else "whatsapp")
     return {"phone": phone, "has_sms_key": bool(s.fast2sms_api_key or (s.msg91_auth_key and s.msg91_template_id)),
             "mail_user": s.mail_user or None, "has_mail_password": bool(s.mail_password),
-            "whatsapp_ready": bool(s.wa_token and s.wa_phone_number_id)}
+            "whatsapp_ready": bool(s.wa_token and s.wa_phone_number_id) or s.wa_provider == "fast2sms"}
 
 
 @router.post("/login-codes")

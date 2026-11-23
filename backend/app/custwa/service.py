@@ -42,10 +42,15 @@ def rupees(paise: int) -> str:
     return f"{r:,.0f}" if r == int(r) else f"{r:,.2f}"
 
 
+def _wa_on() -> bool:
+    from ..whatsapp import client
+    return client.enabled()
+
+
 def queue_bill(db: Session, bill: Bill) -> None:
     """After a bill is saved: put the WhatsApp bill in the queue (the sender loop sends it moments later)."""
     s = get_settings()
-    if not (bill.customer_phone and s.wa_token and s.wa_phone_number_id and s.wa_bill_template):
+    if not (bill.customer_phone and _wa_on() and s.wa_bill_template):
         return
     outlet = db.get(Outlet, bill.outlet_id)
     from ..services.training import is_training
@@ -162,7 +167,7 @@ def _tomorrow_morning() -> datetime:
 
 async def sender() -> None:
     s = get_settings()
-    if not (s.wa_token and s.wa_phone_number_id):
+    if not _wa_on():
         return
     from ..whatsapp import health
     while True:

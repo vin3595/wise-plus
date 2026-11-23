@@ -42,7 +42,7 @@ export default function Admin() {
       {tab === "restaurants" && <AllRestaurants />}
       {tab === "leads" && <Leads />}
       {tab === "razorpay" && <YourRazorpay />}
-      {tab === "whatsapp" && <YourWhatsApp />}
+      {tab === "whatsapp" && <><WhatsAppFast2SMS /><YourWhatsApp /></>}
       {tab === "codes" && <LoginCodes />}
     </div>
   );
@@ -102,6 +102,55 @@ function YourWhatsApp() {
           setDone(await api("/platform/whatsapp-sender", { body: f })); setF({ ...f, token: "", app_secret: "" }); load();
         })}>{act.busy ? "Checking with Meta…" : "Check and save"}</Button>
       </>}
+    </Card>
+  );
+}
+
+/** Send WhatsApp templates (codes, bills, summaries, offers) through Fast2SMS instead of Meta directly. */
+function WhatsAppFast2SMS() {
+  type Info = { on: boolean; ready: boolean; has_key: boolean; phone_number_id: string | null; templates: Record<string, string>; names: string[] };
+  const [k, setK] = useState<Info | null>(null);
+  const [f, setF] = useState<{ api_key: string; phone_number_id: string; templates: Record<string, string> }>({ api_key: "", phone_number_id: "", templates: {} });
+  const [to, setTo] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+  const act = useAction();
+  const load = () => api<Info>("/platform/whatsapp-fast2sms").then((x) => {
+    setK(x); setF((o) => ({ api_key: "", phone_number_id: o.phone_number_id || x.phone_number_id || "", templates: { ...x.templates, ...o.templates } }));
+  }).catch(() => setK(null));
+  useEffect(() => { load(); }, []);
+  if (!k) return <p className="muted">Loading…</p>;
+  const save = (body: object, done: string) => act.run(async () => { setK(await api<Info>("/platform/whatsapp-fast2sms", { body })); setMsg(done); setF((o) => ({ ...o, api_key: "" })); });
+  return (
+    <Card title="Send through Fast2SMS">
+      <p className="small">{k.on ? (k.ready ? "On ✓ Codes, bills, summaries and offers go out through Fast2SMS." : "On, but not ready: fill in the details below.")
+        : "Off: messages go to Meta directly."}</p>
+      <ol className="small muted" style={{ paddingLeft: 18 }}>
+        <li>fast2sms.com › WhatsApp › connect your number (+91 97991 19994).</li>
+        <li>Copy the <em>Phone Number ID</em> it shows, and the API key from Dev API.</li>
+        <li>WhatsApp › Templates: copy each approved template's <em>Message ID</em> into the boxes below.</li>
+      </ol>
+      <div className="row wrap">
+        <Field label={k.has_key ? "Fast2SMS API key (saved — paste to change)" : "Fast2SMS API key"}><Input type="password" value={f.api_key} onChange={(e) => setF({ ...f, api_key: e.target.value.trim() })} autoComplete="off" /></Field>
+        <Field label="Phone Number ID (Fast2SMS)"><Input value={f.phone_number_id} onChange={(e) => setF({ ...f, phone_number_id: e.target.value.replace(/\D/g, "") })} inputMode="numeric" /></Field>
+      </div>
+      <div className="row wrap">
+        {k.names.map((n) => <Field key={n} label={`Message ID: ${n}`}><Input value={f.templates[n] || ""} inputMode="numeric"
+          onChange={(e) => setF({ ...f, templates: { ...f.templates, [n]: e.target.value.replace(/\D/g, "") } })} /></Field>)}
+      </div>
+      <ErrorText error={act.error} />
+      {msg && <p className="ok-text">{msg}</p>}
+      <div className="row wrap" style={{ gap: 8 }}>
+        <Button disabled={act.busy} onClick={() => save({ ...(f.api_key ? { api_key: f.api_key } : {}), phone_number_id: f.phone_number_id, templates: f.templates }, "Saved ✓")}>Save</Button>
+        {k.on ? <Button variant="ghost" disabled={act.busy} onClick={() => save({ on: false }, "Off: back to Meta directly.")}>Turn off</Button>
+          : <Button variant="ghost" disabled={act.busy || !k.ready} onClick={() => save({ on: true }, "On ✓ WhatsApp now goes through Fast2SMS.")}>Turn on</Button>}
+      </div>
+      <div className="row wrap" style={{ marginTop: 12, alignItems: "flex-end" }}>
+        <Field label="Send a test to"><Input value={to} inputMode="numeric" placeholder="10-digit mobile" onChange={(e) => setTo(e.target.value.replace(/\D/g, "").slice(-10))} /></Field>
+        <Button variant="ghost" disabled={act.busy || to.length !== 10 || !k.ready} onClick={() => act.run(async () => {
+          const r = await api<{ request_id: string | null }>("/platform/whatsapp-fast2sms/test", { body: { to } });
+          setMsg(`Test sent ✓ (request ${r.request_id || "—"}). Check WhatsApp on ${to}.`);
+        })}>Send test</Button>
+      </div>
     </Card>
   );
 }

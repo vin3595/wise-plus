@@ -15,7 +15,22 @@ log = logging.getLogger("wise.whatsapp")
 
 def enabled() -> bool:
     s = get_settings()
-    return bool(s.wa_token and s.wa_phone_number_id)
+    return bool(s.wa_token and s.wa_phone_number_id) or f2s_ready()
+
+
+def f2s_ready() -> bool:
+    """Templates go out through Fast2SMS (chosen in admin, with its key, number ID and template IDs)."""
+    s = get_settings()
+    return s.wa_provider == "fast2sms" and bool(s.fast2sms_api_key and s.wa_f2s_number_id and f2s_templates())
+
+
+def f2s_templates() -> dict[str, str]:
+    import json
+    try:
+        d = json.loads(get_settings().wa_f2s_templates or "{}")
+        return {str(k): str(v) for k, v in d.items() if str(v).strip()} if isinstance(d, dict) else {}
+    except ValueError:
+        return {}
 
 
 def to_wa(phone: str) -> str:
@@ -133,7 +148,87 @@ def _guess(payload: dict) -> str:
     return "reply"
 
 
+def _f2s_params(tpl: dict) -> tuple[list[str], str | None]:
+    """Meta-style template components -> (body values in order, header picture/PDF link)."""
+    body, media = [], None
+    for c in tpl.get("components") or []:
+        for p in c.get("parameters") or []:
+            if c.get("type") == "header" and p.get("type") in ("image", "document", "video"):
+                media = (p.get(p["type"]) or {}).get("link") or media
+            elif c.get("type") == "body":
+                body.append(str(p.get("text", "")))
+    if not body:                                  # e.g. a code only in the button
+        for c in tpl.get("components") or []:
+            if c.get("type") == "button":
+                body += [str(p.get("text", "")) for p in c.get("parameters") or [] if p.get("type") == "text"]
+    return body, media
+
+
+def _post_f2s(payload: dict, _fallback: bool = False) -> dict:
+    """An approved template through Fast2SMS's WhatsApp API (GET /dev/whatsapp, key in the Authorization header)."""
+    import time
+    s = get_settings()
+    tpl = payload.get("template") or {}
+    name = tpl.get("name") or ""
+    mid = f2s_templates().get(name)
+    pnid = s.wa_f2s_number_id
+    if not mid:
+        err = WaError(132001, f"Template '{name}' has no Fast2SMS ID yet (admin › Your WhatsApp)")
+        _record(payload, pnid, None, 0, err, _fallback)
+        raise err
+    body, media = _f2s_params(tpl)
+    q = {"message_id": mid, "phone_number_id": pnid, "numbers": last10(str(payload.get("to", ""))) if str(payload.get("to", "")).startswith("91") else str(payload.get("to", "")),
+         "variables_values": "|".join(_flatten(v).replace("|", "/") for v in body)}
+    if media:
+        q["media_url"] = media
+    err: WaError | None = None
+    tries = 0
+    for wait in (0, 1.0, 3.0):
+        if wait:
+            time.sleep(wait)
+        tries += 1
+        try:
+            r = httpx.get("https://www.fast2sms.com/dev/whatsapp", params=q, timeout=20, headers={"Authorization": s.fast2sms_api_key})
+        except httpx.HTTPError as e:
+            err = WaError(None, "Couldn't reach Fast2SMS (network)", str(e)[:200])
+            continue
+        try:
+            data = r.json() or {}
+        except ValueError:
+            data = {}
+        if r.status_code < 300 and (data.get("status") is True or data.get("return") is True):
+            rid = str(data.get("request_id") or "") or None
+            _record(payload, pnid, rid, tries, None, _fallback)
+            return {"messages": [{"id": rid}], "provider": "fast2sms", **data}
+        msg = str(data.get("message") or r.text or "")[:200]
+        err = WaError(None, f"Fast2SMS refused: {msg}" if msg else "Fast2SMS didn't take the message", msg)
+        log.warning("fast2sms whatsapp send failed %s: %s", r.status_code, msg)
+        if r.status_code < 500 and r.status_code != 429:
+            break
+    _record(payload, pnid, None, tries, err, _fallback)
+    raise err
+
+
 def _post(payload: dict, _fallback: bool = False) -> dict:
+    if payload.get("type") == "template" and f2s_ready() and _via.get() in (None, get_settings().wa_phone_number_id) and not _own_number():
+        return _post_f2s(payload, _fallback)
+    return _post_meta(payload, _fallback)
+
+
+def _own_number() -> bool:
+    """A restaurant with its own WhatsApp number connected keeps sending from it (Meta directly)."""
+    tid = _tenant.get()
+    if not tid:
+        return False
+    try:
+        from . import numbers
+        got = numbers.sender_for(tenant_id=tid)
+        return bool(got and got[0] != get_settings().wa_phone_number_id)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _post_meta(payload: dict, _fallback: bool = False) -> dict:
     """Send one message: tries again on Meta's passing errors (busy, rate limit, a hiccup), logs it with its id
     for the delivery ticks, and raises WaError with the reason in words when it can't go."""
     import time
