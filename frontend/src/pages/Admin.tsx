@@ -79,10 +79,10 @@ function YourWhatsApp() {
   type Info = { phone_number_id: string | null; waba_id: string | null; app_id: string | null; display_number: string | null;
     has_token: boolean; has_app_secret: boolean; webhook_url: string; verify_token: string | null };
   const [k, setK] = useState<Info | null>(null);
-  const [f, setF] = useState({ token: "", phone_number_id: "1186830631186425", waba_id: "2509028906240984", app_id: "1428110315703396", app_secret: "" });
+  const [f, setF] = useState({ token: "", phone_number_id: "1186830631186425", waba_id: "2509028906240984", app_id: "", app_secret: "" });
   const [done, setDone] = useState<{ display_number: string; name: string | null; verified: string | null } | null>(null);
   const act = useAction();
-  const load = () => api<Info>("/platform/whatsapp-sender").then(setK).catch(() => setK(null));
+  const load = () => api<Info>("/platform/whatsapp-sender").then((x) => { setK(x); setF((o) => ({ ...o, app_id: o.app_id || x.app_id || "" })); }).catch(() => setK(null));
   useEffect(() => { load(); }, []);
   if (!k) return <p className="muted">Loading…</p>;
   return (
@@ -95,6 +95,7 @@ function YourWhatsApp() {
           <Field label={k.has_app_secret ? "App secret (saved)" : "App secret"}><Input type="password" value={f.app_secret} onChange={(e) => setF({ ...f, app_secret: e.target.value.trim() })} autoComplete="off" /></Field>
           <Field label="Phone number ID"><Input value={f.phone_number_id} onChange={(e) => setF({ ...f, phone_number_id: e.target.value.trim() })} inputMode="numeric" /></Field>
           <Field label="WhatsApp account ID"><Input value={f.waba_id} onChange={(e) => setF({ ...f, waba_id: e.target.value.trim() })} inputMode="numeric" /></Field>
+          <Field label="App ID"><Input value={f.app_id} onChange={(e) => setF({ ...f, app_id: e.target.value.trim() })} inputMode="numeric" /></Field>
         </div>
         <ErrorText error={act.error} />
         <Button disabled={act.busy || !(f.token.startsWith("EAA") || (k.has_token && f.app_secret.length > 10))} onClick={() => act.run(async () => {
