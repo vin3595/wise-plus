@@ -20,6 +20,22 @@ from .service import _month, access, house
 
 # What Meta charges us per message in India (rate card), to show the cost behind each restaurant's sending.
 META_PAISE = {"bill": 11.5, "otp": 11.5, "promo": 86.31}
+# What Fast2SMS charges us per delivered message (paise), and what one credit sells for (₹199 / 1,000).
+F2S_PAISE = {"auth": 25, "utility": 25, "marketing": 95, "session": 15}
+CREDIT_PAISE = 19.9
+
+
+def _msg_class(kind: str, template: str | None, purpose: str | None) -> tuple[str, int]:
+    """(Fast2SMS price class, credits the restaurant pays) for one message EMB sent."""
+    from ..config import get_settings
+    s = get_settings()
+    if purpose in ("otp", "login") or template == s.wa_otp_template:
+        return "auth", 0                                   # sign-in codes: Ease My Bill pays
+    if kind != "template":
+        return "session", 1
+    if template in (s.wa_bill_template, s.wa_nightly_figures_template):
+        return "utility", 2
+    return "marketing", 6
 
 router = APIRouter(prefix="/platform", tags=["platform"])
 
@@ -51,6 +67,18 @@ def usage(month: str | None = None) -> dict:
         for tid, err, n in db.execute(text("select tenant_id, error, count(*) from wa_messages where created_at >= :a and created_at < :b "
                                            "and status = 'failed' group by 1, 2 order by 3 desc"), {"a": start, "b": end}):
             whys.setdefault(tid, []).append({"why": err or "Unknown", "count": n})
+        spend: dict = {}
+        for tid, kind, tpl, purpose, n in db.execute(text(
+                "select tenant_id, kind, template, purpose, count(*) from wa_messages where created_at >= :a and created_at < :b "
+                "and status <> 'failed' group by 1, 2, 3, 4"), {"a": start, "b": end}):
+            cls, cr = _msg_class(kind, tpl, purpose)
+            x = spend.setdefault(tid, {"cost": 0, "credits": 0, "emb": 0, "by": {}})
+            x["cost"] += F2S_PAISE[cls] * n
+            x["by"][cls] = x["by"].get(cls, 0) + n
+            if tid is None or cr == 0:
+                x["emb"] += F2S_PAISE[cls] * n            # Ease My Bill's own: codes, and messages for no restaurant
+            else:
+                x["credits"] += cr * n
         own = {t for (t,) in db.execute(text("select tenant_id from wa_numbers where status = 'active'"))}
         outlets = dict(db.execute(select(Outlet.tenant_id, func.count()).where(Outlet.is_active.is_(True), Outlet.is_training.is_(False))
                                   .group_by(Outlet.tenant_id)).all())
@@ -77,10 +105,21 @@ def usage(month: str | None = None) -> dict:
                 "packs_bought": sum(1 for p in (s.packs or []) if p.get("messages")) if s else 0,
                 "alert": (s.msg_alert or "").split(":")[-1] if s and s.msg_alert and s.msg_alert.startswith(month) else None,
                 "delivery": _rates(ticks.get(t.id, {})), "fail_reasons": whys.get(t.id, [])[:4], "own_number": t.id in own,
+                "your_cost_paise": round(spend.get(t.id, {}).get("cost", 0)),
+                "credits_used": spend.get(t.id, {}).get("credits", 0),
+                "paid_paise": 0 if unlimited else round(spend.get(t.id, {}).get("credits", 0) * CREDIT_PAISE),
+                "emb_pays_paise": round(spend.get(t.id, {}).get("emb", 0)) + (round(spend.get(t.id, {}).get("cost", 0)) if unlimited else 0),
+                "by_class": spend.get(t.id, {}).get("by", {}),
             })
     tot = {"sent": sum(sum(r["sent"].values()) for r in rows), "meta_cost_paise": sum(r["meta_cost_paise"] for r in rows),
            "credits_left": sum(r["credits_left"] or 0 for r in rows), "restaurants": len(rows),
            "running_out": sum(1 for r in rows if r["left_this_month"] is not None and r["left_this_month"] <= max(1, (r["bill_msgs_free"] or 0) // 5))}
+    platform_own = spend.get(None, {})
+    tot.update({"your_cost_paise": sum(r["your_cost_paise"] for r in rows) + round(platform_own.get("cost", 0)),
+                "paid_paise": sum(r["paid_paise"] for r in rows),
+                "emb_pays_paise": sum(r["emb_pays_paise"] for r in rows) + round(platform_own.get("cost", 0)),
+                "emb_own_msgs": sum(platform_own.get("by", {}).values())})
+    tot["margin_paise"] = tot["paid_paise"] - (tot["your_cost_paise"] - tot["emb_pays_paise"])
     from ..whatsapp.health import status as wa_status
     allt: dict = {}
     for r in rows:

@@ -86,3 +86,13 @@ def test_bill_and_feedback(client, monkeypatch):
     make_bill()
     cw.send_due()
     assert len(posts) == n
+
+
+@pytest.fixture(autouse=True)
+def _prepaid(monkeypatch):
+    """These tests are about sending, not paying: every restaurant has message credits."""
+    from app.billing import service as bs
+    monkeypatch.setattr(bs, "take_msg", lambda db, t: (True, None))
+    from app.whatsapp import client as wa
+    monkeypatch.setattr(wa, "_has_credits", lambda tid: True)
+    monkeypatch.setattr(wa, "_charge", lambda tid, n: None)

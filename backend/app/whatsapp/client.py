@@ -227,7 +227,73 @@ def _post_f2s_session(payload: dict, text: str) -> dict:
     return {"messages": [{"id": rid}], "provider": "fast2sms", "session": True, **data}
 
 
+# ---------------------------------------------------------------- who pays: the restaurant's prepaid credits
+# Ease My Bill pays only for sign-in codes. Bills and broadcasts are charged when they're queued (custwa / offers);
+# everything else sent for a restaurant (nightly summary, alerts to the owner, replies, offer codes) is charged here.
+_PREPAID_ELSEWHERE = {"otp", "login", "bill", "promo", "alert", "lead", "growth"}
+
+
+def _credits_cost(payload: dict, result: dict) -> int:
+    if result.get("session"):
+        return 1                                   # chat reply inside the 24-hour window
+    name = (payload.get("template") or {}).get("name") or ""
+    s = get_settings()
+    if name in (s.wa_bill_template, s.wa_nightly_figures_template):
+        return 2                                   # utility template
+    return 6                                       # marketing template (incl. the 'update' fallback)
+
+
+def _chargeable() -> tuple[str | None, bool]:
+    tid = _tenant.get()
+    return tid, bool(tid) and (_purpose.get() or "") not in _PREPAID_ELSEWHERE
+
+
+def _has_credits(tid: str) -> bool:
+    import uuid as _u
+
+    from ..billing.service import msgs
+    from ..db import system_session
+    from ..models import Tenant
+    with system_session() as db:
+        t = db.get(Tenant, _u.UUID(tid))
+        m = msgs(db, t) if t else {"unlimited": True}
+        return bool(m["unlimited"] or m["bonus"] > 0)
+
+
+def _charge(tid: str, n: int) -> None:
+    import uuid as _u
+
+    from sqlalchemy import select
+
+    from ..billing.models import Subscription
+    from ..billing.service import access
+    from ..db import system_session
+    from ..models import Tenant
+    try:
+        with system_session() as db:
+            t = db.get(Tenant, _u.UUID(tid))
+            if t is None or access(db, t)["state"] in ("house", "free"):
+                return
+            sub = db.scalar(select(Subscription).where(Subscription.tenant_id == t.id).with_for_update())
+            if sub:
+                sub.bonus_msgs = max(sub.bonus_msgs - n, 0)
+    except Exception:  # noqa: BLE001 - never fail a sent message on the bookkeeping
+        log.exception("whatsapp: couldn't take credits")
+
+
 def _post(payload: dict, _fallback: bool = False) -> dict:
+    tid, paid = _chargeable()
+    if paid and not _has_credits(tid):
+        err = WaError(None, "WhatsApp message credits are used up. Recharge in Settings › Billing.")
+        _record(payload, "", None, 0, err, _fallback)
+        raise err
+    result = _send(payload, _fallback)
+    if paid:
+        _charge(tid, _credits_cost(payload, result if isinstance(result, dict) else {}))
+    return result
+
+
+def _send(payload: dict, _fallback: bool = False) -> dict:
     if f2s_ready() and _via.get() in (None, get_settings().wa_phone_number_id) and not _own_number():
         if payload.get("type") == "template":
             return _post_f2s(payload, _fallback)

@@ -215,3 +215,13 @@ def test_health_endpoint(client, monkeypatch):
     monkeypatch.setattr(get_settings(), "wa_token", "")
     r = client.get("/api/health/whatsapp")
     assert r.status_code == 200 and r.json()["configured"] is False
+
+
+@pytest.fixture(autouse=True)
+def _prepaid(monkeypatch):
+    """These tests are about sending, not paying: every restaurant has message credits."""
+    from app.billing import service as bs
+    monkeypatch.setattr(bs, "take_msg", lambda db, t: (True, None))
+    from app.whatsapp import client as wa
+    monkeypatch.setattr(wa, "_has_credits", lambda tid: True)
+    monkeypatch.setattr(wa, "_charge", lambda tid, n: None)

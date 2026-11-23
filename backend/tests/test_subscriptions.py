@@ -171,8 +171,8 @@ def test_house_account(client, rzp, monkeypatch):
     assert client.post("/api/billing/subscribe", headers=h(tok), json={"modules": ["pos"], "period": "monthly"}).status_code == 409
 
 
-def test_bill_messages_allowance_and_packs(client, rzp, monkeypatch):
-    """500 free bill messages per outlet a month, an alert at 80%, then they stop until a pack is bought."""
+def test_bill_messages_are_prepaid_credits(client, rzp, monkeypatch):
+    """WhatsApp bills are prepaid by the restaurant: 2 credits each from bought packs; none left -> they stop, told once."""
     from app.billing.models import Subscription
     from app.billing.service import msgs, take_msg
     from app.db import system_session
@@ -180,17 +180,10 @@ def test_bill_messages_allowance_and_packs(client, rzp, monkeypatch):
     login = "msg" + uuid.uuid4().hex[:6]
     tok = signup(client, login, "93" + str(uuid.uuid4().int)[:8])["token"]
     b = client.get("/api/billing", headers=h(tok)).json()
-    assert b["messages"]["allowance"] == 500 and b["messages"]["left"] == 500 and not b["messages"]["unlimited"]
+    assert b["messages"]["allowance"] == 0 and b["messages"]["left"] == 0 and b["messages"]["bill_credits"] == 2
     assert [p["key"] for p in b["msg_packs"]] == ["m1000", "m5000"]
     with system_session() as db:
         t = db.query(Tenant).filter(Tenant.login_id == login).one()
-        for _ in range(399):
-            assert take_msg(db, t) == (True, None)
-        ok, alert = take_msg(db, t)                       # the 400th: 100 left = 20% of the free ones
-        assert ok and alert and "100 bill messages left" in alert
-        s = db.get(Subscription, t.id)
-        s.msgs_used = 500
-        db.flush()
         ok, alert = take_msg(db, t)
         assert not ok and "stopped" in alert
         assert take_msg(db, t) == (False, None)          # told once, not on every bill
@@ -199,11 +192,16 @@ def test_bill_messages_allowance_and_packs(client, rzp, monkeypatch):
     rzp["notes"][order["order_id"]] = {"tenant_id": str(t.id), "pack": "m1000"}
     v = client.post("/api/billing/packs/verify", headers=h(tok), json={"razorpay_order_id": order["order_id"], "razorpay_payment_id": "pay_m",
                     "razorpay_signature": sig(f"{order['order_id']}|pay_m")}).json()
-    assert v["messages"]["bonus"] == 1000 and v["messages"]["left"] == 1000
+    assert v["messages"]["bonus"] == 1000 and v["messages"]["left"] == 500
     with system_session() as db:
         t = db.query(Tenant).filter(Tenant.login_id == login).one()
         assert take_msg(db, t) == (True, None)
-        assert msgs(db, t)["bonus"] == 999
+        assert msgs(db, t)["bonus"] == 998
+        s = db.get(Subscription, t.id)
+        s.bonus_msgs = 200
+        db.flush()
+        ok, alert = take_msg(db, t)                       # under 100 bills' worth: warn once
+        assert ok and "WhatsApp bills left" in alert
         assert db.get(Subscription, t.id).bonus_scans == 0           # a message pack isn't scans
 
 

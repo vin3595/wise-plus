@@ -118,7 +118,7 @@ export default function Landing() {
           <article className="lp-plan">
             <h3>Everything</h3>
             <p className="lp-price">{rs(info?.bundle_paise ?? 99900)}<small>/month per outlet</small></p>
-            <ul><li>Everything included, no add-on modules</li><li>POS, KOT, kitchen screens, stock and recipes</li><li>Bill scanner, 150 scans a month</li><li>{(info?.msgs_per_outlet ?? 500).toLocaleString("en-IN")} WhatsApp bills a month per outlet</li>
+            <ul><li>Everything included, no add-on modules</li><li>POS, KOT, kitchen screens, stock and recipes</li><li>Bill scanner, 150 scans a month</li><li>WhatsApp bills and offers with prepaid credits (1,000 for ₹199)</li>
               <li>Offers, QR and reports</li><li>Tally and GST exports</li><li>Help on WhatsApp</li></ul>
             <a href={trialHref} className="lp-btn ghost">Try free for {info?.trial_days ?? 14} days</a>
           </article>

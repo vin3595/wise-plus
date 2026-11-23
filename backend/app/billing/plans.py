@@ -9,8 +9,11 @@ SCANS_PER_MONTH = 150                   # with Bill scan
 FOUNDING_PAISE = 499900                 # founding members: everything, first year, flat
 FOUNDING_SLOTS = 50
 PACKS = {"25": {"scans": 25, "paise": 10000}, "100": {"scans": 100, "paise": 30000}}
-# Bills sent to customers on WhatsApp: a free allowance per outlet each month, then prepaid packs that never expire.
-MSGS_PER_OUTLET = 500
+# WhatsApp to customers is prepaid by the restaurant: message credits (packs never expire). A bill on WhatsApp
+# (utility) uses 2 credits, an offer / broadcast (marketing) 6. No credits left: those stop until they recharge.
+# Ease My Bill's own messages (sign-in codes, nightly summary, replies) are never charged.
+MSGS_PER_OUTLET = 0
+BILL_CREDITS = 2
 MSG_PACKS = {"m1000": {"messages": 1000, "paise": 19900}, "m5000": {"messages": 5000, "paise": 79900}}
 ALL_PACKS = PACKS | MSG_PACKS
 

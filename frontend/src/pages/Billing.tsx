@@ -16,7 +16,7 @@ export interface BillingInfo {
   founding: { price_paise: number; left: number; slots: number; member: boolean };
   scans: { used: number; limit: number | null; bonus: number; per_month: number };
   packs: { key: string; scans: number; paise: number }[];
-  messages: { used: number; allowance: number; bonus: number; left: number | null; per_outlet: number; unlimited: boolean };
+  messages: { used: number; allowance: number; bonus: number; left: number | null; per_outlet: number; unlimited: boolean; bill_credits?: number };
   platform_admin?: boolean;
   msg_packs: { key: string; messages: number; paise: number }[];
   ready: boolean;
@@ -79,7 +79,7 @@ export default function Billing() {
   const buyPack = (key: string) => run(async () => {
     setMsg(null);
     const o = await api<{ order_id: string; key_id: string; amount_paise: number; scans: number | null; messages: number | null; name: string; email: string; phone: string }>(`/billing/packs/${key}/order`, { method: "POST" });
-    const what = o.messages ? `${o.messages} WhatsApp bill messages` : `${o.scans} bill scans`;
+    const what = o.messages ? `${o.messages.toLocaleString("en-IN")} WhatsApp message credits` : `${o.scans} bill scans`;
     const r = await pay({ key: o.key_id, order_id: o.order_id, amount: o.amount_paise, currency: "INR", name: "Ease My Bill", description: what,
       prefill: { name: o.name, email: o.email, contact: o.phone } });
     setB(await api<BillingInfo>("/billing/packs/verify", { body: r }));
@@ -109,7 +109,7 @@ export default function Billing() {
           <div className="plan-total">
             <p><strong className="big">{formatPaise(b.prices.bundle_monthly_paise)}</strong> <span className="muted">per outlet a month · everything included</span></p>
             <p className="small">POS billing, KOT and kitchen screens, stock and recipes, bill scanning ({b.scans.per_month} a month), offers and QR, petty cash,
-              reports, Tally export, {b.messages.per_outlet} WhatsApp bills a month per outlet.</p>
+              reports, Tally export, sign-in codes and your nightly summary on WhatsApp. WhatsApp bills and offers to your customers use prepaid message credits.</p>
             {q && q.outlets > 1 && <p className="small muted">{formatPaise(q.per_outlet_paise)} × {q.outlets} outlets = <strong>{formatPaise(q.amount_paise)}</strong> a month</p>}
             {b.state === "trial" && <p className="muted small">₹999 is charged on {day(b.trial_ends_at)}, when your trial ends. Today Razorpay only takes a small amount (about ₹5) to set up autopay, and gives it back.</p>}
           </div>
@@ -128,15 +128,15 @@ export default function Billing() {
           <p className="muted small">Extra scans never expire and are used after the month's {b.scans.per_month}.</p>
         </Card>
       )}
-      <Card title="Bills on WhatsApp">
-        <p>{b.messages.unlimited ? `${b.messages.used} sent this month (no limit on this account).`
-          : `${b.messages.used} of ${b.messages.allowance} free messages used this month`}{!b.messages.unlimited && b.messages.bonus ? ` · ${b.messages.bonus} bought messages left` : ""}</p>
-        {!b.messages.unlimited && b.messages.left !== null && b.messages.left <= b.messages.allowance / 5 && (
-          <p className="warn-text">{b.messages.left === 0 ? "Bills have stopped going on WhatsApp. Customers still get the printed bill." : `Only ${b.messages.left} left.`}</p>)}
+      <Card title="WhatsApp message credits">
+        {b.messages.unlimited ? <p>{b.messages.used} bills sent this month (no limit on this account).</p> : <>
+          <p><strong className="big">{b.messages.bonus.toLocaleString("en-IN")}</strong> credits left · about {(b.messages.left ?? 0).toLocaleString("en-IN")} bills · {b.messages.used} bills sent this month</p>
+          {(b.messages.left ?? 0) < 100 && <p className="warn-text">{(b.messages.left ?? 0) === 0 ? "WhatsApp bills and offers have stopped. Customers still get the printed bill. Recharge to start again." : "Running low. Recharge so bills keep going on WhatsApp."}</p>}
+        </>}
         {!b.house && b.ready && <div className="row">
-          {b.msg_packs.map((p) => <Button key={p.key} variant="ghost" disabled={busy} onClick={() => buyPack(p.key)}>{p.messages.toLocaleString("en-IN")} messages · {formatPaise(p.paise)}</Button>)}
+          {b.msg_packs.map((p) => <Button key={p.key} variant="ghost" disabled={busy} onClick={() => buyPack(p.key)}>{p.messages.toLocaleString("en-IN")} credits · {formatPaise(p.paise)}</Button>)}
         </div>}
-        <p className="muted small">{b.messages.per_outlet} free each month for every outlet. Bought messages never expire and are used after the free ones. Messages to you (reports, dues, bank) are always free.</p>
+        <p className="muted small">A bill on WhatsApp uses {b.messages.bill_credits ?? 2} credits, an offer message 6. Credits never expire. Messages to you (sign-in codes, nightly summary, replies, reports) are free.</p>
       </Card>
       <ReferCard />
       <WhatsAppNumber />
@@ -165,8 +165,10 @@ function YourData() {
 interface PRow { tenant_id: string; name: string; login_id: string; state: string; outlets: number; bill_msgs_used: number; bill_msgs_free: number | null;
   credits_left: number | null; left_this_month: number | null; sent: Record<string, number>; failed: number; meta_cost_paise: number;
   scans_used: number; scans_free: number | null; scans_bought_left: number; packs_bought: number; own_number: boolean;
-  delivery: { total: number; delivered_pct: number | null; read_pct: number | null; failed_pct: number | null }; fail_reasons: { why: string; count: number }[] }
+  delivery: { total: number; delivered_pct: number | null; read_pct: number | null; failed_pct: number | null }; fail_reasons: { why: string; count: number }[];
+  your_cost_paise: number; credits_used: number; paid_paise: number; emb_pays_paise: number; by_class: Record<string, number> }
 interface PUsage { month: string; restaurants: PRow[]; total: { sent: number; meta_cost_paise: number; credits_left: number; restaurants: number; running_out: number;
+  your_cost_paise: number; paid_paise: number; emb_pays_paise: number; margin_paise: number; emb_own_msgs: number;
   delivery: PRow["delivery"] };
   health: { ok: boolean; configured: boolean; number: { number?: string; quality?: string; tier?: string; status?: string; name_status?: string; at?: string } | null;
     day: { sent: number; failed: number }; problem: { at: string; message: string } | null } | null }
@@ -188,7 +190,13 @@ export function AllRestaurants() {
     <Card title="All restaurants · WhatsApp and scans" actions={<span className="row"><Select value={month} onChange={(e) => setMonth(e.target.value)} aria-label="Month">
       {months.map((m) => <option key={m} value={m}>{new Date(m + "-01T00:00:00").toLocaleDateString("en-IN", { month: "long", year: "numeric" })}</option>)}</Select></span>}>
       {!u ? <p className="muted">Loading…</p> : <>
-        <p><strong>{u.total.sent.toLocaleString("en-IN")}</strong> messages sent · Meta cost <strong>{formatPaise(u.total.meta_cost_paise)}</strong> ·
+        <div className="row wrap" style={{ gap: 16, margin: "8px 0" }}>
+          <div><div className="small muted">Fast2SMS charged you</div><strong className="big">{formatPaise(u.total.your_cost_paise)}</strong></div>
+          <div><div className="small muted">Restaurants paid (credits)</div><strong className="big">{formatPaise(u.total.paid_paise)}</strong></div>
+          <div><div className="small muted">You paid (sign-in codes{u.total.emb_own_msgs ? ", your own" : ""})</div><strong className="big">{formatPaise(u.total.emb_pays_paise)}</strong></div>
+          <div><div className="small muted">Margin on restaurants' messages</div><strong className={`big ${u.total.margin_paise < 0 ? "error-text" : ""}`}>{formatPaise(u.total.margin_paise)}</strong></div>
+        </div>
+        <p><strong>{u.total.sent.toLocaleString("en-IN")}</strong> messages sent ·
           {" "}<strong>{u.total.credits_left.toLocaleString("en-IN")}</strong> bought credits unused · {u.total.restaurants} restaurants
           {u.total.running_out ? <strong className="error-text"> · {u.total.running_out} running out</strong> : null}</p>
         {u.total.delivery.total > 0 && <p className="small">Reached the phone <strong>{u.total.delivery.delivered_pct}%</strong> · read {u.total.delivery.read_pct}% · failed {u.total.delivery.failed_pct}%</p>}
@@ -199,23 +207,26 @@ export function AllRestaurants() {
           {(["sent", "left", "name"] as const).map((k) => <button key={k} className={`chip${sort === k ? " on" : ""}`} onClick={() => setSort(k)}>
             {k === "sent" ? "Most sent" : k === "left" ? "Least left" : "Name"}</button>)}</div>
         <div className="table-wrap"><table className="table">
-          <thead><tr><th>Restaurant</th><th>Plan</th><th className="num">Free bill msgs used</th><th className="num">Bought credits left</th>
-            <th className="num">Sent (bills · broadcasts)</th><th className="num">Reached</th><th className="num">Meta cost</th><th className="num">Scans</th></tr></thead>
+          <thead><tr><th>Restaurant</th><th>Plan</th><th className="num">WhatsApp bills</th><th className="num">Bought credits left</th>
+            <th className="num">Sent (bills · broadcasts)</th><th className="num">Reached</th><th className="num">Cost to you</th><th className="num">They paid</th><th className="num">Scans</th></tr></thead>
           <tbody>{rows.map((r) => (
             <tr key={r.tenant_id} className={low(r) ? "warn-row" : ""}>
               <td><strong>{r.name}</strong><div className="small muted">{r.login_id} · {r.outlets} outlet{r.outlets === 1 ? "" : "s"}{r.own_number ? " · own number" : ""}</div>
                 {!r.own_number && <ManualApi login={r.login_id} onDone={() => setMonth((m) => m)} />}</td>
               <td>{r.state}</td>
-              <td className="num">{r.bill_msgs_free === null ? <span className="muted">unlimited</span> : <>{r.bill_msgs_used} / {r.bill_msgs_free}{low(r) && " ⚠️"}</>}</td>
+              <td className="num">{r.bill_msgs_free === null ? <span className="muted">unlimited</span> : <>{r.bill_msgs_used}{low(r) && " ⚠️ out of credits"}</>}</td>
               <td className="num">{r.credits_left === null ? "—" : r.credits_left.toLocaleString("en-IN")}{r.packs_bought ? <div className="small muted">{r.packs_bought} pack{r.packs_bought === 1 ? "" : "s"} bought</div> : null}</td>
               <td className="num">{(r.sent.bill || 0) + (r.sent.otp || 0)} · {r.sent.promo || 0}{r.failed ? <div className="small error-text">{r.failed} failed</div> : null}</td>
               <td className="num">{r.delivery.total ? `${r.delivery.delivered_pct}%` : "—"}{r.fail_reasons[0] ? <div className="small error-text" title={r.fail_reasons.map((f) => `${f.why} (${f.count})`).join("\n")}>{r.fail_reasons[0].why} ({r.fail_reasons[0].count})</div> : null}</td>
-              <td className="num">{formatPaise(r.meta_cost_paise)}</td>
+              <td className="num">{formatPaise(r.your_cost_paise)}<div className="small muted" title="utility · marketing · chat · codes">
+                {["utility", "marketing", "session", "auth"].map((k) => r.by_class[k] || 0).join(" · ")}</div></td>
+              <td className="num">{formatPaise(r.paid_paise)}<div className="small muted">{r.credits_used} credits</div>
+                {r.emb_pays_paise > 0 && <div className="small muted">you: {formatPaise(r.emb_pays_paise)}</div>}</td>
               <td className="num">{r.scans_used}{r.scans_free !== null ? ` / ${r.scans_free}` : ""}{r.scans_bought_left ? <div className="small muted">+{r.scans_bought_left} bought</div> : null}</td>
             </tr>))}</tbody>
         </table></div>
-        <p className="muted small">Only you see this (owner of your own businesses). Meta cost is at India's rate card: ₹0.115 a bill or OTP message, ₹0.86 a broadcast.
-          Offer replies and messages to owners aren't counted. On WhatsApp, send <strong>credits</strong> for the same list.</p>
+        <p className="muted small">Only you see this. Cost to you is at Fast2SMS's rates: ₹0.25 a bill, code or utility message, ₹0.95 marketing, about ₹0.15 a chat reply.
+          Restaurants pay from prepaid credits (₹0.199 each): a bill 2, an offer or marketing message 6, a chat reply 1. You pay only for sign-in codes. Small grey numbers under the cost: utility · marketing · chat · codes.</p>
       </>}
     </Card>
   );

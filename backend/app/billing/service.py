@@ -120,12 +120,14 @@ def msgs(db: Session, tenant: Tenant) -> dict:
     allowance = MSGS_PER_OUTLET * outlets_paid(db, tenant.id)
     bonus = s.bonus_msgs if s else 0
     unlimited = access(db, tenant)["state"] in ("house", "free")
-    return {"used": used, "allowance": allowance, "bonus": bonus, "per_outlet": MSGS_PER_OUTLET,
-            "left": None if unlimited else max(allowance - used, 0) + bonus, "unlimited": unlimited}
+    from .plans import BILL_CREDITS
+    return {"used": used, "allowance": allowance, "bonus": bonus, "per_outlet": MSGS_PER_OUTLET, "bill_credits": BILL_CREDITS,
+            "left": None if unlimited else max(allowance - used, 0) + bonus // BILL_CREDITS, "unlimited": unlimited}
 
 
 def take_msg(db: Session, tenant: Tenant) -> tuple[bool, str | None]:
-    """Use one bill message. Returns (may send, alert for the owner or None)."""
+    """Use credits for one bill on WhatsApp (prepaid by the restaurant). Returns (may send, alert for the owner or None)."""
+    from .plans import BILL_CREDITS
     m = msgs(db, tenant)
     s = db.scalar(select(Subscription).where(Subscription.tenant_id == tenant.id).with_for_update()) or sub_for(db, tenant.id, create=True)
     if s.msg_month != _month():
@@ -135,19 +137,21 @@ def take_msg(db: Session, tenant: Tenant) -> tuple[bool, str | None]:
         return True, None
     if s.msgs_used < m["allowance"]:
         s.msgs_used += 1
-    elif s.bonus_msgs > 0:
-        s.bonus_msgs -= 1
+    elif s.bonus_msgs >= BILL_CREDITS:
+        s.bonus_msgs -= BILL_CREDITS
+        s.msgs_used += 1
     else:
-        if s.msg_alert != f"{_month()}:0":
-            s.msg_alert = f"{_month()}:0"
-            return False, ("📵 Bills on WhatsApp have stopped: this month's free messages and bought packs are used up. "
-                           "Customers still get printed bills. Buy more under Settings › Billing.")
+        if s.msg_alert != "empty":
+            s.msg_alert = "empty"
+            return False, ("📵 Bills on WhatsApp have stopped: your message credits are used up. "
+                           "Customers still get printed bills. Recharge under Settings › Billing.")
         return False, None
-    left = max(m["allowance"] - s.msgs_used, 0) + s.bonus_msgs
-    if s.msg_alert is None and left <= m["allowance"] // 5:      # 80% of the month's free messages gone, little bought
-        s.msg_alert = f"{_month()}:80"
-        return True, (f"📨 {left} bill messages left this month ({s.msgs_used} used of {m['allowance']} free"
-                      + (f", {s.bonus_msgs} bought" if s.bonus_msgs else "") + "). Buy a pack so bills keep going on WhatsApp.")
+    if s.bonus_msgs < 100 * BILL_CREDITS and s.msg_alert not in ("low", "empty"):
+        s.msg_alert = "low"
+        return True, (f"📨 About {s.bonus_msgs // BILL_CREDITS} WhatsApp bills left ({s.bonus_msgs} credits). "
+                      "Recharge under Settings › Billing so bills keep going on WhatsApp.")
+    if s.bonus_msgs >= 100 * BILL_CREDITS and s.msg_alert in ("low", "empty"):
+        s.msg_alert = None                      # recharged: warn again next time it runs low
     return True, None
 
 

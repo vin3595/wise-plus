@@ -190,9 +190,42 @@ async def receive_f2s(key: str, request: Request, background: BackgroundTasks) -
     else:
         text = str(d.get("body") or d.get("caption") or "").strip()
         if text:
+            text = _button_payload(frm, text)
             background.add_task(handle, frm, text, str(d.get("name") or ""), None)
     background.add_task(_seen_now, frm)
     return {"ok": True}
+
+
+_RATING_WORDS = {"loved it": 5, "it was okay": 3, "not good": 1}
+
+
+def _button_payload(phone: str, text: str) -> str:
+    """Fast2SMS passes a template button's words, not the hidden payload we set with Meta. Tie the tap to the latest
+    bill / broadcast sent to this number, so it works the same: 'Loved it' -> fb:<bill>:5, 'Stop offers' -> stop:<restaurant>."""
+    low = re.sub(r"[^a-z ]", "", text.lower()).strip()
+    if low not in _RATING_WORDS and low not in ("stop offers", "get my offer"):
+        return text
+    from sqlalchemy import text as sql
+
+    from ..db import system_session
+    p10 = client.last10(phone)
+    purpose = "bill" if low in _RATING_WORDS else "promo"
+    try:
+        with system_session() as db:
+            row = db.execute(sql("select tenant_id, ref from wa_messages where right(to_phone, 10) = :p and purpose = :k "
+                                 "and status <> 'failed' and created_at > now() - interval '14 days' order by created_at desc limit 1"),
+                             {"p": p10, "k": purpose}).first()
+            if row is None:
+                return text
+            if low in _RATING_WORDS:
+                return f"fb:{row.ref}:{_RATING_WORDS[low]}" if row.ref else text
+            if low == "stop offers":
+                return f"stop:{row.tenant_id}" if row.tenant_id else text
+            kw = db.execute(sql("select payload->>'keyword' from wa_outbox where kind = 'promo' and ref = :r"), {"r": row.ref}).scalar()
+            return f"kw:{kw}" if kw else text
+    except Exception:  # noqa: BLE001
+        log.exception("whatsapp: couldn't match a button tap")
+        return text
 
 
 def _safe(fn, *args) -> None:
@@ -444,6 +477,8 @@ def _handle(phone: str, text: str, name: str = "") -> None:
             return
         out = reply_rich(phone, text)
         if out:
-            send(phone, out)
+            tids = {str(w[0]) for w in _who(client.last10(phone))}
+            with client.context(tenant_id=tids.pop() if len(tids) == 1 else None, purpose="owner"):   # restaurant's credits
+                send(phone, out)
     except Exception:  # never let one bad message break the webhook
         log.exception("whatsapp: couldn't answer")

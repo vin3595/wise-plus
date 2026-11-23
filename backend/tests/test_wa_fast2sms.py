@@ -89,3 +89,45 @@ def test_replies_through_fast2sms_webhook(monkeypatch):
     c.post("/api/whatsapp/fast2sms/s3cret-hook-key", json={"webhook_type": "status_update", "status": "read"})
     assert got[0] == ("text", "919829000001", "Stop offers", "", None)
     assert got[1][:3] == ("media", "919829000001", "url:https://x/p.jpg") and len(got) == 2
+
+
+def test_restaurant_pays_for_its_messages_emb_only_for_codes(f2s, monkeypatch):
+    monkeypatch.setattr(client.httpx, "post", lambda url, **kw: _R(200, {"status": "success"}))
+    balance = {"t1": 3}
+    monkeypatch.setattr(client, "_has_credits", lambda tid: balance[tid] > 0)
+    monkeypatch.setattr(client, "_charge", lambda tid, n: balance.__setitem__(tid, max(balance[tid] - n, 0)))
+    with client.context(tenant_id="t1", purpose="owner"):
+        client.send_text("9829000001", "Dues today: ₹1,200")          # chat reply: 1 credit
+    assert balance["t1"] == 2
+    with client.context(tenant_id="t1", purpose="nightly"):
+        client.send_template("9829000001", "wise_update", ["Shakewallah", "x"])   # marketing template: 6
+    assert balance["t1"] == 0
+    with client.context(tenant_id="t1", purpose="owner"), pytest.raises(client.WaError, match="credits are used up"):
+        client.send_text("9829000001", "hi")
+    with client.context(tenant_id="t1", purpose="otp"):
+        client.send_template("9829000001", "login_code", ["123456"])    # sign-in codes: Ease My Bill pays
+    with client.context(tenant_id="t1", purpose="bill"):
+        client.send_template("9829000001", "wise_update", ["a", "b"])   # bills are charged when queued, not here
+
+
+def test_button_words_from_fast2sms_find_the_bill(monkeypatch):
+    from app.whatsapp import router as wr
+
+    class Row:
+        tenant_id, ref = "11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"
+
+    class DB:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def execute(self, q, p):
+            class R:
+                def first(_): return Row() if p.get("k") else None
+                def scalar(_): return "COFFEE"
+            return R()
+    import app.db as appdb
+    monkeypatch.setattr(appdb, "system_session", lambda: DB())
+    assert wr._button_payload("919829000001", "😍 Loved it") == f"fb:{Row.ref}:5"
+    assert wr._button_payload("919829000001", "Not good") == f"fb:{Row.ref}:1"
+    assert wr._button_payload("919829000001", "Stop offers") == f"stop:{Row.tenant_id}"
+    assert wr._button_payload("919829000001", "Get my offer") == "kw:COFFEE"
+    assert wr._button_payload("919829000001", "hello") == "hello"

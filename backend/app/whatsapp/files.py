@@ -45,9 +45,9 @@ def messages(db: Session, tenant_id) -> Reply:
     m = msgs(db, t)
     if m["unlimited"]:
         return Reply(f"📨 Bills on WhatsApp this month: {m['used']}. No limit on this account.")
-    return Reply(f"📨 Bills on WhatsApp this month: {m['used']} of {m['allowance']} free ({m['per_outlet']} per outlet)"
-                 + (f" + {m['bonus']} bought" if m["bonus"] else "") + f".\nLeft: *{m['left']}*.\n\n"
-                 "More: 1,000 for ₹199 · 5,000 for ₹799 (never expire).\n"
+    return Reply(f"📨 Bills on WhatsApp this month: {m['used']}.\nMessage credits: *{m['bonus']}* "
+                 f"(a bill uses {m['bill_credits']}, an offer 6), about *{m['left']}* bills.\n\n"
+                 "Recharge: 1,000 credits ₹199 · 5,000 credits ₹799 (never expire).\n"
                  f"Buy: {app_base_url(t)}/billing")
 
 

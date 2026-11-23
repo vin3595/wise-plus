@@ -176,22 +176,23 @@ def run(day: date | None = None, force: bool = False) -> int:
     for tid, name, phone, login in people:
         p10 = client.last10(phone)
         try:
-            if recent.get(p10) and recent[p10] > cutoff:
-                if tid not in texts:
-                    with tenant_session(tid) as db:
-                        texts[tid] = summary_text(db, day)
-                r = texts[tid]
-                client.send_options(phone, r.text, r.options)
-            elif s.wa_nightly_figures_template and s.wa_nightly_figures_template in client.f2s_templates():
-                with tenant_session(tid) as db:          # real figures: Meta counts it as utility (cheaper)
-                    tot = summary_totals(db, day)
-                client.send_template(phone, s.wa_nightly_figures_template,
-                                     [name, day.strftime("%d %b"), rs(tot["sales_paise"]).lstrip("₹"), str(tot["bills"])])
-            elif s.wa_nightly_template:
-                client.send_template(phone, s.wa_nightly_template, [name])
-            else:
-                log.info("nightly: …%s hasn't written in 24h and no template is set; skipped", p10[-4:])
-                continue
+            with client.context(tenant_id=tid, purpose="nightly"):      # from the restaurant's message credits
+                if recent.get(p10) and recent[p10] > cutoff:
+                    if tid not in texts:
+                        with tenant_session(tid) as db:
+                            texts[tid] = summary_text(db, day)
+                    r = texts[tid]
+                    client.send_options(phone, r.text, r.options)
+                elif s.wa_nightly_figures_template and s.wa_nightly_figures_template in client.f2s_templates():
+                    with tenant_session(tid) as db:          # real figures: Meta counts it as utility (cheaper)
+                        tot = summary_totals(db, day)
+                    client.send_template(phone, s.wa_nightly_figures_template,
+                                         [name, day.strftime("%d %b"), rs(tot["sales_paise"]).lstrip("₹"), str(tot["bills"])])
+                elif s.wa_nightly_template:
+                    client.send_template(phone, s.wa_nightly_template, [name])
+                else:
+                    log.info("nightly: …%s hasn't written in 24h and no template is set; skipped", p10[-4:])
+                    continue
             sent += 1
         except Exception:  # noqa: BLE001 - one bad number mustn't stop the rest
             log.exception("nightly: sending to …%s failed", p10[-4:])
