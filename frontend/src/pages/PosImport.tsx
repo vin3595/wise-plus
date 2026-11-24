@@ -18,7 +18,7 @@ interface Check {
 }
 interface Past { id: string; outlet: string; source: string; file_name: string; date_from: string; date_to: string; bills: number; total_paise: number; item_wise: boolean; created_at: string }
 
-const MODE: Record<string, string> = { cash: "Cash", upi: "UPI", card: "Card", due: "Credit", complimentary: "Complimentary", online: "Online (Zomato / Swiggy)", other: "Other" };
+const MODE: Record<string, string> = { cash: "Cash", upi: "UPI", card: "Card", due: "Credit", complimentary: "Complimentary", online: "Online (Zomato / Swiggy)", other: "Other", part: "Part payment" };
 const SOURCES = ["Petpooja", "Posist", "DotPe", "Rista", "Torqus", "Zomato / Swiggy", "Excel", "Other"];
 const month = (m: string) => new Date(`${m}-01T00:00:00`).toLocaleDateString("en-IN", { month: "short", year: "numeric" });
 const day = (d: string) => new Date(`${d}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });

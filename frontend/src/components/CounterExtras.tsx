@@ -49,7 +49,7 @@ export function HeldList<L>({ held, onResume, onDrop, onClose }: {
   );
 }
 
-const MODE: Record<string, string> = { cash: "Cash", upi: "UPI", card: "Card", due: "Due", complimentary: "Free" };
+const MODE: Record<string, string> = { cash: "Cash", upi: "UPI", card: "Card", due: "Due", complimentary: "Free", online: "Online", part: "Part payment" };
 
 /** Today's last bills at this outlet: see how each was paid and print it again. */
 export function RecentBills({ outletId, q = "", isManager, onPrint, onClose }: {

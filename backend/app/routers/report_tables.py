@@ -32,7 +32,7 @@ TZ = ZoneInfo(IST)
 TYPE = {"dine_in": "Dine-in", "takeaway": "Takeaway", "delivery": "Delivery"}
 SOURCE = {"staff": "Counter / captain", "qr": "QR (customer's phone)", "kiosk": "Self-order kiosk"}
 MODE = {"cash": "Cash", "upi": "UPI", "card": "Card", "due": "Credit (due)", "complimentary": "Complimentary",
-        "online": "Online (Zomato / Swiggy)", "other": "Other"}
+        "online": "Online (Zomato / Swiggy)", "other": "Other", "part": "Part payment (split in old POS)"}
 IMPORTED_NOTE = "Includes {n} bills imported from your earlier POS."
 
 

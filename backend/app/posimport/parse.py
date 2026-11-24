@@ -458,7 +458,8 @@ def figures(b: PBill) -> Figures:
     status = "cancelled" if cancelled(v.get("status")) else "paid"
     mode = pay_mode(v.get("payment"))
     split = split_pays(v.get("payment_desc"), total) if mode is None or mode == "other" else None
-    pays = dict(b.pays) if b.pays else split or ({mode or "other": total} if total else {})
+    # "Part Payment" with no breakup in the file: kept as one "part" payment (the old POS has the split)
+    pays = dict(b.pays) if b.pays else split or ({mode or "part": total} if total else {})
     if status == "paid" and mode == "complimentary":
         pays = {"complimentary": total}
 

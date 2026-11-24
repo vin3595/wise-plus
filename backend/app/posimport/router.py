@@ -88,6 +88,9 @@ def _plan(db: Session, outlet_id: uuid.UUID, data: bytes, name: str, mapping: di
             warnings.append(f"{no_amount} item rows have no amount; their share of the bill was split by quantity.")
     if "payment" not in p.mapping:
         warnings.append("No payment type column: every bill will show as 'Other' in payment reports.")
+    part = sum(1 for _, f in paid if "part" in f.pays)
+    if part:
+        warnings.append(f"{part} bills are 'Part Payment' with no breakup in the file; they show as 'Part payment' in payment reports.")
     other = sum(1 for _, f in paid if "other" in f.pays)
     if other and "payment" in p.mapping:
         warnings.append(f"{other} bills have a payment type we didn't recognise (shown as 'Other').")
