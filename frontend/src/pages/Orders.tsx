@@ -11,6 +11,7 @@ import { Button, ErrorText, FoodDot, Input, Select, useAction } from "../ui";
 import BillDialog from "../components/BillDialog";
 import ShiftBar from "../components/ShiftBar";
 import PendingOrders from "../components/PendingOrders";
+import { HeldList, RecentBills, loadHeld, saveHeld, type Held } from "../components/CounterExtras";
 import ApprovalDialog from "../components/ApprovalDialog";
 import { PrintBill } from "../components/Receipt";
 import UpiAuto, { UpiWatcher, type UpiReq } from "../components/UpiAuto";
@@ -227,6 +228,34 @@ export default function Orders() {
     setAddingTo(null); setPayMode("cash"); setTendered(""); setNoteOpen(false); setRefresh((n) => n + 1); setLoy({ points_paise: 0, use_reward: false }); setLoyAmount(0);
   }
 
+  // Hold: park this cart on the device, serve the next customer, bring it back later.
+  const [held, setHeld] = useState<Held<CartLine>[]>([]);
+  const [showHeld, setShowHeld] = useState(false);
+  const [showRecent, setShowRecent] = useState(false);
+  useEffect(() => { setHeld(outletId ? loadHeld<CartLine>(outletId) : []); }, [outletId]);
+  const keepHeld = (h: Held<CartLine>[]) => { setHeld(h); saveHeld(outletId, h); };
+  function holdCart() {
+    if (!cart.length || addingTo) return;
+    const n = held.length + 1;
+    const label = customer || (table && `Table ${table}`) || (car && `Car ${car}`) || phone || `Hold ${n}`;
+    keepHeld([{ id: newId(), at: Date.now(), lines: cart, total: subtotal, label,
+      state: { orderType, table, car, customer, notes, phone, declined } }, ...held]);
+    resetCart();
+  }
+  function resumeHeld(h: Held<CartLine>) {
+    const rest = held.filter((x) => x.id !== h.id);
+    if (cart.length && !addingTo) {   // swap: what's on screen goes on hold in its place
+      const label = customer || (table && `Table ${table}`) || (car && `Car ${car}`) || phone || `Hold ${held.length + 1}`;
+      rest.unshift({ id: newId(), at: Date.now(), lines: cart, total: subtotal, label, state: { orderType, table, car, customer, notes, phone, declined } });
+    }
+    keepHeld(rest);
+    const st = h.state as { orderType: OrderType; table: string; car: string; customer: string; notes: string; phone: string; declined: boolean };
+    setAddingTo(null); setCart(h.lines);
+    setOrderType(allowedTypes.includes(st.orderType) ? st.orderType : startType);
+    setTable(st.table || ""); setCar(st.car || ""); setCustomer(st.customer || ""); setNotes(st.notes || ""); setNoteOpen(!!st.notes);
+    setPhone(st.phone || ""); setDeclined(!!st.declined); setShowHeld(false);
+  }
+
   async function placeOrder(id = newId()): Promise<Order> {
     return addingTo
       ? api<Order>(`/orders/${addingTo.id}/items`, { body: { items: lines() } })
@@ -413,6 +442,9 @@ export default function Orders() {
             }} />
           <kbd className="hint">/</kbd>
           <button className="icon-btn scan-btn" onClick={() => setCamera(true)} aria-label="Scan with the camera" title="Scan a barcode or a customer's offer QR"><ScanLine size={20} /></button>
+          {!addingTo && cart.length > 0 && <button className="choice sold-toggle" onClick={holdCart} title="Put this order aside and serve the next customer">Hold</button>}
+          {held.length > 0 && <button className="choice sold-toggle held-btn" onClick={() => setShowHeld(true)} aria-label={`${held.length} on hold`}>Held <span className="badge">{held.length}</span></button>}
+          {off.online && outletId && can("billing") && <button className="choice sold-toggle" onClick={() => setShowRecent(true)} title="Today's last bills: reprint">Recent</button>}
           {off.online && <button className={`choice sold-toggle ${soldMode ? "on" : ""}`} aria-pressed={soldMode} onClick={() => setSoldMode(!soldMode)}
             title="Tap items to mark them sold out for today">{soldMode ? "Done" : "Sold out"}</button>}
         </div>
@@ -609,6 +641,9 @@ export default function Orders() {
       {billing && <BillDialog order={billing} outlet={outlet} onClose={() => setBilling(null)} onBilled={billed}
         upiAuto={upiAuto.enabled && off.online} onUpiRequest={(r) => { setBilling(null); setUpiReq(r); }} />}
       {printing && <PrintBill bill={printing} onDone={() => setPrinting(null)} />}
+      {showHeld && <HeldList held={held} onResume={resumeHeld} onClose={() => setShowHeld(false)}
+        onDrop={(h) => { const rest = held.filter((x) => x.id !== h.id); keepHeld(rest); if (!rest.length) setShowHeld(false); }} />}
+      {showRecent && outletId && <RecentBills outletId={outletId} onClose={() => setShowRecent(false)} onPrint={(b) => { setShowRecent(false); setPrinting(b); }} />}
       {cardReq && <CardAuto request={cardReq} onBilled={(b) => { setCardReq(null); billed(b); }} onClose={() => { setCardReq(null); setRefresh((n) => n + 1); }}
         onRetry={() => { const o = cardReq.order_id; setCardReq(null); cardAutoPay({ id: o } as Order); }} />}
       {pickTerminal && (

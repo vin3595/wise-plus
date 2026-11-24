@@ -842,6 +842,8 @@ body.screen-dark .powered { color: #6f6684; }
 .equal-people li { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
 .equal-people li span { min-width: 5.5rem; color: var(--ink-2); font-size: 0.9rem; }
 .pos-search .sold-toggle { white-space: nowrap; }
+.pos-search { flex-wrap: wrap; }
+.pos-search .search { min-width: 11rem; }
 .sold-hint { margin: 0.4rem 0 0; font-size: 0.86rem; color: var(--ink-2); }
 .tile.sold .tile-main, .tile-sizes button.sold { opacity: 0.45; }
 .tile.sold { filter: grayscale(0.8); }
@@ -1129,3 +1131,14 @@ img { -webkit-user-drag: none; -webkit-touch-callout: none; }
 .install-sheet img { border-radius: 12px; flex: none; }
 .install-sheet .grow { flex: 1; min-width: 0; }
 @keyframes install-up { from { transform: translateY(30px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* Hold and Recent on the order screen */
+.held-head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 0.6rem; }
+.held-head h3 { margin: 0; }
+.held-list { list-style: none; margin: 0 0 0.8rem; padding: 0; }
+.held-list li { display: flex; align-items: center; gap: 0.8rem; padding: 0.55rem 0; border-bottom: 1px solid var(--line); }
+.held-list li.cancelled { opacity: 0.55; }
+.held-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; text-align: left; background: none; border: 0; padding: 0; font: inherit; color: var(--ink); }
+button.held-main { cursor: pointer; }
+.held-amt { font-variant-numeric: tabular-nums; }
+.held-btn .badge { display: inline-grid; place-items: center; min-width: 1.3rem; height: 1.3rem; margin-left: 0.3rem; padding: 0 0.3rem; border-radius: 999px; background: var(--brand); color: #fff; font-size: 0.75rem; }
