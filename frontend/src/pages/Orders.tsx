@@ -525,6 +525,8 @@ export default function Orders() {
                   onChange={(e) => setCar(e.target.value.toUpperCase())} />
               )}
               <Input placeholder="Customer name" value={customer} onChange={(e) => setCustomer(e.target.value)} />
+              {canBill && <Input inputMode="tel" placeholder="Customer mobile" aria-label="Customer mobile, optional" value={phone}
+                onChange={(e) => { setPhone(e.target.value); if (e.target.value) setDeclined(false); }} />}
             </div>
           </>
         )}
@@ -560,7 +562,6 @@ export default function Orders() {
           : <button className="link small add-note" onClick={() => setNoteOpen(true)}>+ Note for the kitchen</button>)}
         {canBill && cart.length > 0 && !addingTo && (
           <div className="cust-row">
-            <Input inputMode="tel" placeholder="Customer mobile (optional)" aria-label="Customer mobile, optional" value={phone} onChange={(e) => setPhone(e.target.value)} />
             {screenOn
               ? (!cleanMobile(phone) && (asking
                   ? <p className="muted small cs-status"><span className="dot-pulse" aria-hidden /> Customer is typing on their screen… <button className="link" onClick={() => setAsking(false)}>Stop</button></p>
