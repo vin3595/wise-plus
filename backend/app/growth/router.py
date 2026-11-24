@@ -22,7 +22,8 @@ _hits: dict[str, deque] = defaultdict(deque)
 
 
 def _ip(request: Request) -> str:
-    return (request.headers.get("x-forwarded-for") or (request.client.host if request.client else "?")).split(",")[0].strip()
+    from ..core.ratelimit import client_ip      # the address Caddy saw, not one the client wrote
+    return client_ip(request)
 
 
 def _limit(request: Request, n: int = 6, per: int = 600) -> None:

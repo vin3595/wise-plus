@@ -1,7 +1,7 @@
 """Unauthenticated endpoints the login screen needs to show a restaurant's own branding."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 
@@ -30,7 +30,9 @@ def _branding(login_id: str) -> PublicBranding:
 
 
 @router.get("/tenants/{login_id}", response_model=PublicBranding)
-def branding(login_id: str) -> PublicBranding:
+def branding(login_id: str, request: Request) -> PublicBranding:
+    from ..core import ratelimit
+    ratelimit.hit(request, "lookup", 300, 900)
     return _branding(login_id)
 
 

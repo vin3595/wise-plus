@@ -47,7 +47,8 @@ def _check_signup_open(db) -> None:
 
 
 @router.get("/login-id-available")
-def login_id_available(login_id: str) -> dict:
+def login_id_available(login_id: str, request: Request) -> dict:
+    ratelimit.hit(request, "lookup", 300, 900)
     try:
         value = validate_login_id(login_id)
     except ValueError as e:
@@ -273,8 +274,10 @@ def google_signup(body: GoogleSignup, request: Request) -> TokenOut:
 
 
 @router.post("/pin", response_model=TokenOut)
-def pin_login(body: PinLogin) -> TokenOut:
+def pin_login(body: PinLogin, request: Request) -> TokenOut:
+    ratelimit.hit(request, "pin", 60, 900)
     s = get_settings()
+    ip = ratelimit.client_ip(request)
     error: tuple[int, str] | None = None
     result = None
     with system_session() as db:
@@ -282,8 +285,11 @@ def pin_login(body: PinLogin) -> TokenOut:
         outlet = db.get(Outlet, body.outlet_id) if tenant else None
         if tenant is None or outlet is None or outlet.tenant_id != tenant.id or not outlet.is_active:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Outlet not found")
-        key = f"pin:{tenant.id}:{outlet.id}"
-        mins = throttle.locked_minutes_left(db, key)
+        # Locks are per outlet and address, so someone guessing elsewhere can't lock the counter out; a wider
+        # ceiling per outlet still stops guessing from many addresses.
+        key = f"pin:{tenant.id}:{outlet.id}:{ip}"[:200]
+        wide = f"pinall:{tenant.id}:{outlet.id}"
+        mins = max(throttle.locked_minutes_left(db, key), throttle.locked_minutes_left(db, wide))
         if mins:
             raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS,
                                 f"Too many wrong PINs. Try again in {mins} min.")
@@ -298,6 +304,7 @@ def pin_login(body: PinLogin) -> TokenOut:
         )
         if not assigned or not verify_secret(body.pin, user.pin_hash):
             throttle.record_failure(db, key)
+            throttle.record_wide(db, wide)
             error = (status.HTTP_401_UNAUTHORIZED, "Wrong PIN")
         elif tenant.status == "suspended":
             error = (status.HTTP_403_FORBIDDEN, "This restaurant's account is suspended")
@@ -340,8 +347,9 @@ def kitchen_screen_login(body: ScreenLogin) -> TokenOut:
 
 
 @router.get("/outlets")
-def outlets_for_device(login_id: str) -> list[dict]:
+def outlets_for_device(login_id: str, request: Request) -> list[dict]:
     """Outlet list for setting up a counter device. Names only; no sensitive data."""
+    ratelimit.hit(request, "lookup", 300, 900)
     with system_session() as db:
         tenant = _find_tenant(db, login_id)
         if tenant is None:

@@ -52,3 +52,39 @@ def test_hourly_cap_stops_all_new_codes(client: TestClient, monkeypatch):
                     json={"restaurant_name": "Cap Cafe", "owner_name": "Capo", "email": f"c{uuid.uuid4().hex[:5]}@x.com",
                           "phone": "9" + str(uuid.uuid4().int)[:9], "via": "phone"})
     assert r.status_code == 429 and "a lot of sign-ins" in r.json()["detail"]
+
+
+def test_pin_lockout_is_per_address_and_grows(client: TestClient):
+    """M3: wrong PINs lock that address (longer each time); the counter elsewhere keeps working."""
+    from tests.test_stock_extras import setup
+    from tests.test_api import h
+    b = setup(client)
+    client.post("/api/users", headers=h(b["tok"]), json={"name": "Asha", "role": "cashier", "pin": "7415", "outlet_ids": [b["ck"]]})
+    bad, good = {"x-forwarded-for": f"{_ip()}, 172.18.0.3"}, {"x-forwarded-for": f"{_ip()}, 172.18.0.3"}
+    pin = lambda p, hd: client.post("/api/auth/pin", headers=hd, json={"login_id": b["login"], "outlet_id": b["ck"], "pin": p})  # noqa: E731
+    codes = [pin("0000", bad).status_code for _ in range(6)]
+    assert codes[:5] == [401] * 5 and codes[5] == 429
+    assert pin("7415", bad).status_code == 429                  # locked even with the right PIN
+    assert pin("7415", good).status_code == 200                 # the real counter isn't locked out
+    from app.db import system_session
+    from app.models import AuthThrottle
+    from datetime import datetime, timezone, timedelta
+    with system_session() as db:                                 # second lock in a row lasts twice as long
+        row = next(r for r in db.query(AuthThrottle).filter(AuthThrottle.key.like(f"pin:%:{b['ck']}:%")).all() if bad["x-forwarded-for"].split(",")[0] in r.key)
+        row.locked_until = datetime.now(timezone.utc) - timedelta(seconds=1)
+    for _ in range(5):
+        pin("0000", bad)
+    with system_session() as db:
+        row = next(r for r in db.query(AuthThrottle).filter(AuthThrottle.key.like(f"pin:%:{b['ck']}:%")).all() if bad["x-forwarded-for"].split(",")[0] in r.key)
+        assert row.locked_until - datetime.now(timezone.utc) > timedelta(minutes=15)
+
+
+def test_lead_form_limit_uses_the_real_address(client: TestClient):
+    """M4: a forged first X-Forwarded-For doesn't get a fresh allowance."""
+    real = _ip()
+    statuses = []
+    for i in range(8):
+        r = client.post("/api/public/growth/leads", headers={"x-forwarded-for": f"{_ip()}, {real}, 172.18.0.3"},
+                        json={"name": "Lead Tester", "phone": "9" + str(uuid.uuid4().int)[:9], "consent": True})
+        statuses.append(r.status_code)
+    assert 429 in statuses
