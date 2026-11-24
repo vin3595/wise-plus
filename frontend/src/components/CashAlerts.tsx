@@ -2,14 +2,13 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { formatPaise, inputToPaise, paiseToInput } from "../money";
 import { useSession } from "../session";
+import { denomText } from "./CashCount";
 import { Card, ErrorText, Input } from "../ui";
 
 interface Alert { id: string; outlet_name: string; kind: "open" | "close"; cashier_name: string | null; expected_paise: number;
   counted_paise: number; difference_paise: number; denoms: Record<string, number> | null; created_at: string }
 
-const denomText = (d: Record<string, number> | null) => !d ? "Total typed in, not counted by note" :
-  Object.entries(d).sort((a, b) => Number(b[0].slice(1)) - Number(a[0].slice(1)) || (a[0] < b[0] ? 1 : -1))
-    .map(([k, n]) => `${n} × ₹${k.slice(1)}${k[0] === "c" ? " coin" : ""}`).join(", ");
+const denomList = (d: Record<string, number> | null) => (!d ? "Total typed in, not counted by note" : denomText(d));
 
 /** Cash counts that didn't match what the system expected. Managers check each one and note why. */
 export default function CashAlerts({ onHome = false }: { onHome?: boolean }) {
@@ -37,7 +36,7 @@ export default function CashAlerts({ onHome = false }: { onHome?: boolean }) {
               <span className="muted small">{new Date(a.created_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })}</span>
             </div>
             <div className="small">Should be {formatPaise(a.expected_paise)}{a.kind === "open" ? " (left by the last close)" : ""}, counted {formatPaise(a.counted_paise)}.</div>
-            <div className="small muted">{denomText(a.denoms)}</div>
+            <div className="small muted">{denomList(a.denoms)}</div>
             <div className="row">
               <Input placeholder="What happened? e.g. counted again, change given wrong" value={notes[a.id] || ""} onChange={(e) => setNotes({ ...notes, [a.id]: e.target.value })} />
               <button className="btn btn-ghost" disabled={(notes[a.id] || "").trim().length < 2} onClick={async () => {

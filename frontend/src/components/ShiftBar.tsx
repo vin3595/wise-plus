@@ -4,11 +4,9 @@ import { queuedBills } from "../offline";
 import { formatPaise, inputToPaise } from "../money";
 import type { CashPurpose, Shift } from "../types";
 import { Button, ErrorText, Input, useAction } from "../ui";
-import CashCount, { denomTotal, type Denoms } from "./CashCount";
+import CashCount, { denomText, denomTotal, type Denoms } from "./CashCount";
 
 /** {"n500": 2, "c10": 3} -> "₹500 × 2, ₹10 coin × 3" */
-const denomText = (d: Denoms) => Object.entries(d).filter(([, n]) => n).sort((a, b) => Number(b[0].slice(1)) - Number(a[0].slice(1)) || a[0].localeCompare(b[0]))
-  .map(([k, n]) => `₹${k.slice(1)}${k[0] === "c" ? " coin" : ""} × ${n}`).join(", ");
 
 /** The signed-in cashier's own shift at this outlet. Two cashiers each have their own. */
 export default function ShiftBar({ outletId, onChange }: { outletId: string; onChange?: (s: Shift | null) => void }) {

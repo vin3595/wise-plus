@@ -1,4 +1,5 @@
 import CashAlerts from "../components/CashAlerts";
+import { denomText } from "../components/CashCount";
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { usePolling } from "../hooks";
@@ -9,8 +10,6 @@ import { Button, Card, ErrorText, Input, Select, useAction } from "../ui";
 
 interface Drawer { id: string; name: string; is_active: boolean; in_use_by: string | null }
 const time = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "");
-const denomText = (d: Record<string, number> | null | undefined) => (d ? Object.entries(d).filter(([, n]) => n).sort((a, b) => Number(b[0].slice(1)) - Number(a[0].slice(1)))
-  .map(([k, n]) => `₹${k.slice(1)}${k[0] === "c" ? " coin" : ""} × ${n}`).join(", ") : "");
 const today = () => { const d = new Date(Date.now() + (330 - 240) * 60000); return d.toISOString().slice(0, 10); };
 
 /** Every cashier's shift at once: drawer, opening, cash sales, cash in / out, what should be in the drawer. */

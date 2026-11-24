@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 # Indian coins and notes in everyday use, in rupees. Key = c<value> for coins, n<value> for notes.
+# "coins" = all coins as one rupee total, for when nobody wants to sort them by face value.
 COINS = (1, 2, 5, 10, 20)
 NOTES = (10, 20, 50, 100, 200, 500)
-DENOMS = {f"c{v}": v for v in COINS} | {f"n{v}": v for v in NOTES}
+COIN_TOTAL = "coins"
+DENOMS = {f"c{v}": v for v in COINS} | {f"n{v}": v for v in NOTES} | {COIN_TOTAL: 1}
 MAX_PIECES = 100_000
 
 
@@ -17,7 +19,8 @@ def clean(counts: dict[str, int] | None) -> dict[str, int] | None:
         if k not in DENOMS:
             raise ValueError(f"Unknown coin or note: {k}")
         if not isinstance(n, int) or n < 0 or n > MAX_PIECES:
-            raise ValueError(f"Enter a count between 0 and {MAX_PIECES} for ₹{DENOMS[k]}")
+            what = "the coin total (in rupees)" if k == COIN_TOTAL else f"₹{DENOMS[k]}"
+            raise ValueError(f"Enter a count between 0 and {MAX_PIECES} for {what}")
         if n:
             out[k] = n
     return out

@@ -64,3 +64,11 @@ def test_old_clients_still_work_and_in_has_its_own_purposes():
         CashMoveIn(kind="in", amount_paise=100, purpose="drawing", handed="owner", paid_to="V")
     assert CashMoveIn(kind="in", amount_paise=100, purpose="topup").purpose == "topup"
     assert cp.type_label("in", "change", None) == "Change from bank"
+
+
+def test_coins_as_one_total():
+    from app.core.cash import clean, total_paise
+    d = clean({"n500": 2, "coins": 137})
+    assert total_paise(d) == (1000 + 137) * 100
+    with pytest.raises(ValueError, match="coin total"):
+        clean({"coins": -1})
