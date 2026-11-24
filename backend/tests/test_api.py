@@ -449,6 +449,8 @@ def test_bill_corrections_batch(client):
                                                               "payments": [{"mode": "cash", "amount_paise": total}]}).json()
 
     b1, b2, b3 = bill(2), bill(1), bill(1)
+    nums = client.get(f"/api/outlets/{oid}/bill-numbers", headers=h(asha)).json()
+    assert nums["last"]["invoice_no"] == b3["invoice_no"] and nums["next"].endswith("000004")
     fix = lambda b, **kw: {"bill_id": b["id"], "revision": b["revision"], **kw}  # noqa: E731
     url = "/api/bills/corrections"
 

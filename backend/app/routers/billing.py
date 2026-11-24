@@ -519,3 +519,24 @@ def alerts_seen(auth: Auth = Depends(require(Perm.approve)), db: Session = Depen
         a.seen_at = _now()
         n += 1
     return {"seen": n}
+
+
+@router.get("/outlets/{outlet_id}/bill-numbers")
+def bill_numbers(outlet_id: uuid.UUID, auth: Auth = Depends(require(Perm.billing)), db: Session = Depends(get_db)) -> dict:
+    """The next invoice number this outlet will give, and the last bill, for the order screen.
+    The next number is what the counter shows now; two counters billing at once each get their own."""
+    from ..models import DailyCounter
+    ensure_outlet_access(db, auth, outlet_id)
+    outlet = get_or_404(db, Outlet, outlet_id, "Outlet")
+    tenant = db.get(Tenant, auth.tenant_id)
+    fy = fiscal_year_start(business_date(), tenant.fy_start_month)
+    last_no = db.scalar(select(DailyCounter.last_no).where(
+        DailyCounter.outlet_id == outlet_id, DailyCounter.kind == "inv",
+        DailyCounter.business_date == fy_counter_date(fy, tenant.fy_start_month))) or 0
+    try:
+        nxt = invoice_number(outlet.code, fy, last_no + 1)
+    except ValueError:
+        nxt = None
+    last = db.scalars(select(Bill).where(Bill.outlet_id == outlet_id).order_by(Bill.created_at.desc()).limit(1)).first()
+    return {"next": nxt, "last": {"id": str(last.id), "invoice_no": last.invoice_no, "total_paise": last.total_paise,
+                                  "token_no": None} if last else None}

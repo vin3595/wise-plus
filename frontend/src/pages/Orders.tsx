@@ -234,6 +234,14 @@ export default function Orders() {
   const [showRecent, setShowRecent] = useState(false);
   const [billQ, setBillQ] = useState("");   // "Bill no" box: opens that bill (or bills for a mobile number)
   const [open, setOpen] = useState<{ name?: boolean; car?: boolean }>({});
+  // Next invoice number and the last bill, shown under Dine-in / Takeaway / Delivery.
+  const [nums, setNums] = useState<{ next: string | null; last: { id: string; invoice_no: string; total_paise: number } | null } | null>(null);
+  useEffect(() => {
+    if (!outletId || !off.online || !can("billing")) { setNums(null); return; }
+    let live = true;
+    api<typeof nums>(`/outlets/${outletId}/bill-numbers`).then((n) => { if (live) setNums(n); }).catch(() => undefined);
+    return () => { live = false; };
+  }, [outletId, off.online, refresh, printing]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { setHeld(outletId ? loadHeld<CartLine>(outletId) : []); }, [outletId]);
   const keepHeld = (h: Held<CartLine>[]) => { setHeld(h); saveHeld(outletId, h); };
   function holdCart() {
@@ -525,6 +533,13 @@ export default function Orders() {
               ))}
             </div>}
             {allowedTypes.length === 1 && <p className="small muted only-type">{ORDER_TYPE_LABEL[allowedTypes[0]]} orders</p>}
+            {nums && (nums.next || nums.last) && (
+              <div className="bill-nums">
+                {nums.next && <span>Bill no <strong>{nums.next}</strong></span>}
+                {nums.last && <button className="link small" title="Print or edit the last bill" onClick={() => { setBillQ(nums.last!.invoice_no); setShowRecent(true); }}>
+                  Last: {nums.last.invoice_no} · {formatPaise(nums.last.total_paise)}</button>}
+              </div>
+            )}
             <div className="cart-meta">
               {orderType === "dine_in" && <Input placeholder="Table, e.g. T4" value={table} onChange={(e) => setTable(e.target.value.toUpperCase())} />}
               {canBill && <Input inputMode="tel" placeholder="Customer mobile" aria-label="Customer mobile, optional" value={phone}
