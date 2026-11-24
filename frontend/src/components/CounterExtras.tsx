@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 import { formatPaise } from "../money";
 import type { Bill } from "../types";
+import BillCorrections from "./BillCorrections";
 
 /** A cart put on hold: the customer stepped aside, the next one is served, then it comes back. */
 export interface Held<L> { id: string; at: number; lines: L[]; total: number; label: string; state: Record<string, unknown> }
@@ -51,13 +52,19 @@ export function HeldList<L>({ held, onResume, onDrop, onClose }: {
 const MODE: Record<string, string> = { cash: "Cash", upi: "UPI", card: "Card", due: "Due", complimentary: "Free" };
 
 /** Today's last bills at this outlet: see how each was paid and print it again. */
-export function RecentBills({ outletId, onPrint, onClose }: { outletId: string; onPrint: (b: Bill) => void; onClose: () => void }) {
+export function RecentBills({ outletId, isManager, onPrint, onClose }: {
+  outletId: string; isManager: boolean; onPrint: (b: Bill) => void; onClose: () => void;
+}) {
   const [bills, setBills] = useState<Bill[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Bill | null>(null);
+  const [n, setN] = useState(0);
   useEffect(() => {
     api<Bill[]>(`/bills?${new URLSearchParams({ outlet_id: outletId })}`).then((b) => setBills(b.slice(0, 25)))
       .catch((e) => setError(e instanceof Error ? e.message : "Couldn't load bills"));
-  }, [outletId]);
+  }, [outletId, n]);
+  if (editing) return <BillCorrections bills={[editing]} outletId={outletId} isManager={isManager}
+    onClose={() => setEditing(null)} onSaved={() => { setEditing(null); setN((x) => x + 1); }} />;
   return (
     <div className="modal-back" onClick={onClose}>
       <div className="modal held-panel" role="dialog" aria-label="Recent bills" onClick={(e) => e.stopPropagation()}>
@@ -75,12 +82,13 @@ export function RecentBills({ outletId, onPrint, onClose }: { outletId: string; 
                     {b.customer_name ? ` · ${b.customer_name}` : ""}</span>
                 </div>
                 <strong className="held-amt">{formatPaise(b.total_paise)}</strong>
+                {b.status === "paid" && !b.locked && <button className="choice" onClick={() => setEditing(b)}>Edit</button>}
                 <button className="choice" onClick={() => onPrint(b)}>Print</button>
               </li>
             ))}
           </ul>
         )}
-        <p className="muted small"><Link to="/bills" onClick={onClose}>All bills</Link> to search, fix or cancel.</p>
+        <p className="muted small">Edit changes the payment (cash, UPI, card) or the items. <Link to="/bills" onClick={onClose}>All bills</Link> to search older ones or cancel.</p>
       </div>
     </div>
   );

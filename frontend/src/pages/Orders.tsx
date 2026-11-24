@@ -643,7 +643,7 @@ export default function Orders() {
       {printing && <PrintBill bill={printing} onDone={() => setPrinting(null)} />}
       {showHeld && <HeldList held={held} onResume={resumeHeld} onClose={() => setShowHeld(false)}
         onDrop={(h) => { const rest = held.filter((x) => x.id !== h.id); keepHeld(rest); if (!rest.length) setShowHeld(false); }} />}
-      {showRecent && outletId && <RecentBills outletId={outletId} onClose={() => setShowRecent(false)} onPrint={(b) => { setShowRecent(false); setPrinting(b); }} />}
+      {showRecent && outletId && <RecentBills outletId={outletId} isManager={can("approve")} onClose={() => setShowRecent(false)} onPrint={(b) => { setShowRecent(false); setPrinting(b); }} />}
       {cardReq && <CardAuto request={cardReq} onBilled={(b) => { setCardReq(null); billed(b); }} onClose={() => { setCardReq(null); setRefresh((n) => n + 1); }}
         onRetry={() => { const o = cardReq.order_id; setCardReq(null); cardAutoPay({ id: o } as Order); }} />}
       {pickTerminal && (
