@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from ..core.permissions import Perm
 from ..core.report_table import Col, Table, share_bp, to_csv
-from ..deps import Auth, get_db, require
+from ..deps import live_check, Auth, get_db, require
 from ..models import (
     Bill, BillLine, BillRevision, CashMovement, Category, Item, Order, Outlet, Payment, Purchase, Shift, StockItem,
     StockLevel, StockMove, Supplier, User, Variant,
@@ -665,7 +665,7 @@ def wastage(c: Ctx) -> Table:
 
 # ------------------------------------------------------------------ endpoints
 
-@router.get("/list")
+@router.get("/list", dependencies=[Depends(live_check)])
 def report_list(auth: Auth = Depends(require(Perm.reports_view))) -> list[dict]:
     return [{"name": k, "group": g, "label": l} for k, (g, l, _) in REPORTS.items()]
 

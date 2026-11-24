@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..core.permissions import Perm
-from ..deps import Auth, get_db, require
+from ..deps import live_check, Auth, get_db, require
 from ..models import Supplier
 from ..services import audit
 from .balances import balances, statement
@@ -101,7 +101,7 @@ def _finish(auth: Auth, st: dict, supplier_id: uuid.UUID | None, new_supplier: b
         return stm.check(db, auth.tenant_id, st, supplier_id, new_supplier)
 
 
-@router.post("/statement")
+@router.post("/statement", dependencies=[Depends(live_check)])
 async def check_statement(file: UploadFile = File(...), supplier_id: uuid.UUID | None = Form(None),
                           new_supplier: bool = Form(False), auth: Auth = Depends(require(Perm.inventory_manage))) -> dict:
     """Read a supplier's ledger and show which of their bills are in the POS and which payments aren't in our dues ledger."""

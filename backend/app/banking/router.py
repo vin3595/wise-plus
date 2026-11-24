@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 from ..core.permissions import Perm
 from ..db import tenant_session
-from ..deps import Auth, get_db, require
+from ..deps import live_check, Auth, get_db, require
 from ..models import Outlet, Supplier
 from ..services import audit
 from . import service as svc
@@ -96,7 +96,7 @@ def run_import(tenant_id, user_id, data: bytes, st: dict, name: str, account_id=
         return svc.import_statement(db, tenant_id, user_id, st, account_id, name, path)
 
 
-@router.post("/statements")
+@router.post("/statements", dependencies=[Depends(live_check)])
 async def upload(file: UploadFile = File(...), account_id: uuid.UUID | None = Form(None),
                  auth: Auth = Depends(require(Perm.banks))) -> dict:
     data = await file.read(MAX + 1)

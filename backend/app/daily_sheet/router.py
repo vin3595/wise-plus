@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from ..core.permissions import Perm
 from ..db import tenant_session
-from ..deps import Auth, ensure_outlet_access, get_db, require
+from ..deps import live_check, Auth, ensure_outlet_access, get_db, require
 from ..models import Outlet
 from ..purchases_ai.service import ScanError
 from .models import DailySheet
@@ -35,7 +35,7 @@ def _out(s: DailySheet, full: bool = False) -> dict:
     return o
 
 
-@router.get("/status")
+@router.get("/status", dependencies=[Depends(live_check)])
 def sheet_status(auth: Auth = Depends(require(Perm.reports_view))) -> dict:
     return {"enabled": enabled()}
 
@@ -49,7 +49,7 @@ def list_sheets(month: str | None = None, db: Session = Depends(get_db), auth: A
     return [_out(s) for s in db.scalars(q.order_by(DailySheet.sheet_date.desc().nulls_first(), DailySheet.created_at.desc()).limit(120))]
 
 
-@router.post("/scan", status_code=201)
+@router.post("/scan", status_code=201, dependencies=[Depends(live_check)])
 async def scan(outlet_id: uuid.UUID = Form(...), file: UploadFile = File(...), auth: Auth = Depends(require(Perm.reports_view))) -> dict:
     data = await file.read(15 * 1024 * 1024 + 1)
     if not data or len(data) > 15 * 1024 * 1024:

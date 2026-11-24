@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 
 from ..billing.admin_auth import require_admin
 from ..db import system_session
-from ..deps import Auth, get_auth
+from ..deps import live_check, Auth, get_auth
 from . import service as gs
 from .models import Lead, Referral
 
@@ -165,6 +165,6 @@ def add_lead(body: LeadAdd, background: BackgroundTasks, _adm: str = Depends(req
 
 # ------------------------------------------------------------------ a restaurant's referral link
 
-@router.get("/growth/referral")
+@router.get("/growth/referral", dependencies=[Depends(live_check)])
 def my_referral(auth: Auth = Depends(get_auth)) -> dict:
     return gs.referral_info(auth.tenant_id)

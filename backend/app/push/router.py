@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from ..deps import Auth, get_auth, get_db
+from ..deps import live_check, Auth, get_auth, get_db
 from . import service
 from .models import PushSubscription
 
@@ -19,7 +19,7 @@ class SubIn(BaseModel):
     auth: str = Field(min_length=4, max_length=100)
 
 
-@router.get("/key")
+@router.get("/key", dependencies=[Depends(live_check)])
 def public_key(_auth: Auth = Depends(get_auth)) -> dict:
     return {"key": service.keys()["public"], "for_role": _auth.role.value in service.ROLES}
 

@@ -19,7 +19,7 @@ from ..core.kds import business_date
 from ..core.permissions import Perm
 from ..core.stock import (BASE_UNITS, STANDARD_UNITS, M, finds_loop, margin_bp, recipe_cost, reorder_qty, rolled_cost_k, scale,
                           unit_cost_k, value_paise)
-from ..deps import Auth, ensure_outlet_access, get_db, require
+from ..deps import live_check, Auth, ensure_outlet_access, get_db, require
 from ..models import (
     Addon, AddonGroup, Item, Outlet, OutletVariantOverride, Purchase, RecipeLine, StockCount, StockItem, StockLevel,
     StockMove, Supplier, TaxGroup, User, Variant,
@@ -722,7 +722,7 @@ def addon_list(auth: Auth = Depends(require(Perm.inventory_manage)), db: Session
 UNITS_HELP = {"base_units": list(BASE_UNITS), "standard": {k: {"base": v[0], "factor": v[1]} for k, v in STANDARD_UNITS.items()}}
 
 
-@router.get("/units")
+@router.get("/units", dependencies=[Depends(live_check)])
 def units(auth: Auth = Depends(require(Perm.stock_count))) -> dict:
     return UNITS_HELP
 

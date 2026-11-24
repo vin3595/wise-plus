@@ -19,7 +19,7 @@ from starlette.concurrency import run_in_threadpool
 from ..config import get_settings
 from ..core.permissions import Perm
 from ..db import tenant_session
-from ..deps import Auth, ensure_outlet_access, get_db, require
+from ..deps import live_check, Auth, ensure_outlet_access, get_db, require
 from ..models import Outlet, Tenant, User
 from .models import ScannedBill
 from .service import ScanError, classify, enabled, read_bill, tenant_draft
@@ -30,7 +30,7 @@ MAX_BYTES = 15 * 1024 * 1024
 ACCEPT = {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "application/pdf"}
 
 
-@router.get("/status")
+@router.get("/status", dependencies=[Depends(live_check)])
 def scan_status(auth: Auth = Depends(require(Perm.inventory_manage))) -> dict:
     return {"enabled": enabled()}
 
@@ -69,7 +69,7 @@ def _count(auth: Auth) -> None:
         count_scan(db, db.get(Tenant, auth.tenant_id))
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(live_check)])
 async def scan_bill(outlet_id: uuid.UUID = Form(...), file: UploadFile = File(...), batch: bool = Form(False),
                     auth: Auth = Depends(require(Perm.inventory_manage))) -> dict:
     await run_in_threadpool(_check, auth, outlet_id)

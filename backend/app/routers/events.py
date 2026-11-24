@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
 from ..db import system_session, tenant_session
-from ..deps import Auth, get_auth
+from ..deps import live_check, Auth, get_auth
 from ..models import Outlet, User, UserOutlet
 from ..services.events import hub, stream
 
@@ -27,7 +27,7 @@ def _check(auth: Auth, outlet_id: uuid.UUID) -> None:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "You don't have access to this outlet")
 
 
-@router.get("/events")
+@router.get("/events", dependencies=[Depends(live_check)])
 def staff_events(outlet_id: uuid.UUID, auth: Auth = Depends(get_auth)) -> StreamingResponse:
     if not hub.listening:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Live updates are off; screens refresh by themselves")

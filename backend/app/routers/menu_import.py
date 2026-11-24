@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from ..core.menu_import import build_template, parse_menu_workbook
 from ..core.permissions import Perm
-from ..deps import Auth, get_db, require
+from ..deps import live_check, Auth, get_db, require
 from ..models import Addon, AddonGroup, Brand, Category, Item, ItemAddonGroup, PrepArea, TaxGroup, Variant
 from ..schemas import ImportIssue, ImportResult
 from ..services import audit
@@ -22,7 +22,7 @@ MAX_FILE_BYTES = 5_000_000
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
-@router.get("/template")
+@router.get("/template", dependencies=[Depends(live_check)])
 def template(auth: Auth = Depends(require(Perm.menu_manage))) -> Response:
     return Response(build_template(), media_type=XLSX,
                     headers={"Content-Disposition": 'attachment; filename="wise-menu-template.xlsx"'})

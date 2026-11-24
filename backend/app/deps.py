@@ -68,6 +68,21 @@ def get_db(request: Request, auth: Auth = Depends(get_auth)) -> Iterator[Session
         yield db
 
 
+def live_check(auth: Auth = Depends(get_auth)) -> Auth:
+    """For routes that don't open a session with get_db: the same live check (user still active, same role,
+    business not suspended), so a removed user's still-valid token can't be used."""
+    with tenant_session(auth.tenant_id) as db:
+        user = db.get(User, auth.user_id)
+        if user is None or not user.is_active or user.tenant_id != auth.tenant_id:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Account disabled")
+        if user.role != auth.role.value:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Your role changed, sign in again")
+        tenant = db.get(Tenant, auth.tenant_id)
+        if tenant is None or tenant.status == "suspended":
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "This restaurant's account is suspended")
+    return auth
+
+
 def require(perm: Perm):
     def checker(auth: Auth = Depends(get_auth)) -> Auth:
         if not auth.can(perm):

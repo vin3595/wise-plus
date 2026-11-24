@@ -223,7 +223,7 @@ if __name__ == "__main__":
 from fastapi import APIRouter, Depends, HTTPException, status  # noqa: E402
 from fastapi.responses import Response  # noqa: E402
 
-from .deps import get_auth  # noqa: E402
+from .deps import live_check, get_auth  # noqa: E402
 
 router = APIRouter(tags=["backup"])
 
@@ -235,7 +235,7 @@ def _owner(auth):
     return auth
 
 
-@router.get("/tenant/backup")
+@router.get("/tenant/backup", dependencies=[Depends(live_check)])
 def download(auth=Depends(get_auth)) -> Response:
     _owner(auth)
     from .db import tenant_session

@@ -79,3 +79,14 @@ def test_private_files_not_public(client, tmp_path, monkeypatch):
     path = url.split("/api", 1)[1]
     assert client.get("/api" + path).content == b"zipdata"
     assert client.get("/api/public/files/short/pack.zip").status_code == 404
+
+
+def test_removed_owner_token_cannot_download_backup(client):
+    """M2: routes without a DB session still check the account live: a disabled user's token stops working."""
+    from sqlalchemy import text
+    from app.db import system_session
+    b = setup(client)
+    assert client.get("/api/tenant/backup", headers={"Authorization": f"Bearer {b['tok']}"}).status_code == 200
+    with system_session() as db:
+        db.execute(text("update users set is_active = false where tenant_id = (select id from tenants where login_id = :l)"), {"l": b["login"]})
+    assert client.get("/api/tenant/backup", headers={"Authorization": f"Bearer {b['tok']}"}).status_code == 401
