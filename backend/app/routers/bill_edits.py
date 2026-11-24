@@ -44,7 +44,8 @@ def correct_bills(body: BillEditBatch, auth: Auth = Depends(require(Perm.billing
         except FixError as e:
             b = db.get(Bill, fix.bill_id)
             results.append(BillFixResult(bill_id=fix.bill_id, invoice_no=b.invoice_no if b else "?", ok=False,
-                                         error=str(e)))
+                                         error=str(e), old_total_paise=b.total_paise if b else 0,
+                                         new_total_paise=e.new_total if e.new_total is not None else (b.total_paise if b else 0)))
     all_ok = all(r.ok for r in results)
     needs_pin = any(r.needs_approval for r in results)
     if body.dry_run or not all_ok:

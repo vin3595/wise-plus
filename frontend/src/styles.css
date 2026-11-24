@@ -1142,3 +1142,8 @@ img { -webkit-user-drag: none; -webkit-touch-callout: none; }
 button.held-main { cursor: pointer; }
 .held-amt { font-variant-numeric: tabular-nums; }
 .held-btn .badge { display: inline-grid; place-items: center; min-width: 1.3rem; height: 1.3rem; margin-left: 0.3rem; padding: 0 0.3rem; border-radius: 999px; background: var(--brand); color: #fff; font-size: 0.75rem; }
+
+.fix-split { display: grid; gap: 0.5rem; }
+.fix-split-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.fix-split-row .input { width: 7rem; }
+.fix-split-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem; }

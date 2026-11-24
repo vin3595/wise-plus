@@ -9,6 +9,7 @@ type Draft = {
   qty: Record<string, number>;          // bill line id -> corrected qty
   adds: Add[];
   mode: PayMode | null;                 // single-payment bills: new mode
+  pays: { mode: PayMode; amount: string }[] | null;   // a split payment, as typed; null = unchanged
   discount: string | null;              // ₹ text; null = unchanged
   discountReason: string;
   name: string; phone: string; gstin: string;
@@ -17,11 +18,13 @@ const MODES: { m: PayMode; label: string }[] = [{ m: "cash", label: "Cash" }, { 
 const PAY_LABEL: Record<string, string> = { cash: "Cash", upi: "UPI", card: "Card", due: "Credit", complimentary: "Complimentary" };
 
 const fresh = (b: Bill): Draft => ({
-  qty: Object.fromEntries(b.lines.map((l) => [l.id!, l.qty])), adds: [], mode: null, discount: null,
+  qty: Object.fromEntries(b.lines.map((l) => [l.id!, l.qty])), adds: [], mode: null, pays: null, discount: null,
   discountReason: b.discount_reason || "", name: b.customer_name || "", phone: b.customer_phone || "",
   gstin: b.customer_gstin || "",
 });
 const single = (b: Bill) => b.payments.length === 1 && ["cash", "upi", "card"].includes(b.payments[0].mode);
+/** Split between cash, UPI and card: each part can be changed. Credit/complimentary bills are cancelled and billed again. */
+const splittable = (b: Bill) => b.payments.length > 0 && b.payments.every((p) => ["cash", "upi", "card"].includes(p.mode));
 
 /** What the server needs for one bill, or null when nothing on it was touched. */
 function toFix(b: Bill, d: Draft) {
@@ -30,14 +33,17 @@ function toFix(b: Bill, d: Draft) {
     d.gstin !== (b.customer_gstin || "");
   const disc = d.discount === null ? null : inputToPaise(d.discount) ?? 0;
   const discChanged = disc !== null && disc !== b.discount_paise;
-  const modeChanged = d.mode !== null && d.mode !== b.payments[0]?.mode;
-  if (!lines.length && !d.adds.length && !customerChanged && !discChanged && !modeChanged) return null;
+  const modeChanged = d.pays === null && d.mode !== null && d.mode !== b.payments[0]?.mode;
+  const pays = d.pays?.map((p) => ({ mode: p.mode, amount_paise: inputToPaise(p.amount) ?? 0, reference: null }));
+  const paysChanged = !!pays && JSON.stringify(pays.map((p) => [p.mode, p.amount_paise]).sort()) !==
+    JSON.stringify(b.payments.map((p) => [p.mode, p.amount_paise]).sort());
+  if (!lines.length && !d.adds.length && !customerChanged && !discChanged && !modeChanged && !paysChanged) return null;
   return {
     bill_id: b.id, revision: b.revision || 1, lines,
     add_items: d.adds.map((a) => ({ variant_id: a.variant_id, qty: a.qty })),
     ...(customerChanged ? { customer: { name: d.name || null, phone: d.phone || null, gstin: d.gstin || null, declined: !d.phone } } : {}),
     ...(discChanged ? { discount: { kind: "flat", value: disc, reason: d.discountReason || null } } : {}),
-    ...(modeChanged || (single(b) && (lines.length || d.adds.length || discChanged)) ? { payment_mode: d.mode || b.payments[0].mode } : {}),
+    ...(pays ? { payments: pays } : modeChanged || (single(b) && (lines.length || d.adds.length || discChanged)) ? { payment_mode: d.mode || b.payments[0].mode } : {}),
   };
 }
 
@@ -80,7 +86,7 @@ export default function BillCorrections({ bills, outletId, isManager, onClose, o
   const before = bills.filter((b) => toFix(b, drafts[b.id])).reduce((s, b) => s + b.total_paise, 0);
   const after = bills.filter((b) => toFix(b, drafts[b.id])).reduce((s, b) => s + (results[b.id]?.new_total_paise ?? b.total_paise), 0);
   const bad = Object.values(results).filter((r) => !r.ok);
-  const allMode = (m: PayMode) => setDrafts((d) => Object.fromEntries(bills.map((b) => [b.id, single(b) ? { ...d[b.id], mode: m } : d[b.id]])));
+  const allMode = (m: PayMode) => setDrafts((d) => Object.fromEntries(bills.map((b) => [b.id, single(b) ? { ...d[b.id], mode: m, pays: null } : d[b.id]])));
 
   async function saveAll() {
     setBusy(true);
@@ -157,6 +163,8 @@ function FixCard({ bill: b, draft: d, menu, result, changed, onChange, onReset }
   }, [find, menu]);
   const newTotal = result?.ok ? result.new_total_paise : null;
   const mode = d.mode || b.payments[0]?.mode;
+  const total = result?.new_total_paise || b.total_paise;   // what the payments must add up to
+  const entered = (d.pays || []).reduce((s, p) => s + (inputToPaise(p.amount) ?? 0), 0);
 
   return (
     <article className={`fix-card ${changed ? "changed" : ""} ${result && !result.ok ? "bad" : ""}`}>
@@ -218,11 +226,39 @@ function FixCard({ bill: b, draft: d, menu, result, changed, onChange, onReset }
       <div className="fix-grid">
         <div>
           <span className="field-label">Paid by</span>
-          {single(b) ? (
+          {d.pays ? (
+            <div className="fix-split">
+              {d.pays.map((p, i) => (
+                <div key={i} className="fix-split-row">
+                  <div className="fix-modes">
+                    {MODES.map((x) => <button key={x.m} className={`choice ${p.mode === x.m ? "on" : ""}`}
+                      onClick={() => onChange({ pays: d.pays!.map((q, j) => (j === i ? { ...q, mode: x.m } : q)) })}>{x.label}</button>)}
+                  </div>
+                  <Input inputMode="decimal" aria-label={`Amount ${i + 1}`} placeholder="₹" value={p.amount}
+                    onChange={(e) => onChange({ pays: d.pays!.map((q, j) => (j === i ? { ...q, amount: e.target.value } : q)) })} />
+                  {d.pays!.length > 1 && <button className="link small" onClick={() => {
+                    const rest = d.pays!.filter((_, j) => j !== i);
+                    onChange(rest.length === 1 && single(b) ? { pays: null, mode: rest[0].mode } : { pays: rest });
+                  }}>Remove</button>}
+                </div>
+              ))}
+              <div className="fix-split-foot">
+                {d.pays.length < 3 && <button className="link small" onClick={() => onChange({ pays: [...d.pays!, { mode: "upi", amount: paiseToInput(Math.max(0, total - entered)) }] })}>+ Another payment</button>}
+                <span className={`small ${entered === total ? "ok" : "error"}`}>Entered {formatPaise(entered)} of {formatPaise(total)}
+                  {entered !== total && ` · ${entered < total ? `${formatPaise(total - entered)} left` : `${formatPaise(entered - total)} too much`}`}</span>
+              </div>
+            </div>
+          ) : single(b) ? (
             <div className="fix-modes">
               {MODES.map((x) => <button key={x.m} className={`choice ${mode === x.m ? "on" : ""}`} onClick={() => onChange({ mode: x.m })}>{x.label}</button>)}
+              <button className="link small" onClick={() => onChange({ pays: [{ mode: mode as PayMode, amount: paiseToInput(total) }, { mode: mode === "cash" ? "upi" : "cash", amount: "" }] })}>Split</button>
             </div>
-          ) : <p className="muted small">{b.payments.map((p) => `${PAY_LABEL[p.mode]} ${formatPaise(p.amount_paise)}`).join(" + ")}. A split or credit bill is corrected by cancelling and billing again.</p>}
+          ) : splittable(b) ? (
+            <div className="fix-modes">
+              <span className="small">{b.payments.map((p) => `${PAY_LABEL[p.mode]} ${formatPaise(p.amount_paise)}`).join(" + ")}</span>
+              <button className="link small" onClick={() => onChange({ pays: b.payments.map((p) => ({ mode: p.mode, amount: paiseToInput(p.amount_paise) })) })}>Change</button>
+            </div>
+          ) : <p className="muted small">{b.payments.map((p) => `${PAY_LABEL[p.mode]} ${formatPaise(p.amount_paise)}`).join(" + ")}. A credit or complimentary bill is corrected by cancelling and billing again.</p>}
         </div>
         <label className="field">
           <span className="field-label">Discount ₹</span>

@@ -479,11 +479,23 @@ def test_bill_corrections_batch(client):
     hist = client.get(f"/api/bills/{b1['id']}/history", headers=h(asha)).json()
     assert hist[0]["old_total_paise"] == b1["total_paise"] and hist[0]["before"]["lines"][0]["qty"] == 2
 
+    # Part cash, part UPI: the split can be changed, and a changed total asks for a new split (with the new total).
+    t3 = b3["total_paise"]
+    split = [{"mode": "cash", "amount_paise": t3 - 5000}, {"mode": "upi", "amount_paise": 5000}]
+    res = client.post(url, headers=h(asha), json={"reason": "Part paid by Paytm", "bills": [fix(b3, payments=split)]}).json()
+    assert res["saved"], res
+    n3 = client.get(f"/api/bills/{b3['id']}", headers=h(asha)).json()
+    assert sorted((p["mode"], p["amount_paise"]) for p in n3["payments"]) == [("cash", t3 - 5000), ("upi", 5000)]
+    more = client.post(url, headers=h(asha), json={"reason": "added one", "dry_run": True,
+                       "bills": [fix(n3, add_items=[{"variant_id": oreo}])]}).json()["results"][0]
+    assert not more["ok"] and "payment split" in more["error"] and more["new_total_paise"] > t3
+    edits_before = 2
+
     # Stale version is refused; reports follow the corrected bill and list the edit.
     stale = client.post(url, headers=h(asha), json={"reason": "again", "bills": [fix(b1, customer={"name": "X", "declined": True})]}).json()
     assert not stale["saved"] and "Reload" in stale["results"][0]["error"]
     edits = client.get("/api/reports/bill-edits", headers=h(tok), params={"outlet_id": oid}).json()
-    assert len(edits) == 2 and {e["invoice_no"] for e in edits} == {b1["invoice_no"], b2["invoice_no"]}
+    assert len(edits) == edits_before + 1 and {e["invoice_no"] for e in edits} == {b1["invoice_no"], b2["invoice_no"], b3["invoice_no"]}
 
     # Every report runs, as JSON and as CSV, and the money adds up.
     names = [r["name"] for r in client.get("/api/reports/list", headers=h(tok)).json()]

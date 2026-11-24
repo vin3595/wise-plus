@@ -26,7 +26,9 @@ from .orders import resolve_lines
 
 
 class FixError(Exception):
-    pass
+    def __init__(self, msg: str, new_total: int | None = None):
+        super().__init__(msg)
+        self.new_total = new_total   # set when the items are fine but the payments don't match the new total
 
 
 @dataclass
@@ -146,12 +148,12 @@ def plan_fix(db: Session, tenant: Tenant, fix: BillFix, *, is_manager: bool, use
         if len(old_pays) == 1 and old_pays[0].mode not in ("due", "complimentary"):
             payments = [(old_pays[0].mode, new_total, old_pays[0].reference)]  # one payment: follows the total
         else:
-            raise FixError(f"The total is now ₹{new_total / 100:,.2f}. Update the payment split.")
+            raise FixError(f"The total is now ₹{new_total / 100:,.2f}. Update the payment split.", new_total)
     if payments is not None:
         try:
             validate_payments(new_total, [PaymentIn(m, a) for m, a, _ in payments])
         except ValueError as e:
-            raise FixError(str(e)) from None
+            raise FixError(str(e), new_total) from None
 
     customer = None
     if fix.customer is not None:
