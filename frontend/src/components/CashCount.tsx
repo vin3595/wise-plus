@@ -53,15 +53,19 @@ export default function CashCount({ value, onChange }: { value: Denoms; onChange
   return (
     <div className="cc">
       <ul className="cc-list" aria-label="Notes">{NOTES.map((v) => row(v, false))}</ul>
-      <button type="button" className="cc-coins" aria-expanded={coinsOpen} onClick={() => setCoinsOpen(!coinsOpen)}>
-        <span>Coins</span><span className="muted">{coinTotal ? formatPaise(coinTotal) : coinsOpen ? "" : "Tap to count"}</span><span aria-hidden>{coinsOpen ? "▴" : "▾"}</span>
-      </button>
+      <div className="cc-coins">
+        <span>Coins</span>
+        {coinTotal > 0 && <span className="muted">{formatPaise(coinTotal)}</span>}
+        <div className="cc-mode" role="radiogroup" aria-label="How to count coins">
+          <button type="button" role="radio" aria-checked={coinsOpen && !asTotal} className={coinsOpen && !asTotal ? "on" : ""}
+            onClick={() => { switchTo(false); setCoinsOpen(true); }}>Each coin</button>
+          <button type="button" role="radio" aria-checked={coinsOpen && asTotal} className={coinsOpen && asTotal ? "on" : ""}
+            onClick={() => { switchTo(true); setCoinsOpen(true); }}>Total</button>
+        </div>
+        {coinsOpen && <button type="button" className="cc-fold" aria-label="Hide coins" onClick={() => setCoinsOpen(false)}>▴</button>}
+      </div>
       {coinsOpen && (
         <div className="cc-coin-body">
-          <div className="cc-mode" role="radiogroup" aria-label="How to count coins">
-            <button type="button" role="radio" aria-checked={!asTotal} className={!asTotal ? "on" : ""} onClick={() => switchTo(false)}>Each coin</button>
-            <button type="button" role="radio" aria-checked={asTotal} className={asTotal ? "on" : ""} onClick={() => switchTo(true)}>Just the total</button>
-          </div>
           {asTotal ? (
             <label className="cc-lump">
               <span>All coins together</span>
