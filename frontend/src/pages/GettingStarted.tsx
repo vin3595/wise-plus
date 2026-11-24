@@ -13,6 +13,7 @@ export default function GettingStarted() {
           <li><Link to="/branding">Upload your logo and pick your colour</Link></li>
           <li><Link to="/outlets">Add your outlets</Link> and choose which order types each one takes</li>
           <li><Link to="/menu/import">Import your menu from Excel</Link> or <Link to="/menu">build it here</Link></li>
+          <li>Coming from Petpooja or another POS? <Link to="/pos-import">Bring in your earlier sales</Link> so reports and GST cover the whole year</li>
           <li><Link to="/kitchen">Set up preparation areas</Link> (Shake counter, Kitchen…) and the customer screen link</li>
           <li><Link to="/users">Add staff and give them PINs</Link></li>
         </ol>

@@ -1147,3 +1147,6 @@ button.held-main { cursor: pointer; }
 .fix-split-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
 .fix-split-row .input { width: 7rem; }
 .fix-split-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem; }
+
+.pos-map { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 0.6rem; margin: 0.6rem 0; }
+.warn { color: #8a5a00; }

@@ -31,7 +31,9 @@ IST = "Asia/Kolkata"
 TZ = ZoneInfo(IST)
 TYPE = {"dine_in": "Dine-in", "takeaway": "Takeaway", "delivery": "Delivery"}
 SOURCE = {"staff": "Counter / captain", "qr": "QR (customer's phone)", "kiosk": "Self-order kiosk"}
-MODE = {"cash": "Cash", "upi": "UPI", "card": "Card", "due": "Credit (due)", "complimentary": "Complimentary"}
+MODE = {"cash": "Cash", "upi": "UPI", "card": "Card", "due": "Credit (due)", "complimentary": "Complimentary",
+        "online": "Online (Zomato / Swiggy)", "other": "Other"}
+IMPORTED_NOTE = "Includes {n} bills imported from your earlier POS."
 
 
 class Ctx:
@@ -40,6 +42,15 @@ class Ctx:
         self.paid = and_(Bill.outlet_id.in_(outlets), Bill.business_date >= d1, Bill.business_date <= d2,
                          Bill.status == "paid")
         self._names: dict | None = None
+        from ..posimport import merge
+        self.imp = merge
+        self.imported = merge.count(db, outlets, d1, d2)
+
+    def note(self, t: Table) -> Table:
+        if self.imported:
+            extra = IMPORTED_NOTE.format(n=f"{self.imported:,}")
+            t.note = f"{t.note} {extra}" if getattr(t, "note", None) else extra
+        return t
 
     def names(self) -> dict:
         if self._names is None:
@@ -81,7 +92,17 @@ def days(c: Ctx) -> Table:
         t.rows.append({"date": str(d), "bills": n, "gross_paise": int(g), "discount_paise": int(di),
                        "taxable_paise": int(tx), "tax_paise": int(gst), "round_off_paise": int(ro),
                        "sales_paise": int(s), "avg_paise": int(s) // n})
-    return t
+    if c.imported:
+        rows = {r["date"]: r for r in t.rows}
+        keys = ("bills", "gross_paise", "discount_paise", "taxable_paise", "tax_paise", "round_off_paise", "sales_paise")
+        for d, vals in c.imp.by_day(c.db, c.outlets, c.d1, c.d2).items():
+            r = rows.setdefault(str(d), {"date": str(d), **{k: 0 for k in keys}})
+            for k, v in zip(keys, vals):
+                r[k] += v
+        t.rows = sorted(rows.values(), key=lambda r: r["date"])
+        for r in t.rows:
+            r["avg_paise"] = r["sales_paise"] // r["bills"] if r["bills"] else 0
+    return c.note(t)
 
 
 def _h(hour: int) -> str:
@@ -170,6 +191,35 @@ def outlets(c: Ctx) -> Table:
         .order_by(func.sum(Bill.total_paise).desc())):
         t.rows.append({"outlet": name, "bills": n, "discount_paise": int(d), "tax_paise": int(x),
                        "sales_paise": int(s), "avg_paise": int(s) // n})
+    if c.imported:
+        names = dict(c.db.execute(select(Outlet.id, Outlet.name)).all())
+        rows = {r["outlet"]: r for r in t.rows}
+        for oid, (n, d, x, s) in c.imp.by_outlet(c.db, c.outlets, c.d1, c.d2).items():
+            r = rows.setdefault(names.get(oid, "?"), {"outlet": names.get(oid, "?"), "bills": 0, "discount_paise": 0, "tax_paise": 0, "sales_paise": 0})
+            r["bills"] += n; r["discount_paise"] += d; r["tax_paise"] += x; r["sales_paise"] += s  # noqa: E702
+        t.rows = sorted(rows.values(), key=lambda r: -r["sales_paise"])
+        for r in t.rows:
+            r["avg_paise"] = r["sales_paise"] // r["bills"] if r["bills"] else 0
+    return c.note(t)
+
+
+@report("imported", "Sales", "Bills imported from your earlier POS")
+def imported(c: Ctx) -> Table:
+    from ..posimport.models import ImportedBill as IB
+    t = Table("Bills imported from your earlier POS", [
+        Col("date", "Date", "date"), Col("bill_no", "Bill no"), Col("status", "Status"), Col("paid_by", "Paid by"),
+        Col("discount_paise", "Discount", "money", True), Col("tax_paise", "GST", "money", True),
+        Col("total_paise", "Total", "money", True), Col("customer", "Customer")],
+        note="Sales before EMB, brought in from the other POS's export. Settings › Import from another POS.")
+    for b in c.db.scalars(select(IB).where(IB.outlet_id.in_(c.outlets), IB.business_date >= c.d1, IB.business_date <= c.d2)
+                          .order_by(IB.business_date, IB.billed_at, IB.bill_no).limit(20000)):
+        paidc = b.status == "paid"
+        t.rows.append({"date": str(b.business_date), "bill_no": b.bill_no, "status": "Paid" if paidc else "Cancelled",
+                       "paid_by": " + ".join(MODE.get(m, m) for m in (b.payments or {})),
+                       "discount_paise": b.discount_paise if paidc else 0,
+                       "tax_paise": b.cgst_paise + b.sgst_paise + b.igst_paise if paidc else 0,
+                       "total_paise": b.total_paise if paidc else 0,
+                       "customer": " · ".join(x for x in (b.customer_name, b.customer_phone) if x)})
     return t
 
 
@@ -190,6 +240,17 @@ def items(c: Ctx) -> Table:
         .outerjoin(Item, Item.id == Variant.item_id).outerjoin(Category, Category.id == Item.category_id)
         .where(c.paid).group_by(BillLine.item_name, BillLine.variant_name, Category.name)
         .order_by(func.sum(BillLine.qty).desc()))
+    if c.imported:
+        from ..posimport.models import ImportedLine as IL
+        merged: dict = {}
+        for i, v, cat, q, g, d, tx, x in list(rows) + [tuple(r) for r in c.imp.lines(c.db, c.outlets, c.d1, c.d2, IL.item_name, IL.variant_name, IL.category)]:
+            k = (i.strip().lower(), (v or "Regular").strip().lower())
+            a = merged.setdefault(k, [i, v or "Regular", cat, 0, 0, 0, 0, 0])
+            a[2] = a[2] or cat
+            for j, val in enumerate((q, g, d, tx, x), start=3):
+                a[j] += int(val or 0)
+        rows = sorted(merged.values(), key=lambda a: -a[3])
+        c.note(t)
     whole = sum(int(r[4]) - int(r[5]) for r in rows)
     for i, v, cat, q, g, d, tx, x in rows:
         t.rows.append({"item": i, "variant": "" if v == "Regular" else v, "category": cat or "", "qty": int(q),
@@ -210,6 +271,16 @@ def categories(c: Ctx) -> Table:
         .join(Bill, Bill.id == BillLine.bill_id).outerjoin(Variant, Variant.id == BillLine.variant_id)
         .outerjoin(Item, Item.id == Variant.item_id).outerjoin(Category, Category.id == Item.category_id)
         .where(c.paid).group_by(Category.name).order_by(func.sum(BillLine.gross_paise - BillLine.discount_paise).desc()))
+    if c.imported:
+        from ..posimport.models import ImportedLine as IL
+        merged: dict = {}
+        for cat, n, q, sl in rows:
+            merged[cat] = [cat, int(n), int(q), int(sl)]
+        for cat, q, g, d, _tx, _x in c.imp.lines(c.db, c.outlets, c.d1, c.d2, func.coalesce(IL.category, "No category")):
+            a = merged.setdefault(cat, [cat, 0, 0, 0])
+            a[2] += int(q); a[3] += int(g) - int(d)  # noqa: E702
+        rows = sorted(merged.values(), key=lambda a: -a[3])
+        c.note(t)
     whole = sum(int(r[3]) for r in rows)
     for cat, n, q, s in rows:
         t.rows.append({"category": cat, "items": n, "qty": int(q), "sales_paise": int(s), "share_bp": share_bp(int(s), whole)})
@@ -227,6 +298,13 @@ def payments(c: Ctx) -> Table:
     rows = c.rows(select(Payment.mode, func.count(func.distinct(Payment.bill_id)), func.sum(Payment.amount_paise))
                   .join(Bill, Bill.id == Payment.bill_id).where(c.paid).group_by(Payment.mode)
                   .order_by(func.sum(Payment.amount_paise).desc()))
+    if c.imported:
+        merged = {m: [int(n), int(a)] for m, n, a in rows}
+        for m, (n, a) in c.imp.by_mode(c.db, c.outlets, c.d1, c.d2).items():
+            x = merged.setdefault(m, [0, 0])
+            x[0] += n; x[1] += a  # noqa: E702
+        rows = sorted(((m, n, a) for m, (n, a) in merged.items()), key=lambda r: -r[2])
+        c.note(t)
     whole = sum(int(a) for *_, a in rows)
     for m, n, a in rows:
         t.rows.append({"mode": MODE.get(m, m), "bills": n, "amount_paise": int(a), "share_bp": share_bp(int(a), whole)})
@@ -244,6 +322,13 @@ def payments_daily(c: Ctx) -> Table:
                           .join(Bill, Bill.id == Payment.bill_id).where(c.paid)
                           .group_by(Bill.business_date, Payment.mode)):
         by[d][m] = int(a)
+    if c.imported:
+        for (d, m), a in c.imp.by_mode(c.db, c.outlets, c.d1, c.d2, per_day=True).items():
+            if m not in modes:
+                modes.append(m)
+                t.columns.insert(len(t.columns) - 1, Col(m, MODE.get(m, m), "money", True))
+            by[d][m] = by[d].get(m, 0) + a
+        c.note(t)
     for d in sorted(by):
         t.rows.append({"date": str(d), **by[d], "total": sum(by[d].values())})
     return t
@@ -469,8 +554,18 @@ def gst_rates(c: Ctx) -> Table:
         select(BillLine.rate_bp, func.sum(BillLine.taxable_paise), func.sum(BillLine.cgst_paise),
                func.sum(BillLine.sgst_paise), func.sum(BillLine.igst_paise))
         .join(Bill, Bill.id == BillLine.bill_id).where(c.paid).group_by(BillLine.rate_bp).order_by(BillLine.rate_bp)):
-        t.rows.append({"rate": f"{int(r) / 100:g}%", "taxable_paise": int(tx), "cgst_paise": int(cg),
+        t.rows.append({"rate": f"{int(r) / 100:g}%", "rate_bp": int(r), "taxable_paise": int(tx), "cgst_paise": int(cg),
                        "sgst_paise": int(sg), "igst_paise": int(ig), "tax_paise": int(cg) + int(sg) + int(ig)})
+    if c.imported:
+        rows = {r["rate_bp"]: r for r in t.rows}
+        for rate, (tx, tax) in c.imp.by_rate(c.db, c.outlets, c.d1, c.d2).items():
+            r = rows.setdefault(rate, {"rate": f"{rate / 100:g}%", "rate_bp": rate, "taxable_paise": 0, "cgst_paise": 0,
+                                       "sgst_paise": 0, "igst_paise": 0, "tax_paise": 0})
+            r["taxable_paise"] += tx; r["cgst_paise"] += tax // 2; r["sgst_paise"] += tax - tax // 2; r["tax_paise"] += tax  # noqa: E702
+        t.rows = [rows[k] for k in sorted(rows)]
+        c.note(t)
+    for r in t.rows:
+        r.pop("rate_bp", None)
     return t
 
 
@@ -494,6 +589,17 @@ def hsn(c: Ctx) -> Table:
         t.rows.append({"hsn": h, "rate": f"{int(r) / 100:g}%", "qty": int(q),
                        "value_paise": int(tx) + int(cg) + int(sg) + int(ig), "taxable_paise": int(tx),
                        "cgst_paise": int(cg), "sgst_paise": int(sg), "igst_paise": int(ig)})
+    if c.imported:
+        from ..posimport.models import ImportedLine as IL
+        rows = {(r["hsn"], r["rate"]): r for r in t.rows}
+        for h, r, q, _g, _d, tx, tax in c.imp.lines(c.db, c.outlets, c.d1, c.d2, func.coalesce(IL.hsn_sac, literal_column("'9963'")), IL.rate_bp):
+            k = (h, f"{int(r) / 100:g}%")
+            row = rows.setdefault(k, {"hsn": h, "rate": k[1], "qty": 0, "value_paise": 0, "taxable_paise": 0,
+                                      "cgst_paise": 0, "sgst_paise": 0, "igst_paise": 0})
+            row["qty"] += int(q); row["taxable_paise"] += int(tx); row["value_paise"] += int(tx) + int(tax)  # noqa: E702
+            row["cgst_paise"] += int(tax) // 2; row["sgst_paise"] += int(tax) - int(tax) // 2  # noqa: E702
+        t.rows = [rows[k] for k in sorted(rows)]
+        c.note(t)
     return t
 
 

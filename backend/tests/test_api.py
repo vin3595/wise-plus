@@ -1295,3 +1295,46 @@ def test_sign_in_with_google_and_without_login_id(client, monkeypatch):
     sent = client.post("/api/auth/otp/request", json={"identifier": "gfounder@gmail.com"}).json()
     r = client.post("/api/auth/otp/verify", json={"identifier": "gfounder@gmail.com", "otp": sent["dev_otp"]})
     assert r.status_code == 200 and r.json()["tenant"]["login_id"] == lid
+
+
+def test_pos_import_flow(client):
+    from tests.test_pos_import import xlsx
+    t = signup(client, "posimp", "9829000077")
+    tok = t["token"]
+    brand_id = client.get("/api/tenant/brands", headers=h(tok)).json()[0]["id"]
+    oid = client.post("/api/tenant/outlets", headers=h(tok), json={"brand_id": brand_id, "name": "Paota", "code": "PT"}).json()["id"]
+    rows = [["Invoice No.", "Date", "Item Name", "Qty", "Item Total", "Tax", "Grand Total", "Payment Type", "Status"],
+            ["1", "01/04/2026 13:05", "Oreogasm", 2, 360, 18, 378, "Cash", "Success"],
+            ["1", "01/04/2026 13:05", "KitKat", 1, 180, 9, 378, "Cash", "Success"],
+            ["2", "02/04/2026 14:00", "Mango", 1, 500, 25, 525, "Paytm", "Success"],
+            ["3", "02/04/2026 15:00", "Mango", 1, 500, 25, 525, "Cash", "Cancelled"]]
+    data = xlsx(rows)
+    files = lambda: {"file": ("petpooja.xlsx", data, "application/octet-stream")}  # noqa: E731
+    form = {"outlet_id": oid, "source": "Petpooja"}
+    chk = client.post("/api/pos-import/check", headers=h(tok), data=form, files=files()).json()
+    assert chk["ok"] and chk["bills"] == 2 and chk["cancelled"] == 1 and chk["sales_paise"] == 90300
+    assert chk["payments"] == {"cash": 37800, "upi": 52500} and chk["date_from"] == "2026-04-01"
+    r = client.post("/api/pos-import", headers=h(tok), data=form, files=files())
+    assert r.status_code == 200, r.text
+    again = client.post("/api/pos-import/check", headers=h(tok), data=form, files=files()).json()
+    assert again["already_imported"] == 3 and again["bills"] == 0
+    assert client.post("/api/pos-import", headers=h(tok), data=form, files=files()).status_code == 409
+
+    q = {"outlet_id": oid, "date_from": "2026-04-01", "date_to": "2026-04-30"}
+    days = client.get("/api/reports/r/days", headers=h(tok), params=q).json()
+    assert [(r["date"], r["bills"], r["sales_paise"]) for r in days["rows"]] == [("2026-04-01", 1, 37800), ("2026-04-02", 1, 52500)]
+    items = {r["item"]: r["qty"] for r in client.get("/api/reports/r/items", headers=h(tok), params=q).json()["rows"]}
+    assert items == {"Oreogasm": 2, "KitKat": 1, "Mango": 1}
+    pays = {r["mode"]: r["amount_paise"] for r in client.get("/api/reports/r/payments", headers=h(tok), params=q).json()["rows"]}
+    assert pays == {"UPI": 52500, "Cash": 37800}
+    for n in ("gst_rates", "hsn", "categories", "payments_daily", "outlets", "imported"):
+        assert client.get(f"/api/reports/r/{n}", headers=h(tok), params=q).status_code == 200, n
+    gst = client.get("/api/reports/r/gst_rates", headers=h(tok), params=q).json()["rows"]
+    assert gst[0]["rate"] == "5%" and gst[0]["tax_paise"] == 4300
+    s = client.get("/api/reports/summary", headers=h(tok), params=q).json()
+    assert s["bills"] == 2 and s["sales_paise"] == 90300 and s["imported_bills"] == 2
+
+    hist = client.get("/api/pos-import", headers=h(tok)).json()
+    assert len(hist) == 1 and hist[0]["bills"] == 3
+    assert client.delete(f"/api/pos-import/{hist[0]['id']}", headers=h(tok)).json() == {"removed": 3}
+    assert client.get("/api/reports/summary", headers=h(tok), params=q).json()["bills"] == 0

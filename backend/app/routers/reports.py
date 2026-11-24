@@ -76,7 +76,29 @@ def summary(outlet_id: uuid.UUID | None = None, date_from: date | None = None, d
         select(BillLine.rate_bp, func.sum(BillLine.taxable_paise), func.sum(BillLine.cgst_paise),
                func.sum(BillLine.sgst_paise), func.sum(BillLine.igst_paise))
         .join(Bill, Bill.id == BillLine.bill_id).where(*paid).group_by(BillLine.rate_bp).order_by(BillLine.rate_bp))]
+    from ..posimport import merge
+    imported = merge.count(db, outlets, d1, d2)
+    if imported:   # sales from the earlier POS count in the totals too
+        ib = merge.totals(db, outlets, d1, d2)
+        bills, gross, disc, taxable, cgst, sgst, igst, ro, total = (a + b for a, b in zip(
+            (bills, gross, disc, taxable, cgst, sgst, igst, ro, total), ib))
+        for m, (_, a) in merge.by_mode(db, outlets, d1, d2).items():
+            by_mode[m] = by_mode.get(m, 0) + a
+        days = {r["date"]: r for r in by_day}
+        for d, v in merge.by_day(db, outlets, d1, d2).items():
+            r = days.setdefault(str(d), {"date": str(d), "bills": 0, "sales_paise": 0})
+            r["bills"] += v[0]
+            r["sales_paise"] += v[6]
+        by_day = sorted(days.values(), key=lambda r: r["date"])
+        names = dict(db.execute(select(Outlet.id, Outlet.name)).all())
+        outs = {r["outlet"]: r for r in by_outlet}
+        for oid, (n, _d, _x, s) in merge.by_outlet(db, outlets, d1, d2).items():
+            r = outs.setdefault(names.get(oid, "?"), {"outlet": names.get(oid, "?"), "bills": 0, "sales_paise": 0})
+            r["bills"] += n
+            r["sales_paise"] += s
+        by_outlet = sorted(outs.values(), key=lambda r: -r["sales_paise"])
     return {
+        "imported_bills": imported,
         "date_from": str(d1), "date_to": str(d2), "bills": bills, "cancelled_bills": int(cancelled),
         "gross_paise": gross, "discount_paise": disc, "taxable_paise": taxable, "cgst_paise": cgst,
         "sgst_paise": sgst, "igst_paise": igst, "round_off_paise": ro, "sales_paise": total,
