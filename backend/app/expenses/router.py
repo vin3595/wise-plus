@@ -150,7 +150,7 @@ async def scan(outlet_id: uuid.UUID = Form(...), file: UploadFile = File(...), a
 
     from .reader import SlipError, read
     ensure_outlet_access(db, auth, outlet_id)
-    data = await file.read()
+    data = await file.read(15_000_001)             # never more than the limit in memory
     if not data or len(data) > 15_000_000:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Send a photo under 15 MB")
     ct = (file.content_type or "").split(";")[0].lower()

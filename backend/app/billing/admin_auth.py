@@ -101,24 +101,27 @@ class LinkIn(BaseModel):
 
 
 @router.post("/login/link")
-def login_link(body: LinkIn) -> dict:
+def login_link(body: LinkIn, request: Request) -> dict:
     """One-time sign-in link made on the server (wiseplus admin-link): for when the admin phone can't get a code.
     Single use, 15 minutes."""
+    from ..core import ratelimit
+    ratelimit.hit(request, "admin-link", 10, 900)
     import hashlib
     import hmac
     import time
 
     from sqlalchemy import text
-    with system_session() as db:
-        row = db.execute(text("select value_enc from platform_secrets where key = 'admin_link'")).first()
-        db.execute(text("delete from platform_secrets where key = 'admin_link'"))
+    with system_session() as db:                 # a wrong code doesn't use up the real link; the right one does
+        row = db.execute(text("select value_enc from platform_secrets where key = 'admin_link' for update")).first()
+        try:
+            digest, until = row[0].split(":") if row else ("", "0")
+        except ValueError:
+            digest, until = "", "0"
+        ok = bool(digest) and hmac.compare_digest(digest, hashlib.sha256(body.code.encode()).hexdigest()) and time.time() < float(until)
+        if ok or (row and time.time() >= float(until or 0)):
+            db.execute(text("delete from platform_secrets where key = 'admin_link'"))
     if not row:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "This link has been used or has expired")
-    try:
-        digest, until = row[0].split(":")
-    except ValueError:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "This link has been used or has expired") from None
-    ok = hmac.compare_digest(digest, hashlib.sha256(body.code.encode()).hexdigest()) and time.time() < float(until)
     phones = sorted(admin_phones())
     if not ok or not phones:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "This link has been used or has expired")

@@ -88,3 +88,23 @@ def test_lead_form_limit_uses_the_real_address(client: TestClient):
                         json={"name": "Lead Tester", "phone": "9" + str(uuid.uuid4().int)[:9], "consent": True})
         statuses.append(r.status_code)
     assert 429 in statuses
+
+
+def test_admin_link_survives_a_wrong_code(client: TestClient):
+    """Low: a wrong guess no longer burns the real one-time admin link; the right code still works once."""
+    import hashlib, time
+    from sqlalchemy import text
+    from app.db import system_session
+    code = "x" * 32
+    with system_session() as db:
+        db.execute(text("delete from platform_secrets where key = 'admin_link'"))
+        db.execute(text("insert into platform_secrets (key, value_enc) values ('admin_link', :v)"),
+                   {"v": hashlib.sha256(code.encode()).hexdigest() + ":" + str(int(time.time()) + 900)})
+    hd = {"x-forwarded-for": f"{_ip()}, 172.18.0.3"}
+    def count():
+        with system_session() as db:
+            return db.execute(text("select count(*) from platform_secrets where key = 'admin_link'")).scalar()
+    assert client.post("/api/admin/login/link", headers=hd, json={"code": "y" * 32}).status_code == 400
+    assert count() == 1                          # still there after a wrong guess
+    client.post("/api/admin/login/link", headers=hd, json={"code": code})
+    assert count() == 0                          # used once by the right code
