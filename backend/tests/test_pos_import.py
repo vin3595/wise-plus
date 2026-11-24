@@ -61,3 +61,43 @@ def test_bill_wise_csv_and_hand_picked_columns():
     assert p.ok and not p.item_wise and [figures(b).pays for b in p.bills] == [{"upi": 10500}, {"cash": 21000}]
     f = figures(p.bills[0])
     assert (f.taxable, f.cgst, f.sgst, f.total) == (10000, 250, 250, 10500)
+
+
+PETPOOJA_MASTER = ["Invoice No.", "Date", "Biller", "KOT No.", "Payment Type", "Payment Description", "Order Type", "Status",
+                   "Area", "Sub Order Type", "Group Name", "Brand Name", "GSTIN", "Assign To", "Phone", "Name", "Address",
+                   "Locality", "Persons", "Order Cancel Reason", "My Amount (₹)", "Discount (₹)", "Net Sales (₹)(M.A - D)",
+                   "Delivery Charge", "Container Charge", "Service Charge", "Additional Charge", "Deduction Charge",
+                   "Total Tax (₹)", "Round Off", "Waived off", "Total (₹)", "Online Tax Calculated", "GST Paid by Merchant",
+                   "GST Paid by Ecommerce", "Tip (₹)", "Non Taxable", "Amount (CGST (5% b))", "CGST (5% b)",
+                   "Amount (SGST (5% b))", "SGST (5% b)"]
+
+
+def pp_row(no, when, pay, otype, status, name, my, disc, net, tax, ro, total, desc=""):
+    return [no, when, "biller", "1", pay, desc, otype, status, "Parcel", otype, "Dine In  Menu", "", "", "", "", name, "", "", "",
+            "", my, disc, net, "0.00", "0.00", "0.00", "0.00", "0.00", tax, ro, "0.00", total, tax, "0.00", tax, "0.00",
+            "0.00", net, str(float(tax) / 2), net, str(float(tax) / 2)]
+
+
+def test_petpooja_orders_master_report():
+    """Petpooja › Reports › Orders: Master Report (one row per bill, title rows and Total/Min/Max/Avg on top)."""
+    rows = [["Date:", "2026-11-01 to 2026-11-23"], ["Name:", "Orders: Master Report"], ["Restaurant Name:", "ShakeWallah ( Jodhpur )"], [], [],
+            PETPOOJA_MASTER,
+            ["Total"] + [""] * 19 + ["1600.00"], ["Min."] + [""] * 19 + ["20"], ["Max."] + [""] * 19 + ["880"], ["Avg."] + [""] * 19 + ["400"],
+            pp_row("36157", "2026-11-23 22:17:09", "Cash", "Pick Up", "Success", "", "180.00", "0.00", "180.00", "0.00", "0.00", "180.00"),
+            pp_row("36156", "2026-11-23 22:12:32", "CARD", "Pick Up", "Success", "", "440.00", "0.00", "440.00", "0.00", "0.00", "440.00"),
+            pp_row("36155", "2026-11-23 22:10:19", "Online", "Delivery(Parcel)", "Success", "Ashu", "280.00", "101.20", "178.80", "8.94", "0.26", "188.00"),
+            pp_row("36154", "2026-11-23 22:06:16", "Part Payment", "Dine In", "Success", "", "300.00", "0.00", "300.00", "0.00", "0.00", "300.00",
+                   desc="Cash - 100.00, UPI - 200.00"),
+            pp_row("36153", "2026-11-23 21:00:00", "Cash", "Pick Up", "Cancelled", "", "500.00", "0.00", "500.00", "0.00", "0.00", "500.00")]
+    p = parse(xlsx(rows), "petpooja.xlsx")
+    assert p.ok, p.errors
+    assert not p.item_wise and len(p.bills) == 5
+    assert p.mapping["customer_name"] == "Name" and p.mapping["gross"] == "My Amount (₹)" and p.mapping["tax"] == "Total Tax (₹)"
+    assert "cgst" not in p.mapping or p.mapping["cgst"] == "CGST (5% b)"
+    f = [figures(b) for b in p.bills]
+    assert [x.pays for x in f[:3]] == [{"cash": 18000}, {"card": 44000}, {"online": 18800}]
+    z = f[2]
+    assert (z.gross, z.discount, z.taxable, z.cgst + z.sgst, z.round_off, z.total) == (28000, 10120, 17880, 894, 26, 18800)
+    assert f[2].order_type == "delivery" and f[3].order_type == "dine_in"
+    assert f[3].pays == {"cash": 10000, "upi": 20000}
+    assert f[4].status == "cancelled"

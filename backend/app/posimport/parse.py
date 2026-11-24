@@ -27,7 +27,7 @@ FIELDS: "OrderedDict[str, tuple[str, list[str]]]" = OrderedDict([
     ("date", ("Date (or date and time)", ["date", "invoicedate", "billdate", "orderdate", "createdon", "createdat",
                                           "datetime", "billdatetime", "ordertime", "businessdate", "created", "timestamp"])),
     ("time", ("Time", ["time", "billtime", "invoicetime"])),
-    ("item", ("Item name", ["item", "itemname", "product", "productname", "dish", "dishname", "menuitem", "name",
+    ("item", ("Item name", ["item", "itemname", "product", "productname", "dish", "dishname", "menuitem",
                             "itemdescription", "particulars"])),
     ("variant", ("Size / variant", ["variation", "variant", "variantname", "size", "portion"])),
     ("category", ("Category", ["category", "categoryname", "itemcategory", "group", "menugroup"])),
@@ -36,7 +36,7 @@ FIELDS: "OrderedDict[str, tuple[str, list[str]]]" = OrderedDict([
                                      "totalprice", "itemprice", "netamount", "price"])),
     ("hsn", ("HSN / SAC", ["hsn", "hsncode", "sac", "hsnsac", "saccode"])),
     ("rate", ("GST rate %", ["taxrate", "gstrate", "taxpercent", "gstpercent", "rate"])),
-    ("gross", ("Sub total (before discount)", ["subtotal", "mytotal", "grossamount", "gross", "billamount", "itemsubtotal"])),
+    ("gross", ("Sub total (before discount)", ["subtotal", "myamount", "mytotal", "grossamount", "gross", "billamount", "itemsubtotal"])),
     ("discount", ("Discount", ["discount", "discountamount", "totaldiscount", "disc"])),
     ("taxable", ("Taxable value", ["taxable", "taxableamount", "taxablevalue", "netsales", "aftertaxable"])),
     ("tax", ("Total tax", ["tax", "gst", "totaltax", "taxamount", "gstamount", "totalgst"])),
@@ -48,9 +48,10 @@ FIELDS: "OrderedDict[str, tuple[str, list[str]]]" = OrderedDict([
                               "finaltotal", "payable", "amountpayable", "invoiceamount", "net"])),
     ("payment", ("Payment type", ["paymenttype", "paymentmode", "payment", "paymentmethod", "paidby", "settlement",
                                   "modeofpayment", "tender", "paymode"])),
+    ("payment_desc", ("Payment details (split)", ["paymentdescription", "paymentdetails", "paymentbreakup", "splitdetails"])),
     ("order_type", ("Order type", ["ordertype", "type", "servicetype", "ordersource", "channel", "area"])),
     ("status", ("Status", ["status", "orderstatus", "billstatus", "invoicestatus"])),
-    ("customer_name", ("Customer name", ["customername", "customer", "name1", "guestname", "custname"])),
+    ("customer_name", ("Customer name", ["customername", "customer", "name", "guestname", "custname"])),
     ("customer_phone", ("Customer phone", ["customerphone", "phone", "mobile", "mobileno", "customermobile",
                                            "phoneno", "contactno", "custphone"])),
     ("customer_gstin", ("Customer GSTIN", ["gstin", "customergstin", "gstno", "customergst"])),
@@ -130,7 +131,8 @@ def _guess(headers: list[str]) -> dict[str, str]:
             if f in out:
                 continue
             for n in names:
-                hit = next((h for h, k in normed if h not in used and (k == n if strict else (len(n) > 3 and n in k))), None)
+                hit = next((h for h, k in normed if h not in used and (k == n if strict else (
+                    len(n) > 4 and n in k and not k.startswith(("non", "not", "without"))))), None)
                 if hit:
                     out[f] = hit
                     used.add(hit)
@@ -254,6 +256,19 @@ def pay_mode(v) -> str | None:
     return "other"
 
 
+def split_pays(desc, total: int) -> dict | None:
+    """'Cash - 200.00, Card - 100.00' / 'Cash:200 UPI:150' -> {cash: 20000, card: 10000}, if it adds up to the total."""
+    if not desc:
+        return None
+    out: dict[str, int] = {}
+    for word, amt in re.findall(r"([A-Za-z][A-Za-z ._/]*?)\s*[:\-=]?\s*(?:Rs\.?|₹)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)", str(desc)):
+        m = pay_mode(word)
+        a = money(amt)
+        if m and a:
+            out[m] = out.get(m, 0) + a
+    return out if out and sum(out.values()) == total else None
+
+
 def order_type(v) -> str | None:
     s = norm(v)
     if not s:
@@ -345,8 +360,10 @@ def parse(data: bytes, filename: str, mapping: dict[str, str] | None = None) -> 
         else:
             if not no:
                 continue                               # totals / footer rows
-            if norm(no) in ("total", "grandtotal", "subtotal"):
+            if norm(no) in ("total", "grandtotal", "subtotal", "min", "max", "avg", "average", "count", "sum"):
                 continue
+            if cell(r, "date") in (None, ""):
+                continue                               # summary rows (Total / Min. / Max. / Avg.) have no date
             when = parse_when(cell(r, "date"))
             if when is None:
                 p.errors.append(Issue(n, f"Bill {no}: date '{cell(r, 'date')}' isn't a date"))
@@ -366,7 +383,7 @@ def parse(data: bytes, filename: str, mapping: dict[str, str] | None = None) -> 
             v = money(cell(r, f))
             if v is not None and f not in b.values:
                 b.values[f] = v
-        for f in ("order_type", "status", "customer_name", "customer_phone", "customer_gstin", "payment"):
+        for f in ("order_type", "status", "customer_name", "customer_phone", "customer_gstin", "payment", "payment_desc"):
             v = cell(r, f)
             if v not in (None, "") and f not in b.values:
                 b.values[f] = str(v).strip()
@@ -440,7 +457,8 @@ def figures(b: PBill) -> Figures:
 
     status = "cancelled" if cancelled(v.get("status")) else "paid"
     mode = pay_mode(v.get("payment"))
-    pays = dict(b.pays) if b.pays else ({mode or "other": total} if total else {})
+    split = split_pays(v.get("payment_desc"), total) if mode is None or mode == "other" else None
+    pays = dict(b.pays) if b.pays else split or ({mode or "other": total} if total else {})
     if status == "paid" and mode == "complimentary":
         pays = {"complimentary": total}
 
