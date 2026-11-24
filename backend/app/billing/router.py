@@ -85,7 +85,9 @@ def billing(auth: Auth = Depends(get_auth), db: Session = Depends(get_db)) -> di
 
 
 def _founding_left(db: Session) -> int:
-    taken = db.scalar(select(func.count()).select_from(Subscription).where(Subscription.founding.is_(True))) or 0
+    from ..db import system_session             # counts every business's plan (RLS limits a restaurant to its own)
+    with system_session() as sdb:
+        taken = sdb.scalar(select(func.count()).select_from(Subscription).where(Subscription.founding.is_(True))) or 0
     return max(FOUNDING_SLOTS - taken, 0)
 
 

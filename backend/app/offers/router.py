@@ -161,10 +161,14 @@ def send_offer_otp(code: str, outlet_id: uuid.UUID, db: Session = Depends(get_db
         c, _o = osv.check(db, code, outlet_id)
     except osv.OfferError as e:
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from None
-    try:
-        otp.issue(db, osv.otp_ident(c), "offer")
-    except otp.OtpError as e:
-        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, str(e)) from None
+    err = None
+    with system_session() as sdb:                # codes live in a platform table (RLS: server sessions only)
+        try:
+            otp.issue(sdb, osv.otp_ident(c), "offer")
+        except otp.OtpError as e:
+            err = e
+    if err:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, str(err)) from None
     return {"sent_to": "…" + c.phone10[-4:]}
 
 
@@ -177,10 +181,14 @@ def verify_offer_otp(code: str, body: OtpIn, outlet_id: uuid.UUID, db: Session =
         c, _o = osv.check(db, code, outlet_id, lock=True)
     except osv.OfferError as e:
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from None
-    try:
-        otp.verify(db, osv.otp_ident(c), "offer", body.otp.strip())
-    except otp.OtpError as e:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e)) from None
+    err = None
+    with system_session() as sdb:                # committed even when wrong, so wrong tries are counted
+        try:
+            otp.verify(sdb, osv.otp_ident(c), "offer", body.otp.strip())
+        except otp.OtpError as e:
+            err = e
+    if err:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(err)) from None
     c.verified_at = datetime.now(timezone.utc)
     audit.record(db, auth.tenant_id, auth.user_id, "verify", "offer_code", c.id, after={"code": c.code})
     return {"verified": True}
