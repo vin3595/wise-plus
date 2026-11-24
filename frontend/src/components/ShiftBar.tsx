@@ -9,7 +9,8 @@ import CashCount, { denomText, denomTotal, type Denoms } from "./CashCount";
 /** {"n500": 2, "c10": 3} -> "₹500 × 2, ₹10 coin × 3" */
 
 /** The signed-in cashier's own shift at this outlet. Two cashiers each have their own. */
-export default function ShiftBar({ outletId, onChange }: { outletId: string; onChange?: (s: Shift | null) => void }) {
+export default function ShiftBar({ outletId, onChange, compact = false }: { outletId: string; onChange?: (s: Shift | null) => void; compact?: boolean }) {
+  const [chipOpen, setChipOpen] = useState(false);
   const [shift, setShift] = useState<Shift | null | undefined>(undefined);
   const [opening, setOpening] = useState("");
   const [mode, setMode] = useState<"none" | "cash" | "close">("none");
@@ -103,9 +104,19 @@ export default function ShiftBar({ outletId, onChange }: { outletId: string; onC
       </form>
     );
   }
+  // On the order screen the open shift is one small chip; tap it for cash in / out and closing.
+  if (compact && !chipOpen && mode === "none" && !openNote) {
+    return (
+      <button className="shift-chip" onClick={() => setChipOpen(true)} aria-expanded={false} title="Cash in / out, close shift">
+        <span className="dot-ok" aria-hidden />Shift open · {shift.bills} bills · {formatPaise(shift.sales_paise)}
+        {shift.expected_cash_paise !== null && <> · cash {formatPaise(shift.expected_cash_paise)}</>} <span aria-hidden>▾</span>
+      </button>
+    );
+  }
   return (
-    <div className="shift-bar">
+    <div className={`shift-bar ${compact ? "compact" : ""}`}>
       <span>Shift open{shift.drawer_name ? ` · ${shift.drawer_name}` : ""} · {shift.bills} bills · {formatPaise(shift.sales_paise)}{shift.expected_cash_paise !== null && ` · cash in drawer ${formatPaise(shift.expected_cash_paise)}`}</span>
+      {compact && mode === "none" && <button className="link small" onClick={() => setChipOpen(false)}>Hide</button>}
       {openNote && <span className="error">{openNote} <button className="link" onClick={() => setOpenNote(null)}>OK</button></span>}
       {mode === "none" && <>
         <button className="link" onClick={() => { pickKind("out"); setHanded("owner"); setMode("cash"); }}>Cash in / out</button>

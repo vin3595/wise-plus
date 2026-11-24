@@ -52,26 +52,26 @@ export function HeldList<L>({ held, onResume, onDrop, onClose }: {
 const MODE: Record<string, string> = { cash: "Cash", upi: "UPI", card: "Card", due: "Due", complimentary: "Free" };
 
 /** Today's last bills at this outlet: see how each was paid and print it again. */
-export function RecentBills({ outletId, isManager, onPrint, onClose }: {
-  outletId: string; isManager: boolean; onPrint: (b: Bill) => void; onClose: () => void;
+export function RecentBills({ outletId, q = "", isManager, onPrint, onClose }: {
+  outletId: string; q?: string; isManager: boolean; onPrint: (b: Bill) => void; onClose: () => void;
 }) {
   const [bills, setBills] = useState<Bill[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Bill | null>(null);
   const [n, setN] = useState(0);
   useEffect(() => {
-    api<Bill[]>(`/bills?${new URLSearchParams({ outlet_id: outletId })}`).then((b) => setBills(b.slice(0, 25)))
+    api<Bill[]>(`/bills?${new URLSearchParams({ outlet_id: outletId, ...(q ? { q } : {}) })}`).then((b) => setBills(b.slice(0, 25)))
       .catch((e) => setError(e instanceof Error ? e.message : "Couldn't load bills"));
-  }, [outletId, n]);
+  }, [outletId, q, n]);
   if (editing) return <BillCorrections bills={[editing]} outletId={outletId} isManager={isManager}
     onClose={() => setEditing(null)} onSaved={() => { setEditing(null); setN((x) => x + 1); }} />;
   return (
     <div className="modal-back" onClick={onClose}>
       <div className="modal held-panel" role="dialog" aria-label="Recent bills" onClick={(e) => e.stopPropagation()}>
-        <div className="held-head"><h3>Recent bills</h3><button className="choice dialog-close" onClick={onClose}>Close</button></div>
+        <div className="held-head"><h3>{q ? `Bills matching "${q}"` : "Recent bills"}</h3><button className="choice dialog-close" onClick={onClose}>Close</button></div>
         {error && <p className="error">{error}</p>}
         {!bills && !error && <p className="muted">Loading…</p>}
-        {bills?.length === 0 && <p className="muted">No bills yet today.</p>}
+        {bills?.length === 0 && <p className="muted">{q ? "No bill with that number or mobile." : "No bills yet today."}</p>}
         {bills && bills.length > 0 && (
           <ul className="held-list">
             {bills.map((b) => (

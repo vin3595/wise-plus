@@ -20,7 +20,7 @@ import { cleanMobile, openCustomerScreen, useCounterScreen, type ScreenState } f
 import CardAuto, { type CardReq } from "../components/CardAuto";
 import { LoyaltyBox, type LoyaltyUse } from "../components/Loyalty";
 import { CameraScan, looksScanned, useHandScanner } from "../barcode";
-import { ScanLine } from "lucide-react";
+import { Car, MessageSquareText, ScanLine, User } from "lucide-react";
 
 /** A short beep: good scan / not found (the counter is noisy, eyes are on the customer). */
 function beep(ok: boolean) {
@@ -225,13 +225,15 @@ export default function Orders() {
 
   function resetCart() {
     setCart([]); setTable(""); setCar(""); setCustomer(""); setNotes(""); setPhone(""); setDeclined(false); setOrderType(startType);
-    setAddingTo(null); setPayMode("cash"); setTendered(""); setNoteOpen(false); setRefresh((n) => n + 1); setLoy({ points_paise: 0, use_reward: false }); setLoyAmount(0);
+    setAddingTo(null); setPayMode("cash"); setTendered(""); setNoteOpen(false); setOpen({}); setRefresh((n) => n + 1); setLoy({ points_paise: 0, use_reward: false }); setLoyAmount(0);
   }
 
   // Hold: park this cart on the device, serve the next customer, bring it back later.
   const [held, setHeld] = useState<Held<CartLine>[]>([]);
   const [showHeld, setShowHeld] = useState(false);
   const [showRecent, setShowRecent] = useState(false);
+  const [billQ, setBillQ] = useState("");   // "Bill no" box: opens that bill (or bills for a mobile number)
+  const [open, setOpen] = useState<{ name?: boolean; car?: boolean }>({});
   useEffect(() => { setHeld(outletId ? loadHeld<CartLine>(outletId) : []); }, [outletId]);
   const keepHeld = (h: Held<CartLine>[]) => { setHeld(h); saveHeld(outletId, h); };
   function holdCart() {
@@ -423,7 +425,7 @@ export default function Orders() {
   return (
     <>
     {can("billing") && <OfflineBar />}
-    {outletId && can("billing") && off.online && <ShiftBar key={`${outletId}-${refresh}`} outletId={outletId} />}
+    {outletId && can("billing") && off.online && <ShiftBar key={`${outletId}-${refresh}`} outletId={outletId} compact />}
     <div className="pos pp">
       <div className="pos-menu">
         {outletId && off.online && <PendingOrders outletId={outletId} onBilled={billed} />}
@@ -442,9 +444,14 @@ export default function Orders() {
             }} />
           <kbd className="hint">/</kbd>
           <button className="icon-btn scan-btn" onClick={() => setCamera(true)} aria-label="Scan with the camera" title="Scan a barcode or a customer's offer QR"><ScanLine size={20} /></button>
-          {!addingTo && cart.length > 0 && <button className="choice sold-toggle" onClick={holdCart} title="Put this order aside and serve the next customer">Hold</button>}
+          <span className="tool-sep" aria-hidden />
+          {off.online && outletId && can("billing") && (
+            <input className="input bill-find" placeholder="Bill no" aria-label="Open a bill by its number or the customer's mobile" value={billQ}
+              onChange={(e) => setBillQ(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && billQ.trim()) { setShowRecent(true); } if (e.key === "Escape") setBillQ(""); }} />
+          )}
           {held.length > 0 && <button className="choice sold-toggle held-btn" onClick={() => setShowHeld(true)} aria-label={`${held.length} on hold`}>Held <span className="badge">{held.length}</span></button>}
-          {off.online && outletId && can("billing") && <button className="choice sold-toggle" onClick={() => setShowRecent(true)} title="Today's last bills: reprint">Recent</button>}
+          {off.online && outletId && can("billing") && <button className="choice sold-toggle" onClick={() => setShowRecent(true)} title="Today's last bills: reprint or edit">Recent</button>}
           {off.online && <button className={`choice sold-toggle ${soldMode ? "on" : ""}`} aria-pressed={soldMode} onClick={() => setSoldMode(!soldMode)}
             title="Tap items to mark them sold out for today">{soldMode ? "Done" : "Sold out"}</button>}
         </div>
@@ -520,13 +527,19 @@ export default function Orders() {
             {allowedTypes.length === 1 && <p className="small muted only-type">{ORDER_TYPE_LABEL[allowedTypes[0]]} orders</p>}
             <div className="cart-meta">
               {orderType === "dine_in" && <Input placeholder="Table, e.g. T4" value={table} onChange={(e) => setTable(e.target.value.toUpperCase())} />}
-              {orderType === "takeaway" && (
-                <Input placeholder={outlet?.car_number_required ? "Car number (required)" : "Car number"} value={car}
-                  onChange={(e) => setCar(e.target.value.toUpperCase())} />
-              )}
-              <Input placeholder="Customer name" value={customer} onChange={(e) => setCustomer(e.target.value)} />
               {canBill && <Input inputMode="tel" placeholder="Customer mobile" aria-label="Customer mobile, optional" value={phone}
                 onChange={(e) => { setPhone(e.target.value); if (e.target.value) setDeclined(false); }} />}
+              {orderType === "takeaway" && (outlet?.car_number_required || open.car || car) && (
+                <Input placeholder={outlet?.car_number_required ? "Car number (required)" : "Car number"} value={car} autoFocus={open.car && !car}
+                  onChange={(e) => setCar(e.target.value.toUpperCase())} />
+              )}
+              {(open.name || customer) && <Input placeholder="Customer name" value={customer} autoFocus={open.name && !customer} onChange={(e) => setCustomer(e.target.value)} />}
+              {(noteOpen || notes) && <Input className="input meta-wide" placeholder="Note for the kitchen" aria-label="Note for the kitchen" value={notes} autoFocus={noteOpen && !notes} onChange={(e) => setNotes(e.target.value)} />}
+            </div>
+            <div className="meta-chips">
+              {!customer && !open.name && <button className="meta-chip" onClick={() => setOpen({ ...open, name: true })}><User size={16} aria-hidden /> Name</button>}
+              {orderType === "takeaway" && !outlet?.car_number_required && !car && !open.car && <button className="meta-chip" onClick={() => setOpen({ ...open, car: true })}><Car size={16} aria-hidden /> Car no</button>}
+              {!notes && !noteOpen && <button className="meta-chip" onClick={() => setNoteOpen(true)}><MessageSquareText size={16} aria-hidden /> Kitchen note</button>}
             </div>
           </>
         )}
@@ -557,9 +570,6 @@ export default function Orders() {
           onBill={can("billing") ? setBilling : undefined} tables={outlet?.table_labels || []} />}
 
         <div className="cart-foot">
-        {cart.length > 0 && !addingTo && (noteOpen || notes
-          ? <Input placeholder="Note for the kitchen" aria-label="Note for the kitchen" value={notes} autoFocus={noteOpen && !notes} onChange={(e) => setNotes(e.target.value)} />
-          : <button className="link small add-note" onClick={() => setNoteOpen(true)}>+ Note for the kitchen</button>)}
         {canBill && cart.length > 0 && !addingTo && (
           <div className="cust-row">
             {screenOn
@@ -619,6 +629,8 @@ export default function Orders() {
               Save &amp; Print{cart.length > 0 && <span className="sp-amt"> {formatPaise(total)}</span>}
             </Button>
           )}
+          {!addingTo && <Button variant="ghost" className="hold-btn" disabled={cart.length === 0} onClick={holdCart}
+            title="Put this order aside and serve the next customer">Hold</Button>}
           {off.online && (
             <Button variant={canBill && !addingTo ? "ghost" : "primary"} className={`kot-only ${canBill && !addingTo ? "" : "grow"}`} disabled={busy || cart.length === 0 || !outletId} onClick={() => send(false)}
               title="Sends the order to the kitchen; bill it later from Open orders (F4)">
@@ -644,7 +656,7 @@ export default function Orders() {
       {printing && <PrintBill bill={printing} onDone={() => setPrinting(null)} />}
       {showHeld && <HeldList held={held} onResume={resumeHeld} onClose={() => setShowHeld(false)}
         onDrop={(h) => { const rest = held.filter((x) => x.id !== h.id); keepHeld(rest); if (!rest.length) setShowHeld(false); }} />}
-      {showRecent && outletId && <RecentBills outletId={outletId} isManager={can("approve")} onClose={() => setShowRecent(false)} onPrint={(b) => { setShowRecent(false); setPrinting(b); }} />}
+      {showRecent && outletId && <RecentBills outletId={outletId} q={billQ.trim()} isManager={can("approve")} onClose={() => { setShowRecent(false); setBillQ(""); }} onPrint={(b) => { setShowRecent(false); setBillQ(""); setPrinting(b); }} />}
       {cardReq && <CardAuto request={cardReq} onBilled={(b) => { setCardReq(null); billed(b); }} onClose={() => { setCardReq(null); setRefresh((n) => n + 1); }}
         onRetry={() => { const o = cardReq.order_id; setCardReq(null); cardAutoPay({ id: o } as Order); }} />}
       {pickTerminal && (

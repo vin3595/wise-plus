@@ -1150,3 +1150,23 @@ button.held-main { cursor: pointer; }
 
 .pos-map { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 0.6rem; margin: 0.6rem 0; }
 .warn { color: #8a5a00; }
+
+/* Order screen: compact shift chip, one tool strip, customer details as chips */
+.shift-chip { display: inline-flex; align-items: center; gap: 0.45rem; margin: 0 0 0.6rem; padding: 0.35rem 0.8rem; border: 1px solid var(--line); border-radius: 999px; background: var(--card); font: 600 0.85rem var(--font); color: var(--ink-2); cursor: pointer; }
+.shift-chip .dot-ok { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: #1f9d6b; }
+.shift-bar.compact { font-size: 0.88rem; padding: 0.4rem 0.75rem; }
+.pos-search .tool-sep { width: 1px; align-self: stretch; background: var(--line); margin: 0.3rem 0.1rem; }
+.pos-search .bill-find { width: 7.5rem; padding: 0.55rem 0.6rem; border: 1px solid var(--line-2); border-radius: var(--r-s, 8px); font-size: 0.95rem; }
+.meta-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.meta-chips:empty { display: none; }
+.meta-chip { display: inline-flex; align-items: center; gap: 0.35rem; min-height: 2.3rem; padding: 0 0.8rem; border: 1px dashed var(--line-2); border-radius: 999px; background: none; font: 600 0.88rem var(--font); color: var(--ink-2); cursor: pointer; }
+.meta-chip:hover { border-style: solid; color: var(--ink); }
+.cart-meta .meta-wide { grid-column: 1 / -1; }
+.send-row .hold-btn { flex: none; }
+@media (min-width: 981px) {
+  .shell .pos.pp .pos-cart > .meta-chips { margin-top: 0.5rem; }
+}
+@media (min-width: 981px) {
+  .shell .pos.pp .pos-menu { grid-template-rows: auto auto 1fr; align-content: start; }
+}
+@media (max-width: 980px) { .pos-search .tool-sep, .pos-search kbd.hint { display: none; } }
