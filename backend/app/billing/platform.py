@@ -325,7 +325,8 @@ def wa_f2s(_adm: str = Depends(require_admin)) -> dict:
     s = get_settings()
     names = [n for n in (s.wa_otp_template, s.wa_bill_template, s.wa_nightly_template, s.wa_promo_template,
                          s.wa_promo_offer_template, s.wa_update_template, s.wa_growth_template) if n]
-    return {"on": s.wa_provider == "fast2sms", "ready": client.f2s_ready(), "has_key": bool(s.fast2sms_api_key),
+    hook = (s.public_base_url.rstrip("/") + "/api/whatsapp/fast2sms/" + s.wa_f2s_hook) if s.wa_f2s_hook else None
+    return {"on": s.wa_provider == "fast2sms", "ready": client.f2s_ready(), "has_key": bool(s.fast2sms_api_key), "webhook_url": hook,
             "phone_number_id": s.wa_f2s_number_id or None, "templates": client.f2s_templates(), "names": list(dict.fromkeys(names))}
 
 
@@ -359,6 +360,9 @@ def set_wa_f2s(body: dict, _adm: str = Depends(require_admin)) -> dict:
         vals["wa_f2s_templates"] = json.dumps(t)
     if "on" in body:
         vals["wa_provider"] = "fast2sms" if body.get("on") else "meta"
+    if body.get("new_hook"):                     # a new secret replies address; the old one stops working at once
+        import secrets
+        vals["wa_f2s_hook"] = secrets.token_urlsafe(32)
     _save_platform(vals)
     return wa_f2s(_adm)
 
@@ -405,7 +409,7 @@ def login_codes(_adm: str = Depends(require_admin)) -> dict:
     return {"phone": phone, "has_sms_key": bool(s.fast2sms_api_key or (s.msg91_auth_key and s.msg91_template_id)),
             "mail_user": s.mail_user or None, "has_mail_password": bool(s.mail_password),
             "whatsapp_ready": bool(s.wa_token and s.wa_phone_number_id) or s.wa_provider == "fast2sms",
-            "google_client_id": s.google_client_id or None}
+            "google_client_id": s.google_client_id or None, "has_gemini_key": bool(s.gemini_api_key)}
 
 
 @router.post("/login-codes")
@@ -424,6 +428,16 @@ def set_login_codes(body: dict, _adm: str = Depends(require_admin)) -> dict:
         vals["fast2sms_api_key"] = key
     if phone == "sms" and not (key or s.fast2sms_api_key or (s.msg91_auth_key and s.msg91_template_id)):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "For SMS, paste your Fast2SMS API key first")
+    gk = str(body.get("gemini_api_key") or "").strip()
+    if gk:                                       # checked with Google before it's kept
+        import httpx
+        try:
+            ok = httpx.get("https://generativelanguage.googleapis.com/v1beta/models", params={"key": gk, "pageSize": 1}, timeout=15).status_code == 200
+        except Exception:  # noqa: BLE001
+            ok = None
+        if ok is False:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Google didn't accept that key")
+        vals["gemini_api_key"] = gk
     gid = str(body.get("google_client_id") or "").strip()
     if gid:
         if not gid.endswith(".apps.googleusercontent.com"):

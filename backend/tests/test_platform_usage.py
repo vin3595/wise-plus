@@ -142,3 +142,29 @@ def test_admin_login_codes(client, monkeypatch):
     with system_session() as db:
         db.execute(text("delete from platform_secrets where key in ('mail_user', 'mail_password', 'phone_otp')"))
     monkeypatch.setattr(get_settings(), "mail_user", ""); monkeypatch.setattr(get_settings(), "mail_password", "")
+
+
+def test_rotate_fast2sms_replies_address_and_gemini_key(monkeypatch):
+    """H2: a new secret replies address on demand (the old one stops); a new Gemini key is checked with Google first."""
+    from app.billing import platform as pf
+    from app.config import get_settings
+    import app.config as cfg
+    saved = {}
+    monkeypatch.setattr(pf, "_save_platform", lambda vals: saved.update(vals))
+    monkeypatch.setattr(get_settings(), "wa_f2s_hook", "old-secret")
+    pf.set_wa_f2s({"new_hook": True}, "admin")
+    assert len(saved["wa_f2s_hook"]) >= 40 and saved["wa_f2s_hook"] != "old-secret"
+
+    class R:
+        def __init__(self, c): self.status_code = c
+    import httpx
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: R(400))
+    with pytest.raises(Exception) as e:
+        pf.set_login_codes({"gemini_api_key": "AIza-bad-key-xxxxxxxxxxxxxxxx"}, "admin")
+    assert "didn't accept" in str(e.value.detail)
+    monkeypatch.setattr(httpx, "get", lambda *a, **k: R(200))
+    pf.set_login_codes({"gemini_api_key": "AIza-good-key-xxxxxxxxxxxxxxx"}, "admin")
+    assert saved["gemini_api_key"] == "AIza-good-key-xxxxxxxxxxxxxxx"
+    from app.purchases_ai import gemini
+    monkeypatch.setattr(get_settings(), "gemini_api_key", "AIza-good-key-xxxxxxxxxxxxxxx")
+    assert gemini.current_key() == "AIza-good-key-xxxxxxxxxxxxxxx"

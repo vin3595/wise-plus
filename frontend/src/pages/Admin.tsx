@@ -108,7 +108,7 @@ function YourWhatsApp() {
 
 /** Send WhatsApp templates (codes, bills, summaries, offers) through Fast2SMS instead of Meta directly. */
 function WhatsAppFast2SMS() {
-  type Info = { on: boolean; ready: boolean; has_key: boolean; phone_number_id: string | null; templates: Record<string, string>; names: string[] };
+  type Info = { on: boolean; ready: boolean; has_key: boolean; phone_number_id: string | null; templates: Record<string, string>; names: string[]; webhook_url: string | null };
   const [k, setK] = useState<Info | null>(null);
   const [f, setF] = useState<{ api_key: string; phone_number_id: string; templates: Record<string, string> }>({ api_key: "", phone_number_id: "", templates: {} });
   const [to, setTo] = useState("");
@@ -144,6 +144,14 @@ function WhatsAppFast2SMS() {
         {k.on ? <Button variant="ghost" disabled={act.busy} onClick={() => save({ on: false }, "Off: back to Meta directly.")}>Turn off</Button>
           : <Button variant="ghost" disabled={act.busy || !k.ready} onClick={() => save({ on: true }, "On ✓ WhatsApp now goes through Fast2SMS.")}>Turn on</Button>}
       </div>
+      <div style={{ marginTop: 12 }}>
+        <p className="small"><strong>Replies address</strong> (Fast2SMS › Webhook › WhatsApp › URL). Keep it private: it works like a password.</p>
+        {k.webhook_url ? <div className="row wrap" style={{ gap: 8, alignItems: "center" }}>
+          <code className="small" style={{ wordBreak: "break-all", flex: 1 }}>{k.webhook_url}</code>
+          <Button variant="ghost" onClick={() => { void navigator.clipboard?.writeText(k.webhook_url || ""); setMsg("Copied ✓ Paste it in Fast2SMS › Webhook."); }}>Copy</Button>
+        </div> : <p className="small muted">None yet.</p>}
+        <Button variant="ghost" disabled={act.busy} onClick={() => save({ new_hook: true }, "New address made ✓ Copy it into Fast2SMS › Webhook now: the old one has stopped working.")}>Make a new address</Button>
+      </div>
       <div className="row wrap" style={{ marginTop: 12, alignItems: "flex-end" }}>
         <Field label="Send a test to"><Input value={to} inputMode="numeric" placeholder="10-digit mobile" onChange={(e) => setTo(e.target.value.replace(/\D/g, "").slice(-10))} /></Field>
         <Button variant="ghost" disabled={act.busy || to.length !== 10 || !k.ready} onClick={() => act.run(async () => {
@@ -157,9 +165,9 @@ function WhatsAppFast2SMS() {
 
 /** How sign-in codes reach people: a mobile number gets WhatsApp or SMS, an email address gets an email from your Gmail. */
 function LoginCodes() {
-  type Info = { phone: "whatsapp" | "sms"; has_sms_key: boolean; mail_user: string | null; has_mail_password: boolean; whatsapp_ready: boolean; google_client_id: string | null };
+  type Info = { phone: "whatsapp" | "sms"; has_sms_key: boolean; mail_user: string | null; has_mail_password: boolean; whatsapp_ready: boolean; google_client_id: string | null; has_gemini_key: boolean };
   const [k, setK] = useState<Info | null>(null);
-  const [f, setF] = useState({ sms_key: "", mail_user: "", mail_password: "", google_client_id: "" });
+  const [f, setF] = useState({ sms_key: "", mail_user: "", mail_password: "", google_client_id: "", gemini_api_key: "" });
   const [msg, setMsg] = useState<string | null>(null);
   const act = useAction();
   const load = () => api<Info>("/platform/login-codes").then((x) => { setK(x); setF((o) => ({ ...o, mail_user: o.mail_user || x.mail_user || "easemybills@gmail.com" })); }).catch(() => setK(null));
@@ -168,11 +176,22 @@ function LoginCodes() {
   const save = (body: Record<string, string>, done: string) => act.run(async () => {
     const r = await api<Info & { test_email_to: string | null }>("/platform/login-codes", { body });
     setK(r); setMsg(r.test_email_to ? `Saved ✓ A test email went to ${r.test_email_to}.` : done);
-    setF((o) => ({ ...o, sms_key: "", mail_password: "", google_client_id: "" }));
+    setF((o) => ({ ...o, sms_key: "", mail_password: "", google_client_id: "", gemini_api_key: "" }));
   });
   return (<>
     <Card title="Codes to a mobile number">
       <p className="small">{k.whatsapp_ready ? "On ✓ Codes to a mobile number go on WhatsApp (through Fast2SMS)." : "WhatsApp isn't set up yet: see Your WhatsApp."}</p>
+    </Card>
+    <Card title="Bill scanning key (Google Gemini)">
+      <p className="small">{k.has_gemini_key ? "Set here ✓ (used instead of the server's key)." : "Using the key set on the server."}</p>
+      <ol className="small muted" style={{ paddingLeft: 18 }}>
+        <li>Open <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">aistudio.google.com › API keys</a>, create a new key in the same project, and copy it.</li>
+        <li>Paste it here and Save: it's checked with Google first. Then delete the old key there.</li>
+      </ol>
+      <div className="row wrap">
+        <Field label="New Gemini API key"><Input type="password" value={f.gemini_api_key} onChange={(e) => setF({ ...f, gemini_api_key: e.target.value.trim() })} autoComplete="off" /></Field>
+      </div>
+      <Button disabled={act.busy || f.gemini_api_key.length < 20} onClick={() => save({ gemini_api_key: f.gemini_api_key }, "Saved ✓ Bill scanning uses the new key.")}>Save</Button>
     </Card>
     <Card title="Sign in with Google">
       <p className="small">{k.google_client_id ? <>On ✓ The Google button shows on sign-in and sign-up.</> : "Off: add a Google Client ID to show the Google button."}</p>

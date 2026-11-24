@@ -112,6 +112,16 @@ def _resolve_model(model_id: str | None) -> str:
 # ---------------------------------------------------------------------------
 
 _client_singleton: Optional[genai.Client] = None
+_client_key: str = ""
+
+
+def current_key() -> str:
+    """The key set in admin (wise-plus), else the server's WISE_GEMINI_API_KEY."""
+    try:
+        from app.config import get_settings
+        return get_settings().gemini_api_key or GEMINI_API_KEY
+    except Exception:  # noqa: BLE001
+        return GEMINI_API_KEY
 
 
 def _client() -> genai.Client:
@@ -120,13 +130,15 @@ def _client() -> genai.Client:
     The SDK is thread-safe and internally pools HTTP connections; a single
     instance is materially faster than creating one per request.
     """
-    global _client_singleton
-    if _client_singleton is not None:
+    global _client_singleton, _client_key
+    key = current_key()
+    if _client_singleton is not None and key == _client_key:
         return _client_singleton
-    if not GEMINI_API_KEY:
+    if not key:
         raise RuntimeError("GEMINI_API_KEY is not configured in backend/.env")
+    _client_key = key
     _client_singleton = genai.Client(
-        api_key=GEMINI_API_KEY,
+        api_key=key,
         http_options=types.HttpOptions(
             # Bounded exponential backoff on transient failures. 5 attempts
             # (~30 s worst-case) matches Google's own recommendation and is
@@ -244,8 +256,8 @@ class LlmChat:
             # message with no API key in it.
             msg = str(exc)
             # Redact any accidental key echo — belt-and-braces.
-            if GEMINI_API_KEY:
-                msg = msg.replace(GEMINI_API_KEY, "***REDACTED***")
+            for k in {GEMINI_API_KEY, current_key()} - {""}:
+                msg = msg.replace(k, "***REDACTED***")
             raise RuntimeError(f"Gemini API call failed: {msg}") from exc
 
         um = getattr(resp, "usage_metadata", None)
