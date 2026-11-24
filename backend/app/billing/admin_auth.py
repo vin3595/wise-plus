@@ -6,7 +6,7 @@ so you're never locked out. Sign-in is a code on WhatsApp/SMS, like restaurants;
 from __future__ import annotations
 
 import jwt
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from ..config import get_settings
@@ -62,7 +62,9 @@ def _ten(p: str) -> str:
 
 
 @router.post("/login/start")
-def start(body: StartIn) -> dict:
+def start(body: StartIn, request: Request) -> dict:
+    from ..core import ratelimit
+    ratelimit.hit(request, "admin", 5, 900)
     phone = _ten(body.phone)
     if is_admin_phone(phone):           # same answer either way: no hint who the admin is
         with system_session() as db:
@@ -74,7 +76,9 @@ def start(body: StartIn) -> dict:
 
 
 @router.post("/login/verify")
-def verify(body: VerifyIn) -> dict:
+def verify(body: VerifyIn, request: Request) -> dict:
+    from ..core import ratelimit
+    ratelimit.hit(request, "admin-verify", 10, 900)
     phone = _ten(body.phone)
     if not is_admin_phone(phone):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Wrong code")

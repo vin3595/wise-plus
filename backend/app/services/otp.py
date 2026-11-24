@@ -36,6 +36,12 @@ def issue(db: Session, identifier: str, purpose: str) -> str:
     )
     if recent and recent >= MAX_SENDS_PER_WINDOW:
         raise OtpError("Too many codes requested. Try again in 15 minutes.")
+    if purpose != "admin":
+        hour = db.scalar(select(func.count()).select_from(OtpCode).where(
+            OtpCode.created_at >= _now() - timedelta(hours=1), OtpCode.purpose != "admin")) or 0
+        if hour >= s.otp_hourly_cap:          # someone is pumping codes: stop, and tell the admin once an hour
+            _cap_alert(db, hour)
+            raise OtpError("We're getting a lot of sign-ins right now. Please try again in a few minutes.")
     code = generate_otp()
     db.add(OtpCode(
         identifier=identifier, purpose=purpose, code_hash=hash_otp(code, identifier, s.jwt_secret),
@@ -44,6 +50,25 @@ def issue(db: Session, identifier: str, purpose: str) -> str:
     db.flush()
     _deliver(identifier, code)
     return code
+
+
+def _cap_alert(db: Session, n: int) -> None:
+    from ..models import AuthThrottle
+    key = "alert:otpcap:" + _now().strftime("%Y%m%d%H")
+    if db.get(AuthThrottle, key) is not None:
+        return
+    db.add(AuthThrottle(key=key, failures=n))
+    db.flush()
+    log.warning("otp: hourly cap reached (%s codes in the last hour): new codes paused", n)
+    s = get_settings()
+    if s.mail_user and s.mail_password:
+        try:
+            send_mail(s.mail_user, "Ease My Bill: sign-in codes paused",
+                      f"{n} sign-in/sign-up codes were requested in the last hour, over the limit of {s.otp_hourly_cap}. "
+                      "New codes are paused until the hour passes. If this wasn't real sign-ups, someone may be abusing the "
+                      "sign-up form; if it was, raise WISE_OTP_HOURLY_CAP.")
+        except Exception:  # noqa: BLE001
+            log.exception("otp: couldn't email the cap alert")
 
 
 def verify(db: Session, identifier: str, purpose: str, code: str) -> None:

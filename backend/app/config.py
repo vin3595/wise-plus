@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     signup_mode: str = "open"      # open | first (Wise Box) | closed
     otp_ttl_minutes: int = 10
     otp_max_attempts: int = 5
+    rate_limits: bool = True       # per-address request limits (core/ratelimit.py); off only in the test suite
+    otp_hourly_cap: int = 150      # wise-plus: sign-in / sign-up codes sent per hour across everyone (stops code-pumping)
     msg91_auth_key: str = ""
     msg91_template_id: str = ""
     fast2sms_api_key: str = ""

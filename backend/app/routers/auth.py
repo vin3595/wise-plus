@@ -5,7 +5,7 @@ import logging
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -18,12 +18,19 @@ from ..db import system_session
 from ..models import Brand, Outlet, TaxGroup, Tenant, User, UserOutlet
 from ..schemas import GoogleLogin, GoogleSignup, OtpRequest, OtpSent, OtpVerify, PinLogin, SignupStart, SignupVerify, TokenOut
 from ..modules import clean as clean_modules
+from ..core import ratelimit
 from ..services import audit, otp, throttle
 from ..services.first_outlet import first_outlet
 from .common import issue_token
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _send_limit(request: Request) -> None:
+    """Codes cost money to send: a few per address every 15 minutes, and a daily ceiling."""
+    ratelimit.hit(request, "send", 8, 900)
+    ratelimit.hit(request, "send-day", 30, 86400, "Too many codes from here today. Try again tomorrow.")
 
 
 def _dev_code(code: str) -> str | None:
@@ -51,7 +58,8 @@ def login_id_available(login_id: str) -> dict:
 
 
 @router.post("/signup/start", response_model=OtpSent)
-def signup_start(body: SignupStart) -> OtpSent:
+def signup_start(body: SignupStart, request: Request) -> OtpSent:
+    _send_limit(request)
     error = None
     with system_session() as db:
         _check_signup_open(db)
@@ -67,7 +75,8 @@ def signup_start(body: SignupStart) -> OtpSent:
 
 
 @router.post("/signup/verify", response_model=TokenOut)
-def signup_verify(body: SignupVerify) -> TokenOut:
+def signup_verify(body: SignupVerify, request: Request) -> TokenOut:
+    ratelimit.hit(request, "verify", 30, 900)
     s = get_settings()
     error = None
     result = None
@@ -143,7 +152,8 @@ def _find_tenant(db, login_id: str | None, kind: str | None = None, ident: str |
 
 
 @router.post("/otp/request", response_model=OtpSent)
-def otp_request(body: OtpRequest) -> OtpSent:
+def otp_request(body: OtpRequest, request: Request) -> OtpSent:
+    _send_limit(request)
     try:
         kind, ident = normalize_identifier(body.identifier)
     except ValueError as e:
@@ -169,7 +179,8 @@ def otp_request(body: OtpRequest) -> OtpSent:
 
 
 @router.post("/otp/verify", response_model=TokenOut)
-def otp_verify(body: OtpVerify) -> TokenOut:
+def otp_verify(body: OtpVerify, request: Request) -> TokenOut:
+    ratelimit.hit(request, "verify", 30, 900)
     try:
         kind, ident = normalize_identifier(body.identifier)
     except ValueError as e:
@@ -225,7 +236,8 @@ def _google_email(credential: str) -> tuple[str, str]:
 
 
 @router.post("/google", response_model=TokenOut)
-def google_login(body: GoogleLogin) -> TokenOut:
+def google_login(body: GoogleLogin, request: Request) -> TokenOut:
+    ratelimit.hit(request, "google", 20, 900)
     email, _ = _google_email(body.credential)
     with system_session() as db:
         found = _accounts(db, "email", email)
@@ -242,7 +254,9 @@ def google_login(body: GoogleLogin) -> TokenOut:
 
 
 @router.post("/signup/google", response_model=TokenOut)
-def google_signup(body: GoogleSignup) -> TokenOut:
+def google_signup(body: GoogleSignup, request: Request) -> TokenOut:
+    ratelimit.hit(request, "google", 20, 900)
+    ratelimit.hit(request, "signup-day", 10, 86400, "Too many new accounts from here today. Try again tomorrow.")
     email, gname = _google_email(body.credential)
     with system_session() as db:
         _check_signup_open(db)
