@@ -77,3 +77,19 @@ def manifest(login_id: str) -> JSONResponse:
         },
         media_type="application/manifest+json",
     )
+
+
+@router.post("/csp-report", status_code=204, include_in_schema=False)
+async def csp_report(request: Request) -> None:
+    """Security M5: what the Content-Security-Policy blocked, in the server log (so a missed allowance shows up)."""
+    import json
+    import logging
+    from ..core import ratelimit
+    try:
+        ratelimit.hit(request, "csp", 60, 900)
+        raw = (await request.body())[:4000]
+        r = (json.loads(raw) or {}).get("csp-report", {}) if raw else {}
+        logging.getLogger("wise.csp").warning("csp blocked %s on %s (%s)", str(r.get("blocked-uri"))[:200],
+                                              str(r.get("document-uri"))[:200], str(r.get("violated-directive"))[:80])
+    except Exception:  # noqa: BLE001
+        pass
