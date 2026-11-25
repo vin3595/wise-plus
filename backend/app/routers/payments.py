@@ -339,7 +339,8 @@ def _out(db: Session, req: UpiRequest) -> dict:
     out: dict = {"id": str(req.id), "status": req.status, "amount_paise": req.amount_paise, "upi_string": req.upi_string,
                  "provider": req.provider, "expires_at": req.expires_at.isoformat(), "payment_ref": req.payment_ref,
                  "payer": req.payer, "problem": req.problem, "order_id": str(req.order_id), "bill": None,
-                 "slip": (req.bill_body or {}).get("slip"), "print_qr": bool(cfg and cfg.print_qr)}
+                 "slip": (req.bill_body or {}).get("slip"), "print_qr": bool(cfg and cfg.print_qr),
+                 "on_bill": bool((req.bill_body or {}).get("on_bill"))}
     if req.bill_id:
         out["bill"] = bill_out(db, db.get(Bill, req.bill_id)).model_dump(mode="json")
     return out
@@ -468,9 +469,12 @@ def upi_waiting(outlet_id: uuid.UUID, auth: Auth = Depends(require(Perm.billing)
     the box checks each waiting QR with the provider, so it works without the webhook too."""
     ensure_outlet_access(db, auth, outlet_id)
     since = _now() - timedelta(minutes=10)
+    # QRs printed on bills aren't listed while waiting (there are many); once paid they come back for the
+    # "80 rupees received" announcement.
     not_on_bill = UpiRequest.bill_body["on_bill"].astext.is_(None)
-    reqs = list(db.scalars(select(UpiRequest).where(UpiRequest.outlet_id == outlet_id, not_on_bill, (UpiRequest.status == "waiting") |
-                                                    ((UpiRequest.paid_at != None) & (UpiRequest.paid_at > since)))  # noqa: E711
+    paid_lately = (UpiRequest.paid_at != None) & (UpiRequest.paid_at > since)  # noqa: E711
+    reqs = list(db.scalars(select(UpiRequest).where(UpiRequest.outlet_id == outlet_id,
+                                                    (not_on_bill & (UpiRequest.status == "waiting")) | paid_lately)
                            .order_by(UpiRequest.created_at).limit(50).with_for_update(skip_locked=True)))
     cfg = db.get(PaymentSettings, auth.tenant_id)
     if cfg and cfg.qr_on_bill:

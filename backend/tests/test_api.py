@@ -966,6 +966,8 @@ def test_upi_qr_on_every_bill_switches_cash_to_upi(client, monkeypatch):
     assert client.post(f"/api/public/razorpay/{key}", content=ev, headers={"X-Razorpay-Signature": sig}).json() == {"ok": True}
     got = client.get(f"/api/bills/{b['id']}", headers=h(tok)).json()
     assert [(p["mode"], p["amount_paise"], p["reference"]) for p in got["payments"]] == [("upi", 8000, "pay_A1")]
+    w = client.get(f"/api/outlets/{oid}/upi/waiting", headers=h(tok)).json()            # announced at the counter
+    assert [(x["status"], x["on_bill"], x["amount_paise"]) for x in w] == [("billed", True, 8000)]
     assert got["revision"] == 2
     # The same webhook again changes nothing.
     assert client.post(f"/api/public/razorpay/{key}", content=ev, headers={"X-Razorpay-Signature": sig}).json() == {"ok": True}

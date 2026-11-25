@@ -6,7 +6,7 @@ import { PrintQrSlip, type QrSlipData } from "./Receipt";
 import type { Bill } from "../types";
 import { Button } from "../ui";
 
-interface UpiReq { id: string; status: "waiting" | "paid" | "billed" | "closed" | "problem"; amount_paise: number; upi_string: string | null; provider: string;
+interface UpiReq { on_bill?: boolean; id: string; status: "waiting" | "paid" | "billed" | "closed" | "problem"; amount_paise: number; upi_string: string | null; provider: string;
   expires_at: string; payment_ref: string | null; payer: string | null; problem: string | null; order_id: string; bill: Bill | null;
   slip?: QrSlipData | null; print_qr?: boolean }
 
@@ -107,6 +107,8 @@ export function UpiWatcher({ outletId, hideId, onPrint }: { outletId: string; hi
         const fresh = settled.filter((x) => !seen.current!.has(x.id));
         fresh.forEach((x) => seen.current!.add(x.id));
         if (fresh.length) setNews((n) => [...n, ...fresh.filter((x) => x.id !== hideId)]);
+        // QR printed on a bill: the bill already switched to UPI by itself, so the note goes away on its own
+        fresh.filter((x) => x.on_bill && x.status === "billed").forEach((x) => setTimeout(() => setNews((n) => n.filter((y) => y.id !== x.id)), 8000));
         fresh.filter((x) => x.status === "billed").forEach((x) => announce(x.amount_paise));   // like a soundbox
         setList(xs.filter((x) => x.status === "waiting"));
       } catch { /* box busy: try again */ }
@@ -117,12 +119,16 @@ export function UpiWatcher({ outletId, hideId, onPrint }: { outletId: string; hi
   }, [outletId, hideId]);
   const waiting = list.filter((x) => x.id !== hideId);
   const drop = (id: string) => setNews((n) => n.filter((x) => x.id !== id));
-  const token = (x: UpiReq) => (x.slip?.token_no ? `Token #${x.slip.token_no}` : "A bill") + (x.slip?.table_label ? `, table ${x.slip.table_label}` : "");
+  const token = (x: UpiReq) => x.on_bill ? `Bill ${x.bill?.invoice_no || ""}` : (x.slip?.token_no ? `Token #${x.slip.token_no}` : "A bill") + (x.slip?.table_label ? `, table ${x.slip.table_label}` : "");
   return (
     <div className="upi-watch" aria-live="polite">
       {news.map((x) => (
         <div key={x.id} className={`upi-toast ${x.status === "billed" ? "ok" : "warn"}`} role="status">
-          {x.status === "billed" ? <>
+          {x.status === "billed" && x.on_bill ? <>
+            <strong>{formatPaise(x.amount_paise)} received on UPI</strong>
+            <span>Bill {x.bill?.invoice_no} changed from Cash to UPI{x.payment_ref ? `, ref ${x.payment_ref}` : ""}.</span>
+            <div className="row"><Button variant="ghost" onClick={() => drop(x.id)}>OK</Button></div>
+          </> : x.status === "billed" ? <>
             <strong>{token(x)}: {formatPaise(x.amount_paise)} paid by UPI</strong>
             <span>Bill {x.bill?.invoice_no} made{x.payment_ref ? `, ref ${x.payment_ref}` : ""}.</span>
             <div className="row">{x.bill && <Button onClick={() => { onPrint(x.bill!); drop(x.id); }}>Print bill</Button>}<Button variant="ghost" onClick={() => drop(x.id)}>OK</Button></div>
