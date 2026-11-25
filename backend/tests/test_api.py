@@ -919,6 +919,59 @@ def test_upi_auto_confirm_test_mode_and_webhook(client):
     assert client.post("/api/public/razorpay/nope", content=ev, headers={"X-Razorpay-Signature": sig}).status_code == 404
 
 
+def test_upi_qr_on_every_bill_switches_cash_to_upi(client, monkeypatch):
+    """Every cash bill prints its own Razorpay QR; paying it turns the bill to UPI with nobody touching it."""
+    import hashlib as _h
+    import hmac as _hm
+    import json as _j
+    import uuid as _uuid
+    from app.routers import payments as pay
+    made = []
+
+    def fake_create(cfg, req, outlet, token):
+        req.provider_ref = f"qr_{len(made) + 1}"
+        req.upi_string = f"upi://pay?pa=shop.rzp@rxairtel&am={req.amount_paise / 100:.2f}&tr={req.provider_ref}"
+        made.append(req.provider_ref)
+    monkeypatch.setattr(pay, "_create_qr", fake_create)
+    monkeypatch.setattr(pay, "_fetch_paid", lambda cfg, req: None)
+    t = signup(client, "qronbill", "9829000099")
+    tok = t["token"]
+    brand_id = client.get("/api/tenant/brands", headers=h(tok)).json()[0]["id"]
+    oid = client.post("/api/tenant/outlets", headers=h(tok), json={"brand_id": brand_id, "name": "Paota", "code": "PT"}).json()["id"]
+    cat = client.post("/api/menu/categories", json={"brand_id": brand_id, "name": "Shakes"}, headers=h(tok)).json()["id"]
+    v = client.post("/api/menu/items", headers=h(tok), json={"brand_id": brand_id, "category_id": cat, "name": "Oreo Shake",
+                    "variants": [{"name": "300 ML", "price_paise": 8000}]}).json()["variants"][0]["id"]
+    client.post("/api/shifts", headers=h(tok), json={"outlet_id": oid, "opening_cash_paise": 0})
+
+    def cash_bill(mode="cash"):
+        o = client.post("/api/orders", headers=h(tok), json={"outlet_id": oid, "order_type": "takeaway", "items": [{"variant_id": v}]}).json()
+        b = client.post("/api/bills", headers=h(tok), json={"id": str(_uuid.uuid4()), "order_id": o["id"], "payments": [
+            {"mode": mode, "amount_paise": 8000}], "customer": {"declined": True}})
+        assert b.status_code == 201, b.text
+        return b.json()
+    b = cash_bill()
+    assert client.post(f"/api/bills/{b['id']}/pay-qr", headers=h(tok)).json() == {"upi": None}     # switched off
+    cfg = client.put("/api/tenant/payments", headers=h(tok), json={"enabled": True, "provider": "razorpay", "key_id": "rzp_live_x",
+                     "key_secret": "s", "webhook_secret": "whsec_2", "qr_on_bill": True}).json()
+    assert cfg["qr_on_bill"]
+    q = client.post(f"/api/bills/{b['id']}/pay-qr", headers=h(tok)).json()
+    assert "am=80.00" in q["upi"]
+    assert client.post(f"/api/bills/{b['id']}/pay-qr", headers=h(tok)).json()["upi"] == q["upi"]    # reprint: same QR
+    assert client.post(f"/api/bills/{cash_bill('upi')['id']}/pay-qr", headers=h(tok)).json() == {"upi": None}  # already UPI
+    assert client.get(f"/api/outlets/{oid}/upi/waiting", headers=h(tok)).json() == []               # not a counter pop-up
+    key = cfg["webhook_url"].rsplit("/", 1)[1]
+    ev = _j.dumps({"event": "qr_code.credited", "payload": {"qr_code": {"entity": {"id": made[0]}},
+                   "payment": {"entity": {"id": "pay_A1", "amount": 8000, "status": "captured", "vpa": "cust@okaxis"}}}}).encode()
+    sig = _hm.new(b"whsec_2", ev, _h.sha256).hexdigest()
+    assert client.post(f"/api/public/razorpay/{key}", content=ev, headers={"X-Razorpay-Signature": sig}).json() == {"ok": True}
+    got = client.get(f"/api/bills/{b['id']}", headers=h(tok)).json()
+    assert [(p["mode"], p["amount_paise"], p["reference"]) for p in got["payments"]] == [("upi", 8000, "pay_A1")]
+    assert got["revision"] == 2
+    # The same webhook again changes nothing.
+    assert client.post(f"/api/public/razorpay/{key}", content=ev, headers={"X-Razorpay-Signature": sig}).json() == {"ok": True}
+    assert client.get(f"/api/bills/{b['id']}", headers=h(tok)).json()["revision"] == 2
+
+
 def test_upi_paytm_dynamic_qr(client, monkeypatch):
     """Paytm: QR made with a signed request; printed slip; the bill is made when Paytm's status says paid,
     whether the counter asks, the waiting list asks, or Paytm posts to the callback."""

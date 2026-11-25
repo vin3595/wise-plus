@@ -1,5 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { api } from "../api";
 import { formatPaise } from "../money";
 import { QrImage } from "../qr";
 import type { Bill, BillLine, TaxRow } from "../types";
@@ -8,7 +9,7 @@ const MODE = { cash: "Cash", upi: "UPI", card: "Card", due: "Credit (due)", comp
 const pct = (bp: number) => `${bp / 100}%`;
 
 /** 80 mm thermal bill, printed through the browser at the counter. */
-export function Receipt({ bill }: { bill: Bill }) {
+export function Receipt({ bill, payQr }: { bill: Bill; payQr?: string | null }) {
   const o = bill.outlet;
   return (
     <div className="receipt">
@@ -63,6 +64,14 @@ export function Receipt({ bill }: { bill: Bill }) {
       <div className="r-row r-total"><span>TOTAL</span><span>{formatPaise(bill.total_paise)}</span></div>
       <div className="r-row"><span>Paid by</span><span>{bill.payments.map((p) => `${MODE[p.mode]} ${formatPaise(p.amount_paise)}`).join(", ")}</span></div>
       {bill.status === "cancelled" && <div className="r-center"><strong>Cancelled: {bill.cancel_reason}</strong></div>}
+      {payQr && bill.status !== "cancelled" && (
+        <div className="r-center r-payqr">
+          <hr />
+          <div><strong>Pay {formatPaise(bill.total_paise)} by UPI</strong></div>
+          <QrImage text={payQr} size={170} label={`UPI QR to pay ${formatPaise(bill.total_paise)}`} />
+          <div className="r-sub">Scan with GPay, PhonePe, Paytm or any UPI app</div>
+        </div>
+      )}
       <hr />
       <div className="r-center r-sub">{o.footer || "Thank you! Visit again."}</div>
       {bill.cashier_name && <div className="r-center r-sub">Billed by {bill.cashier_name}</div>}
@@ -70,16 +79,30 @@ export function Receipt({ bill }: { bill: Bill }) {
   );
 }
 
-/** Prints one bill and calls onDone afterwards. */
+const cashOnly = (b: Bill) => b.status !== "cancelled" && !b.training && b.total_paise > 0 && b.payments.length === 1 && b.payments[0].mode === "cash";
+
+/** Prints one bill and calls onDone afterwards. A cash bill gets its own UPI QR when the outlet has
+ * "QR on every bill" on: if the customer pays it, the bill turns to UPI by itself. */
 export function PrintBill({ bill, onDone }: { bill: Bill; onDone: () => void }) {
+  const [qr, setQr] = useState<string | null | undefined>(cashOnly(bill) && navigator.onLine ? undefined : null);
   useEffect(() => {
+    if (qr !== undefined) return;
+    let live = true;
+    const give = (v: string | null) => { if (live) setQr(v); };
+    const stop = setTimeout(() => give(null), 6000);   // never hold the bill up for long
+    api<{ upi: string | null }>(`/bills/${bill.id}/pay-qr`, { method: "POST" })
+      .then((r) => give(r.upi || null)).catch(() => give(null)).finally(() => clearTimeout(stop));
+    return () => { live = false; clearTimeout(stop); };
+  }, [bill.id, qr]);
+  useEffect(() => {
+    if (qr === undefined) return;
     const t = setTimeout(() => {
       window.print();
       onDone();
     }, 350); // let the logo/QR images load
     return () => clearTimeout(t);
-  }, [bill, onDone]);
-  return createPortal(<div id="print-root"><Receipt bill={bill} /></div>, document.body);
+  }, [bill, qr, onDone]);
+  return createPortal(<div id="print-root"><Receipt bill={bill} payQr={qr || null} /></div>, document.body);
 }
 
 /** What a UPI QR slip shows: the bill as it will be made, before it is paid. */

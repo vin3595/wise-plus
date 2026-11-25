@@ -1173,3 +1173,5 @@ button.held-main { cursor: pointer; }
 .bill-nums { display: flex; justify-content: space-between; align-items: baseline; gap: 0.6rem; flex-wrap: wrap; font-size: 0.85rem; color: var(--ink-2); }
 .bill-nums strong { color: var(--ink); font-variant-numeric: tabular-nums; }
 @media (min-width: 981px) { .shell .pos.pp .pos-cart > .bill-nums { margin-top: 0.55rem; } }
+.r-payqr { margin-top: 2mm; }
+.r-payqr img, .r-payqr svg, .r-payqr canvas { display: block; margin: 1.5mm auto; }

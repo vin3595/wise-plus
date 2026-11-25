@@ -23,7 +23,7 @@ from ..core import razorpay_pos as rp
 from ..core.permissions import Perm, Role
 from ..db import system_session, tenant_session
 from ..deps import Auth, ensure_outlet_access, get_db, require
-from ..models import Bill, CardRequest, CardTerminal, Order, Outlet, PaymentSettings, Tenant, UpiRequest, User
+from ..models import Bill, CardRequest, CardTerminal, Order, Outlet, Payment, PaymentSettings, Tenant, UpiRequest, User
 from ..schemas import BillCreate, CustomerIn, LoyaltyUseIn, PaymentLineIn
 from ..services import audit
 from ..services.billing import bill_out, billable_rows, preview
@@ -59,6 +59,7 @@ class PaySettingsIn(BaseModel):
     paytm_live: bool = False
     qr_minutes: int = Field(default=10, ge=2, le=1440)
     print_qr: bool = False
+    qr_on_bill: bool = False
 
 
 def _settings(db: Session, tenant_id: uuid.UUID) -> PaymentSettings:
@@ -79,7 +80,7 @@ def _settings_out(db: Session, cfg: PaymentSettings) -> dict:
             "has_pos_app_key": bool(cfg.pos_app_key),
             "paytm_mid": cfg.paytm_mid, "has_paytm_key": bool(cfg.paytm_key), "paytm_client_id": cfg.paytm_client_id,
             "paytm_live": cfg.paytm_live, "paytm_callback_url": f"{app_base_url(tenant)}/api/public/paytm/{cfg.webhook_key}",
-            "qr_minutes": cfg.qr_minutes, "print_qr": cfg.print_qr}
+            "qr_minutes": cfg.qr_minutes, "print_qr": cfg.print_qr, "qr_on_bill": cfg.qr_on_bill}
 
 
 @router.get("/tenant/payments")
@@ -104,6 +105,7 @@ def put_pay_settings(body: PaySettingsIn, auth: Auth = Depends(require(Perm.tena
     if body.paytm_client_id is not None:
         cfg.paytm_client_id = body.paytm_client_id.strip() or None
     cfg.paytm_live, cfg.qr_minutes, cfg.print_qr = body.paytm_live, body.qr_minutes, body.print_qr
+    cfg.qr_on_bill = body.qr_on_bill
     if cfg.enabled and cfg.provider == "paytm":
         if not (cfg.paytm_mid and cfg.paytm_key):
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Enter the Paytm MID and merchant key (Paytm for Business dashboard > Developer settings > API keys)")
@@ -275,7 +277,39 @@ def settle(db: Session, req: UpiRequest, paid: rz.Paid) -> None:
     if problem:
         req.status, req.problem = "problem", problem
         return
+    if (req.bill_body or {}).get("on_bill"):
+        switch_to_upi(db, req, paid)
+        return
     make_bill(db, req, "upi", paid.payment_id)
+
+
+def switch_to_upi(db: Session, req: UpiRequest, paid: rz.Paid) -> None:
+    """The QR printed on a cash bill was paid: the bill becomes UPI by itself (kept in the bill's history)."""
+    from ..schemas import BillFix, PaymentLineIn
+    from ..services.bill_edit import FixError, apply_plan, plan_fix
+    bill = db.get(Bill, req.bill_id)
+    if bill is None or bill.status != "paid":
+        req.status, req.problem = "problem", "Paid by UPI, but the bill was cancelled. Refund it in Razorpay."
+        return
+    pays = list(db.scalars(select(Payment).where(Payment.bill_id == bill.id)))
+    if [p.mode for p in pays] == ["upi"]:
+        req.status = "billed"                     # the cashier had already marked it UPI
+        return
+    if len(pays) != 1 or pays[0].mode != "cash" or bill.total_paise != paid.amount_paise:
+        req.status, req.problem = "problem", (f"₹{paid.amount_paise / 100:,.2f} came in by UPI for bill {bill.invoice_no}, "
+                                              "but the bill changed after printing. Fix its payment by hand.")
+        return
+    tenant = db.get(Tenant, bill.tenant_id)
+    try:
+        with db.begin_nested():
+            plan = plan_fix(db, tenant, BillFix(bill_id=bill.id, revision=bill.revision, payments=[
+                PaymentLineIn(mode="upi", amount_paise=bill.total_paise, reference=paid.payment_id)]),
+                is_manager=True, user_id=bill.created_by)
+            apply_plan(db, plan, user_id=bill.created_by, approver=None, reason="Paid by UPI (QR on the bill)")
+    except FixError as e:
+        req.status, req.problem = "problem", f"Paid by UPI, but bill {bill.invoice_no} couldn't be switched: {e}"
+        return
+    req.status = "billed"
 
 
 def make_bill(db: Session, req, mode: str, reference: str | None) -> None:
@@ -434,10 +468,13 @@ def upi_waiting(outlet_id: uuid.UUID, auth: Auth = Depends(require(Perm.billing)
     the box checks each waiting QR with the provider, so it works without the webhook too."""
     ensure_outlet_access(db, auth, outlet_id)
     since = _now() - timedelta(minutes=10)
-    reqs = list(db.scalars(select(UpiRequest).where(UpiRequest.outlet_id == outlet_id, (UpiRequest.status == "waiting") |
+    not_on_bill = UpiRequest.bill_body["on_bill"].astext.is_(None)
+    reqs = list(db.scalars(select(UpiRequest).where(UpiRequest.outlet_id == outlet_id, not_on_bill, (UpiRequest.status == "waiting") |
                                                     ((UpiRequest.paid_at != None) & (UpiRequest.paid_at > since)))  # noqa: E711
                            .order_by(UpiRequest.created_at).limit(50).with_for_update(skip_locked=True)))
     cfg = db.get(PaymentSettings, auth.tenant_id)
+    if cfg and cfg.qr_on_bill:
+        check_bill_qrs(db, cfg, outlet_id)
     for req in reqs:
         if req.status != "waiting":
             continue
@@ -450,6 +487,59 @@ def upi_waiting(outlet_id: uuid.UUID, auth: Auth = Depends(require(Perm.billing)
             req.status, req.problem = "closed", "The QR expired unpaid"
     db.flush()
     return [_out(db, r) for r in reqs if r.status != "closed"]
+
+
+# ------------------------------------------------------------------ wise-plus: a UPI QR printed on every bill
+
+BILL_QR_MINUTES = 120
+
+
+def check_bill_qrs(db: Session, cfg: PaymentSettings, outlet_id: uuid.UUID, limit: int = 4) -> None:
+    """Backup for the webhook: ask Razorpay about a few recent bill QRs not checked in the last minute."""
+    now = _now()
+    for req in db.scalars(select(UpiRequest).where(
+            UpiRequest.outlet_id == outlet_id, UpiRequest.status == "waiting", UpiRequest.bill_body["on_bill"].astext == "true",
+            (UpiRequest.checked_at.is_(None)) | (UpiRequest.checked_at < now - timedelta(seconds=60)))
+            .order_by(UpiRequest.created_at.desc()).limit(limit).with_for_update(skip_locked=True)):
+        req.checked_at = now
+        if now > req.expires_at + timedelta(minutes=5):
+            req.status = "closed"
+            continue
+        paid = _fetch_paid(cfg, req)
+        if paid:
+            settle(db, req, paid)
+
+
+@router.post("/bills/{bill_id}/pay-qr")
+def bill_pay_qr(bill_id: uuid.UUID, auth: Auth = Depends(require(Perm.billing)), db: Session = Depends(get_db)) -> dict:
+    """The UPI QR to print on a cash bill (made once per bill). When it's paid, the bill turns to UPI by itself."""
+    cfg = db.get(PaymentSettings, auth.tenant_id)
+    if cfg is None or not (cfg.enabled and cfg.qr_on_bill and cfg.provider == "razorpay"):
+        return {"upi": None}
+    bill = get_or_404(db, Bill, bill_id, "Bill")
+    ensure_outlet_access(db, auth, bill.outlet_id)
+    from ..services.training import is_training
+    pays = list(db.scalars(select(Payment).where(Payment.bill_id == bill.id)))
+    if bill.status != "paid" or bill.total_paise <= 0 or [p.mode for p in pays] != ["cash"] or is_training(db, bill.outlet_id):
+        return {"upi": None}
+    have = db.scalar(select(UpiRequest).where(UpiRequest.bill_id == bill.id, UpiRequest.status == "waiting",
+                                              UpiRequest.amount_paise == bill.total_paise))
+    if have and have.upi_string:
+        return {"upi": have.upi_string, "expires_at": have.expires_at.isoformat()}
+    order = db.get(Order, bill.order_id)
+    outlet = db.get(Outlet, bill.outlet_id)
+    req = UpiRequest(tenant_id=auth.tenant_id, outlet_id=bill.outlet_id, order_id=bill.order_id, amount_paise=bill.total_paise,
+                     provider=cfg.provider, bill_id=bill.id, bill_body={"on_bill": True, "invoice_no": bill.invoice_no},
+                     created_by=auth.user_id, expires_at=_now() + timedelta(minutes=BILL_QR_MINUTES))
+    db.add(req)
+    db.flush()
+    try:
+        _create_qr(cfg, req, outlet, order.token_no if order else None)
+    except (GatewayError, ValueError):
+        req.status, req.problem = "closed", "Razorpay didn't give a QR"
+        return {"upi": None}
+    check_bill_qrs(db, cfg, bill.outlet_id)
+    return {"upi": req.upi_string, "expires_at": req.expires_at.isoformat()}
 
 
 # ------------------------------------------------------------------ Paytm server-to-server post (no login)

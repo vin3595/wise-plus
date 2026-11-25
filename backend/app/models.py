@@ -702,6 +702,8 @@ class PaymentSettings(Base):
     qr_minutes: Mapped[int] = mapped_column(Integer, default=10, server_default="10", nullable=False)
     # Print the QR on a slip the moment the cashier picks UPI (for tables, or a counter without a screen facing the customer).
     print_qr: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    # wise-plus: every cash bill prints its own UPI QR; when it's paid the bill turns to UPI by itself
+    qr_on_bill: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 

@@ -7,7 +7,8 @@ import { formatPaise } from "../money";
 
 interface PaySettings { enabled: boolean; provider: "razorpay" | "paytm" | "test"; paytm_mid: string | null; has_paytm_key: boolean; paytm_client_id: string | null;
   paytm_live: boolean; paytm_callback_url: string; qr_minutes: number; print_qr: boolean; key_id: string | null; has_key_secret: boolean; has_webhook_secret: boolean; webhook_url: string; webhook_event: string;
-  pos_enabled: boolean; pos_provider: "razorpay_pos" | "test"; pos_live: boolean; pos_username: string | null; has_pos_app_key: boolean }
+  pos_enabled: boolean; pos_provider: "razorpay_pos" | "test"; pos_live: boolean; pos_username: string | null; has_pos_app_key: boolean;
+  qr_on_bill: boolean }
 interface Terminal { id: string; name: string; device_id: string; is_active: boolean; outlet_id: string }
 
 /** UPI that confirms itself, through the restaurant's own Razorpay account. */
@@ -29,7 +30,7 @@ export default function Payments() {
   const set = (p: Partial<PaySettings>) => { setS({ ...s, ...p }); setSaved(false); };
   const save = () => run(async () => {
     setS(await api<PaySettings>("/tenant/payments", { method: "PUT", body: { enabled: s.enabled, provider: s.provider, key_id: s.key_id || "", key_secret: secret || null, webhook_secret: hook || null,
-      pos_enabled: s.pos_enabled, pos_provider: s.pos_provider, pos_live: s.pos_live, pos_username: s.pos_username || "", pos_app_key: posKey || null,
+      qr_on_bill: s.qr_on_bill, pos_enabled: s.pos_enabled, pos_provider: s.pos_provider, pos_live: s.pos_live, pos_username: s.pos_username || "", pos_app_key: posKey || null,
       paytm_mid: s.paytm_mid || "", paytm_key: ptKey || null, paytm_client_id: s.paytm_client_id || "", paytm_live: s.paytm_live, qr_minutes: s.qr_minutes, print_qr: s.print_qr } }));
     setSecret(""); setHook(""); setPosKey(""); setPtKey(""); setSaved(true);
   });
@@ -65,6 +66,8 @@ export default function Payments() {
           <Field label="QR stays payable for (minutes)" hint={s.provider === "paytm" ? "Paytm allows 10 unless they've raised it for you" : undefined}>
             <Input type="number" min={2} max={1440} value={String(s.qr_minutes)} onChange={(e) => set({ qr_minutes: Math.max(2, Math.min(1440, Number(e.target.value) || 10)) })} /></Field>
         </div>
+        {s.provider === "razorpay" && <Toggle checked={s.qr_on_bill} onChange={(v) => set({ qr_on_bill: v })}
+          label="Print a UPI QR on every cash bill. If the customer pays it, the bill turns from Cash to UPI by itself (no tap needed)" />}
         <Toggle checked={s.print_qr} onChange={(v) => set({ print_qr: v })} label="Print the QR on the bill as soon as UPI is picked (for tables, or counters without a screen the customer can see)" />
         <SoundToggle />
         {s.provider === "test" && <p className="muted small">The counter shows a pretend QR with a "Customer paid (test)" button. Use it to train staff.</p>}
