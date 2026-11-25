@@ -18,3 +18,4 @@ google-genai>=1.0
 pypdfium2>=4.30
 pillow>=10.0
 segno>=1.6
+zxing-cpp>=2.2   # reads the UPI code out of Razorpay's QR image

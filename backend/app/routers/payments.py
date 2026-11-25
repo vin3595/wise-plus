@@ -7,6 +7,8 @@ waits. Provider "test" makes a pretend QR with a "customer paid" button, for tra
 from __future__ import annotations
 
 import uuid
+
+import httpx
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
@@ -221,6 +223,14 @@ def _create_qr(cfg: PaymentSettings, req: UpiRequest, outlet: Outlet, token: int
         raise GatewayError(f"Couldn't reach Razorpay ({e.__class__.__name__}). Use the outlet's own UPI QR and tap UPI received.") from None
     req.provider_ref = data.get("id")
     req.upi_string = data.get("image_content") or None
+    if not req.upi_string and data.get("image_url"):
+        try:   # only a picture came back: read the UPI code out of it
+            with httpx.Client(timeout=10, follow_redirects=True) as c:
+                img = c.get(data["image_url"])
+            if img.status_code == 200 and img.headers.get("content-type", "").startswith("image/"):
+                req.upi_string = rz.upi_from_image(img.content)
+        except Exception:  # noqa: BLE001 - falls through to the message below
+            req.upi_string = None
     if not req.upi_string:
         raise GatewayError("Razorpay didn't return a UPI code. Check that UPI QR is activated on your Razorpay account.")
 

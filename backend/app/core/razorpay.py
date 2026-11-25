@@ -22,6 +22,28 @@ def verify_signature(raw_body: bytes, signature: str | None, secret: str | None)
     return hmac.compare_digest(expected, signature.strip())
 
 
+def upi_from_image(data: bytes) -> str | None:
+    """The upi://pay... text inside a QR picture. Razorpay's live accounts often send only a picture
+    (image_url, a branded poster) and no image_content, so the counter reads the code out of it."""
+    import io
+
+    import zxingcpp
+    from PIL import Image
+    try:
+        img = Image.open(io.BytesIO(data))
+        img.load()
+    except Exception:  # noqa: BLE001 - not a picture
+        return None
+    if img.mode not in ("RGB", "L"):
+        bg = Image.new("RGB", img.size, "white")
+        bg.paste(img, mask=img.getchannel("A") if "A" in img.getbands() else None)
+        img = bg
+    for r in zxingcpp.read_barcodes(img):
+        if r.text and r.text.lower().startswith("upi://"):
+            return r.text
+    return None
+
+
 def qr_request(amount_paise: int, name: str, description: str, close_by: int, notes: dict[str, str]) -> dict:
     if amount_paise <= 0:
         raise ValueError("Amount must be more than zero")
