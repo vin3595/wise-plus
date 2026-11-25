@@ -66,7 +66,7 @@ export default function Payments() {
           <Field label="QR stays payable for (minutes)" hint={s.provider === "paytm" ? "Paytm allows 10 unless they've raised it for you" : undefined}>
             <Input type="number" min={2} max={1440} value={String(s.qr_minutes)} onChange={(e) => set({ qr_minutes: Math.max(2, Math.min(1440, Number(e.target.value) || 10)) })} /></Field>
         </div>
-        {s.provider === "razorpay" && <Toggle checked={s.qr_on_bill} onChange={(v) => set({ qr_on_bill: v })}
+        {(s.provider === "razorpay" || s.provider === "paytm") && <Toggle checked={s.qr_on_bill} onChange={(v) => set({ qr_on_bill: v })}
           label="Print a UPI QR on every cash bill. If the customer pays it, the bill turns from Cash to UPI by itself (no tap needed)" />}
         <Toggle checked={s.print_qr} onChange={(v) => set({ print_qr: v })} label="Print the QR on the bill as soon as UPI is picked (for tables, or counters without a screen the customer can see)" />
         <SoundToggle />

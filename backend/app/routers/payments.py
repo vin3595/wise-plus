@@ -514,7 +514,7 @@ def check_bill_qrs(db: Session, cfg: PaymentSettings, outlet_id: uuid.UUID, limi
 def bill_pay_qr(bill_id: uuid.UUID, auth: Auth = Depends(require(Perm.billing)), db: Session = Depends(get_db)) -> dict:
     """The UPI QR to print on a cash bill (made once per bill). When it's paid, the bill turns to UPI by itself."""
     cfg = db.get(PaymentSettings, auth.tenant_id)
-    if cfg is None or not (cfg.enabled and cfg.qr_on_bill and cfg.provider == "razorpay"):
+    if cfg is None or not (cfg.enabled and cfg.qr_on_bill and cfg.provider in ("razorpay", "paytm")):
         return {"upi": None}
     bill = get_or_404(db, Bill, bill_id, "Bill")
     ensure_outlet_access(db, auth, bill.outlet_id)
@@ -530,7 +530,9 @@ def bill_pay_qr(bill_id: uuid.UUID, auth: Auth = Depends(require(Perm.billing)),
     outlet = db.get(Outlet, bill.outlet_id)
     req = UpiRequest(tenant_id=auth.tenant_id, outlet_id=bill.outlet_id, order_id=bill.order_id, amount_paise=bill.total_paise,
                      provider=cfg.provider, bill_id=bill.id, bill_body={"on_bill": True, "invoice_no": bill.invoice_no},
-                     created_by=auth.user_id, expires_at=_now() + timedelta(minutes=BILL_QR_MINUTES))
+                     created_by=auth.user_id, expires_at=_now() + timedelta(
+                         # Paytm's QR lives as long as Paytm allows on the account (10 minutes unless raised)
+                         minutes=BILL_QR_MINUTES if cfg.provider == "razorpay" else (cfg.qr_minutes or QR_MINUTES)))
     db.add(req)
     db.flush()
     try:
