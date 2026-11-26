@@ -59,6 +59,7 @@ import Sheets from "./pages/Sheets";
 import Reports from "./pages/Reports";
 import GettingStarted from "./pages/GettingStarted";
 import PosImport from "./pages/PosImport";
+import DevicePrinters from "./pages/DevicePrinters";
 import { EmbMark, PoweredBy, SUPPORT_LABEL, supportWa } from "./components/Brand";
 
 const ICONS: Record<string, LucideIcon> = {
@@ -98,7 +99,7 @@ function Shell({ children }: { children: ReactNode }) {
       ["/screen-ads", "Screen ads", pos && can("ads.manage")]] },
     { label: "Staff", section: "Setup", pages: [["/users", "Staff", can("users.manage")], ["/access", "Who can do what", can("users.manage")], ["/activity", "Activity log", can("approve")]] },
     { label: "Settings", section: "Setup", pages: [["/services", "Services", can("tenant.settings")], ["/billing", "Billing", can("tenant.settings")], ["/payments", "Payments", pos && can("tenant.settings")], ["/sms", "SMS", pos && can("tenant.settings")],
-      ["/branding", "Branding", can("tenant.settings")], ["/pos-import", "Import from another POS", can("tenant.settings")]] },
+      ["/branding", "Branding", can("tenant.settings")], ["/pos-import", "Import from another POS", can("tenant.settings")], ["/printing", "Printing", can("billing")]] },
   ];
   const path = loc.pathname;
   const onPage = (to: string) => to === "/" ? path === "/" : path === to || path.startsWith(to + "/");
@@ -280,6 +281,7 @@ export default function App() {
         <Route path="/kitchen" element={<Kitchen />} />
         <Route path="/bills" element={<Bills />} />
         <Route path="/pos-import" element={<PosImport />} />
+        <Route path="/printing" element={<DevicePrinters />} />
         <Route path="/stock" element={<Inventory />} />
         <Route path="/day-close" element={<DayClose />} />
         <Route path="/customers" element={<Customers />} />

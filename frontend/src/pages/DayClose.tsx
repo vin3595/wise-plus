@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { printNow } from "../desktop";
 import { createPortal } from "react-dom";
 import { api } from "../api";
 import { formatPaise } from "../money";
@@ -37,7 +38,7 @@ export default function DayClose() {
   useEffect(() => { api<Outlet[]>("/tenant/outlets").then((o) => { setOutlets(o); setOutletId((c) => c || o[0]?.id || ""); }); }, []);
   const load = () => outletId && api<DayStatus>(`/day-close/${outletId}${day ? `?day=${day}` : ""}`).then((s) => { setSt(s); if (!day) setDay(s.day); });
   useEffect(() => { load(); }, [outletId, day]);
-  useEffect(() => { if (!printing) return; const t = setTimeout(() => { window.print(); setPrinting(false); }, 300); return () => clearTimeout(t); }, [printing]);
+  useEffect(() => { if (!printing) return; const t = setTimeout(() => { void printNow("bill").finally(() => setPrinting(false)); }, 300); return () => clearTimeout(t); }, [printing]);
   if (!st) return <p className="muted">Loading…</p>;
   const s = st.summary, outlet = outlets.find((o) => o.id === outletId);
   const blocking = st.checks.filter((c) => c.block);

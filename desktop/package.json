@@ -1,0 +1,36 @@
+{
+  "name": "ease-my-bill",
+  "productName": "Ease My Bill",
+  "version": "1.0.0",
+  "description": "Ease My Bill for Windows: billing with silent printing",
+  "main": "main.js",
+  "author": "Ease My Bill",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis --x64"
+  },
+  "devDependencies": {
+    "electron": "^39.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.easemybill.desktop",
+    "productName": "Ease My Bill",
+    "files": ["main.js", "preload.js", "build/icon.png"],
+    "directories": { "output": "dist" },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.png",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Ease My Bill",
+      "artifactName": "EaseMyBill-Setup.exe"
+    }
+  }
+}

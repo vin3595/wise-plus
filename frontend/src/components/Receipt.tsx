@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { api } from "../api";
+import { printNow } from "../desktop";
 import { formatPaise } from "../money";
 import { QrImage } from "../qr";
 import type { Bill, BillLine, TaxRow } from "../types";
@@ -96,10 +97,7 @@ export function PrintBill({ bill, onDone }: { bill: Bill; onDone: () => void }) 
   }, [bill.id, qr]);
   useEffect(() => {
     if (qr === undefined) return;
-    const t = setTimeout(() => {
-      window.print();
-      onDone();
-    }, 350); // let the logo/QR images load
+    const t = setTimeout(() => { void printNow("bill").finally(onDone); }, 350); // let the logo/QR images load
     return () => clearTimeout(t);
   }, [bill, qr, onDone]);
   return createPortal(<div id="print-root"><Receipt bill={bill} payQr={qr || null} /></div>, document.body);
@@ -159,7 +157,7 @@ export function QrSlip({ slip, upi, expiresAt }: { slip: QrSlipData; upi: string
 /** Prints one QR slip and calls onDone afterwards. */
 export function PrintQrSlip({ slip, upi, expiresAt, onDone }: { slip: QrSlipData; upi: string; expiresAt: string; onDone: () => void }) {
   useEffect(() => {
-    const t = setTimeout(() => { window.print(); onDone(); }, 450); // let the QR image draw
+    const t = setTimeout(() => { void printNow("bill").finally(onDone); }, 450); // let the QR image draw
     return () => clearTimeout(t);
   }, [slip, upi, onDone]);
   return createPortal(<div id="print-root"><QrSlip slip={slip} upi={upi} expiresAt={expiresAt} /></div>, document.body);

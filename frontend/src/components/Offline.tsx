@@ -1,4 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { printNow } from "../desktop";
 import { createPortal } from "react-dom";
 import { state, subscribe, syncNow, type OfflineResult } from "../offline";
 import { Receipt } from "./Receipt";
@@ -40,7 +41,7 @@ export function OfflineBar() {
 export function PrintOffline({ result, onDone }: { result: OfflineResult; onDone: () => void }) {
   const [at] = useState(() => new Date(result.bill.created_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }));
   useEffect(() => {
-    const t = setTimeout(() => { window.print(); onDone(); }, 350);
+    const t = setTimeout(() => { void printNow("bill").finally(onDone); }, 350);
     return () => clearTimeout(t);
   }, [result, onDone]);
   const b = result.bill;

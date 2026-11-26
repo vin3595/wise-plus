@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { printNow } from "../desktop";
 import { createPortal } from "react-dom";
 import { api } from "../api";
 import { KotSlip } from "../components/KotSlip";
@@ -53,7 +54,7 @@ export default function PrintStation({ printKey }: { printKey: string }) {
           setPrinting({ job, copies: job.printer?.copies || 1 });
           await paint();
           let error: string | undefined;
-          try { window.print(); } catch { error = "The browser blocked printing"; }
+          try { error = (await printNow("kot")) || undefined; } catch { error = "The browser blocked printing"; }
           setPrinting(null);
           await api(`/public/print/${encodeURIComponent(printKey)}/jobs/${job.kot_id}?station=${station}`,
             { body: { kind: job.kind, ok: !error, error: error || null } });
