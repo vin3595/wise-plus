@@ -45,11 +45,11 @@ export default function DevicePrinters() {
     setError(null);
     if (await d.saveSettings(next)) { setSaved("Saved"); setTimeout(() => setSaved(null), 2000); } else setError("Couldn't save");
   };
-  const test = async () => {
+  const test = async (kind: "bill" | "kot" = "bill") => {
     setTesting(true);
     setError(null);
     await new Promise((r) => setTimeout(r, 300));
-    const err = await printNow("bill");
+    const err = await printNow(kind);
     setTesting(false);
     if (err) setError(`Test didn't print: ${err}`); else setSaved("Test page sent to the printer");
   };
@@ -73,14 +73,15 @@ export default function DevicePrinters() {
         <Toggle checked={kots} onChange={(v) => { setKots(v); setKotsHere(v); }}
           label="Print KOTs on this computer (while the order screen is open). Turn off if another PC or a network printer prints them" />
         <Toggle checked={s.startWithWindows !== false} onChange={(v) => save({ ...s, startWithWindows: v })} label="Open Ease My Bill when the computer starts" />
-        <div className="row"><Button variant="ghost" disabled={testing} onClick={test}>{testing ? "Printing…" : "Print a test bill"}</Button>
+        <div className="row"><Button variant="ghost" disabled={testing} onClick={() => test("bill")}>{testing ? "Printing…" : "Print a test bill"}</Button>
+          <Button variant="ghost" disabled={testing} onClick={() => test("kot")}>Print a test KOT</Button>
           {saved && <span className="ok small">{saved}</span>}</div>
         <ErrorText error={error} />
         {list.length === 0 && <p className="warn small">No printers found. Install the printer's Windows driver, then reopen this page.</p>}
       </Card>
       {testing && createPortal(<div id="print-root">
         <div className="receipt"><div className="r-center"><strong>Ease My Bill</strong></div><div className="r-center">Test print</div>
-          <div className="r-center">{new Date().toLocaleString("en-IN")}</div><div className="r-center">If you can read this, bills will print here.</div></div>
+          <div className="r-center">{new Date().toLocaleString("en-IN")}</div><div className="r-center">If you can read this, this printer works.</div></div>
       </div>, document.body)}
     </div>
   );

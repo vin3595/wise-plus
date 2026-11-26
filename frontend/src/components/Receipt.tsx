@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api } from "../api";
 import { paintDelay, printNow, withPrintLock } from "../desktop";
@@ -96,17 +96,18 @@ export function PrintBill({ bill, onDone }: { bill: Bill; onDone: () => void }) 
     return () => { live = false; clearTimeout(stop); };
   }, [bill.id, qr]);
   const [show, setShow] = useState(false);
+  const done = useRef(onDone);
+  done.current = onDone;
+  const started = useRef(false);
   useEffect(() => {
-    if (qr === undefined) return;
-    let live = true;
+    if (qr === undefined || started.current) return;
+    started.current = true;             // print once, however often the screen redraws
     void withPrintLock(async () => {
-      if (!live) return;
       setShow(true);
       await paintDelay(350);            // let the logo/QR images load
       await printNow("bill");
-    }).finally(() => { if (live) onDone(); });
-    return () => { live = false; };
-  }, [bill, qr, onDone]);
+    }).finally(() => done.current());
+  }, [qr]);
   return show ? createPortal(<div id="print-root"><Receipt bill={bill} payQr={qr || null} /></div>, document.body) : null;
 }
 
@@ -164,15 +165,17 @@ export function QrSlip({ slip, upi, expiresAt }: { slip: QrSlipData; upi: string
 /** Prints one QR slip and calls onDone afterwards. */
 export function PrintQrSlip({ slip, upi, expiresAt, onDone }: { slip: QrSlipData; upi: string; expiresAt: string; onDone: () => void }) {
   const [show, setShow] = useState(false);
+  const done = useRef(onDone);
+  done.current = onDone;
+  const started = useRef(false);
   useEffect(() => {
-    let live = true;
+    if (started.current) return;
+    started.current = true;
     void withPrintLock(async () => {
-      if (!live) return;
       setShow(true);
       await paintDelay(450);            // let the QR image draw
       await printNow("bill");
-    }).finally(() => { if (live) onDone(); });
-    return () => { live = false; };
-  }, [slip, upi, onDone]);
+    }).finally(() => done.current());
+  }, []);
   return show ? createPortal(<div id="print-root"><QrSlip slip={slip} upi={upi} expiresAt={expiresAt} /></div>, document.body) : null;
 }
