@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("embDesktop", {
   print: (opts) => ipcRenderer.invoke("emb:print", opts || {}),
+  printRaw: (opts) => ipcRenderer.invoke("emb:print-raw", opts || {}),
   printers: () => ipcRenderer.invoke("emb:printers"),
   settings: () => ipcRenderer.invoke("emb:settings"),
   saveSettings: (s) => ipcRenderer.invoke("emb:save-settings", s),

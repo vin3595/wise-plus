@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api } from "../api";
-import { desktop, paintDelay, printNow, withPrintLock } from "../desktop";
+import { canPrintRaw, desktop, paintDelay, printNow, printRaw, withPrintLock } from "../desktop";
+import { kotBytes } from "../escpos";
 import type { PrintFeed, PrintJob } from "../types";
 import { KotSlip } from "./KotSlip";
 
@@ -35,7 +36,13 @@ export default function KotAutoPrinter({ printKey, enabled }: { printKey: string
         for (const job of f.jobs) {
           if (stop) return;
           const error = await withPrintLock(async () => {
-            setPrinting({ job, copies: job.printer?.copies || 1 });
+            const copies = job.printer?.copies || 1, paper = job.printer?.paper_mm || 80;
+            if (canPrintRaw()) {          // plain printer text: works on text-only drivers, cuts after the last line
+              let e: string | null = null;
+              for (let i = 1; i <= copies && !e; i++) e = await printRaw("kot", kotBytes(job, paper, i, copies));
+              return e || undefined;
+            }
+            setPrinting({ job, copies });
             await paintDelay(300);
             const e = (await printNow("kot")) || undefined;
             setPrinting(null);

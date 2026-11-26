@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { desktop, printNow, type DesktopPrinter, type DesktopSettings } from "../desktop";
+import { canPrintRaw, desktop, printNow, printRaw, type DesktopPrinter, type DesktopSettings } from "../desktop";
+import { testBytes } from "../escpos";
 import { kotsHere, setKotsHere } from "../components/KotAutoPrinter";
 import { Button, Card, ErrorText, Field, Select, Toggle } from "../ui";
 
@@ -49,7 +50,7 @@ export default function DevicePrinters() {
     setTesting(true);
     setError(null);
     await new Promise((r) => setTimeout(r, 300));
-    const err = await printNow(kind);
+    const err = kind === "kot" && canPrintRaw() ? await printRaw("kot", testBytes()) : await printNow(kind);
     setTesting(false);
     if (err) setError(`Test didn't print: ${err}`); else setSaved("Test page sent to the printer");
   };
@@ -77,6 +78,8 @@ export default function DevicePrinters() {
           <Button variant="ghost" disabled={testing} onClick={() => test("kot")}>Print a test KOT</Button>
           {saved && <span className="ok small">{saved}</span>}</div>
         <ErrorText error={error} />
+        {!canPrintRaw() && <p className="warn small">Update the app for KOTs on text-only printers and no wasted paper: download it again from the button below and run it (it replaces this one).
+          {" "}<a href="/download/EaseMyBill-Setup.exe" download>Download the new version</a></p>}
         {list.length === 0 && <p className="warn small">No printers found. Install the printer's Windows driver, then reopen this page.</p>}
       </Card>
       {testing && createPortal(<div id="print-root">

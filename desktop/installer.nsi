@@ -2,7 +2,7 @@
 Unicode true
 !define APP "Ease My Bill"
 !define EXE "Ease My Bill.exe"
-!define VERSION "1.0.0"
+!define VERSION "1.1.0"
 !define UNINST "Software\Microsoft\Windows\CurrentVersion\Uninstall\EaseMyBill"
 
 Name "${APP}"
@@ -17,7 +17,7 @@ AutoCloseWindow true
 ShowInstDetails nevershow
 BrandingText "Ease My Bill"
 Caption "Installing Ease My Bill"
-VIProductVersion "1.0.0.0"
+VIProductVersion "1.1.0.0"
 VIAddVersionKey "ProductName" "${APP}"
 VIAddVersionKey "FileDescription" "Ease My Bill installer"
 VIAddVersionKey "FileVersion" "${VERSION}"

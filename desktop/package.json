@@ -1,7 +1,7 @@
 {
   "name": "ease-my-bill",
   "productName": "Ease My Bill",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Ease My Bill for Windows: billing with silent printing",
   "main": "main.js",
   "author": "Ease My Bill",
