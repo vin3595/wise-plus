@@ -25,9 +25,11 @@ VIAddVersionKey "CompanyName" "Ease My Bill"
 VIAddVersionKey "LegalCopyright" "Ease My Bill"
 
 Section "Install"
-  ; close a running copy so files can be replaced
-  nsExec::Exec 'taskkill /F /IM "${EXE}"'
-  Sleep 800
+  ; close every running copy (the app runs as several processes) so its files can be replaced
+  nsExec::Exec 'taskkill /F /T /IM "${EXE}"'
+  Sleep 1500
+  nsExec::Exec 'taskkill /F /T /IM "${EXE}"'
+  Sleep 1000
   SetOutPath "$INSTDIR"
   File /r "dist\win-unpacked\*.*"
   File "build\icon.ico"
@@ -48,8 +50,8 @@ Section "Install"
 SectionEnd
 
 Section "Uninstall"
-  nsExec::Exec 'taskkill /F /IM "${EXE}"'
-  Sleep 800
+  nsExec::Exec 'taskkill /F /T /IM "${EXE}"'
+  Sleep 1500
   Delete "$DESKTOP\${APP}.lnk"
   RMDir /r "$SMPROGRAMS\${APP}"
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "electron.app.Ease My Bill"
