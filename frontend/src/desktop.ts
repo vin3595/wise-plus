@@ -30,3 +30,12 @@ export async function printNow(kind: "bill" | "kot" = "bill", copies = 1): Promi
   if (error && kind === "bill") window.print();   // never lose a bill: fall back to the print dialog
   return error;
 }
+
+// One print at a time: a bill and a KOT made together must not share the page while printing.
+let chain: Promise<unknown> = Promise.resolve();
+export function withPrintLock<T>(fn: () => Promise<T>): Promise<T> {
+  const run = chain.then(fn, fn);
+  chain = run.catch(() => undefined);
+  return run;
+}
+export const paintDelay = (ms: number) => new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, ms)));

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api } from "../api";
-import { desktop, printNow } from "../desktop";
+import { desktop, paintDelay, printNow, withPrintLock } from "../desktop";
 import type { PrintFeed, PrintJob } from "../types";
 import { KotSlip } from "./KotSlip";
 
@@ -28,17 +28,20 @@ export default function KotAutoPrinter({ printKey, enabled }: { printKey: string
     if (!on) return;
     let stop = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const paint = () => new Promise<void>((r) => requestAnimationFrame(() => setTimeout(r, 150)));
     const tick = async () => {
       try {
         const q = new URLSearchParams({ station, mode: "browser", areas: "", peek: "false" });
         const f = await api<PrintFeed>(`/public/print/${encodeURIComponent(printKey)}/jobs?${q}`);
         for (const job of f.jobs) {
           if (stop) return;
-          setPrinting({ job, copies: job.printer?.copies || 1 });
-          await paint();
-          const error = (await printNow("kot")) || undefined;
-          setPrinting(null);
+          const error = await withPrintLock(async () => {
+            setPrinting({ job, copies: job.printer?.copies || 1 });
+            await paintDelay(300);
+            const e = (await printNow("kot")) || undefined;
+            setPrinting(null);
+            await paintDelay(50);
+            return e;
+          });
           await api(`/public/print/${encodeURIComponent(printKey)}/jobs/${job.kot_id}?station=${station}`,
             { body: { kind: job.kind, ok: !error, error: error || null } });
           setLast({ ok: !error, text: error ? `KOT didn't print: ${error}` : `KOT printed${job.kot.token_no ? ` · #${job.kot.token_no}` : ""}` });

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { api } from "../api";
-import { printNow } from "../desktop";
+import { paintDelay, printNow, withPrintLock } from "../desktop";
 import { formatPaise } from "../money";
 import { QrImage } from "../qr";
 import type { Bill, BillLine, TaxRow } from "../types";
@@ -95,12 +95,19 @@ export function PrintBill({ bill, onDone }: { bill: Bill; onDone: () => void }) 
       .then((r) => give(r.upi || null)).catch(() => give(null)).finally(() => clearTimeout(stop));
     return () => { live = false; clearTimeout(stop); };
   }, [bill.id, qr]);
+  const [show, setShow] = useState(false);
   useEffect(() => {
     if (qr === undefined) return;
-    const t = setTimeout(() => { void printNow("bill").finally(onDone); }, 350); // let the logo/QR images load
-    return () => clearTimeout(t);
+    let live = true;
+    void withPrintLock(async () => {
+      if (!live) return;
+      setShow(true);
+      await paintDelay(350);            // let the logo/QR images load
+      await printNow("bill");
+    }).finally(() => { if (live) onDone(); });
+    return () => { live = false; };
   }, [bill, qr, onDone]);
-  return createPortal(<div id="print-root"><Receipt bill={bill} payQr={qr || null} /></div>, document.body);
+  return show ? createPortal(<div id="print-root"><Receipt bill={bill} payQr={qr || null} /></div>, document.body) : null;
 }
 
 /** What a UPI QR slip shows: the bill as it will be made, before it is paid. */
@@ -156,9 +163,16 @@ export function QrSlip({ slip, upi, expiresAt }: { slip: QrSlipData; upi: string
 
 /** Prints one QR slip and calls onDone afterwards. */
 export function PrintQrSlip({ slip, upi, expiresAt, onDone }: { slip: QrSlipData; upi: string; expiresAt: string; onDone: () => void }) {
+  const [show, setShow] = useState(false);
   useEffect(() => {
-    const t = setTimeout(() => { void printNow("bill").finally(onDone); }, 450); // let the QR image draw
-    return () => clearTimeout(t);
+    let live = true;
+    void withPrintLock(async () => {
+      if (!live) return;
+      setShow(true);
+      await paintDelay(450);            // let the QR image draw
+      await printNow("bill");
+    }).finally(() => { if (live) onDone(); });
+    return () => { live = false; };
   }, [slip, upi, onDone]);
-  return createPortal(<div id="print-root"><QrSlip slip={slip} upi={upi} expiresAt={expiresAt} /></div>, document.body);
+  return show ? createPortal(<div id="print-root"><QrSlip slip={slip} upi={upi} expiresAt={expiresAt} /></div>, document.body) : null;
 }
