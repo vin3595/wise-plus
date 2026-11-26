@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { desktop, printNow, type DesktopPrinter, type DesktopSettings } from "../desktop";
+import { kotsHere, setKotsHere } from "../components/KotAutoPrinter";
 import { Button, Card, ErrorText, Field, Select, Toggle } from "../ui";
 
 const DOWNLOAD = "/download/EaseMyBill-Setup.exe";
@@ -13,6 +14,7 @@ export default function DevicePrinters() {
   const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
+  const [kots, setKots] = useState(kotsHere());
   useEffect(() => {
     if (!d) return;
     d.printers().then(setList).catch(() => undefined);
@@ -68,6 +70,8 @@ export default function DevicePrinters() {
           <option value="">Same as the bill printer</option>
           {list.map((p) => <option key={p.name} value={p.name}>{p.displayName}</option>)}
         </Select></Field>
+        <Toggle checked={kots} onChange={(v) => { setKots(v); setKotsHere(v); }}
+          label="Print KOTs on this computer (while the order screen is open). Turn off if another PC or a network printer prints them" />
         <Toggle checked={s.startWithWindows !== false} onChange={(v) => save({ ...s, startWithWindows: v })} label="Open Ease My Bill when the computer starts" />
         <div className="row"><Button variant="ghost" disabled={testing} onClick={test}>{testing ? "Printing…" : "Print a test bill"}</Button>
           {saved && <span className="ok small">{saved}</span>}</div>

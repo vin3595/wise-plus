@@ -11,6 +11,7 @@ import { Button, ErrorText, FoodDot, Input, Select, useAction } from "../ui";
 import BillDialog from "../components/BillDialog";
 import ShiftBar from "../components/ShiftBar";
 import PendingOrders from "../components/PendingOrders";
+import KotAutoPrinter from "../components/KotAutoPrinter";
 import { HeldList, RecentBills, loadHeld, saveHeld, type Held } from "../components/CounterExtras";
 import ApprovalDialog from "../components/ApprovalDialog";
 import { PrintBill } from "../components/Receipt";
@@ -669,6 +670,7 @@ export default function Orders() {
       {billing && <BillDialog order={billing} outlet={outlet} onClose={() => setBilling(null)} onBilled={billed}
         upiAuto={upiAuto.enabled && off.online} onUpiRequest={(r) => { setBilling(null); setUpiReq(r); }} />}
       {printing && <PrintBill bill={printing} onDone={() => setPrinting(null)} />}
+      {outlet && !printing && <KotAutoPrinter printKey={outlet.print_key || ""} enabled={!!outlet.print_kots} />}
       {showHeld && <HeldList held={held} onResume={resumeHeld} onClose={() => setShowHeld(false)}
         onDrop={(h) => { const rest = held.filter((x) => x.id !== h.id); keepHeld(rest); if (!rest.length) setShowHeld(false); }} />}
       {showRecent && outletId && <RecentBills outletId={outletId} q={billQ.trim()} isManager={can("approve")} onClose={() => { setShowRecent(false); setBillQ(""); }} onPrint={(b) => { setShowRecent(false); setBillQ(""); setPrinting(b); }} />}
