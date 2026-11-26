@@ -30,7 +30,7 @@ const FAQ: [string, string][] = [
 
 /** The public page that sells Ease My Bill: what it does, the price, a free trial, a demo booking. */
 export default function Landing() {
-  const params = useMemo(() => new URLSearchParams(location.search), []);
+  const params = useMemo(() => new URLSearchParams(typeof location === "undefined" ? "" : location.search), []);
   const ref = (params.get("ref") || "").toUpperCase();
   const utm = useMemo(() => Object.fromEntries([...params.entries()].filter(([k]) => k.startsWith("utm_") || k === "fbclid" || k === "gclid")), [params]);
   const [info, setInfo] = useState<Info | null>(null);

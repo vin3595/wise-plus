@@ -4,7 +4,7 @@ WORKDIR /src
 COPY package.json package-lock.json* ./
 RUN npm ci || npm install
 COPY . .
-RUN npx vite build   # type-checking happens in development (npm run build)
+RUN npx vite build && npm run prerender   # type-checking happens in development (npm run build)
 
 FROM nginx:1.27-alpine
 COPY --from=build /src/dist /usr/share/nginx/html

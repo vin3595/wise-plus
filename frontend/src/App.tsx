@@ -9,6 +9,8 @@ import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import Landing from "./pages/Landing";
 import Policies, { POLICY_PATHS } from "./pages/Policies";
+import NotFound from "./pages/NotFound";
+import { APP_PREFIXES } from "./seo";
 import Admin from "./pages/Admin";
 import Share from "./pages/Share";
 import Home from "./pages/Home";
@@ -231,6 +233,10 @@ function landing(can: (p: string) => boolean, has: (m: string) => boolean = () =
   return "/kds";
 }
 
+const isMainSite = typeof location !== "undefined" && /easemybill\.com$/.test(location.hostname);
+/** A path the app answers (anything else on easemybill.com is "page not found"). */
+const knownPath = (p: string) => p === "/" || APP_PREFIXES.includes(p.split("/")[1] || "");
+
 export default function App() {
   const { loading, loginId, me, can, has } = useSession();
   // The customer TV screen needs no restaurant setup or login.
@@ -267,7 +273,10 @@ export default function App() {
         <Route path="/start" element={<Landing />} />
         <Route path="/admin/*" element={<Admin />} />
         {POLICY_PATHS.map((p) => <Route key={p} path={p} element={<Policies page={p.slice(1)} />} />)}
-        <Route path="*" element={<Navigate to={loginId ? "/login" : /easemybill\.com$/.test(location.hostname) ? "/start" : "/setup"} replace />} />
+        {/* On easemybill.com a visitor's home page is the page that sells Ease My Bill */}
+        {isMainSite && !loginId && <Route path="/" element={<Landing />} />}
+        <Route path="*" element={isMainSite && !loginId && !knownPath(location.pathname) ? <NotFound />
+          : <Navigate to={loginId ? "/login" : isMainSite ? "/" : "/setup"} replace />} />
       </Routes>
     );
   }
