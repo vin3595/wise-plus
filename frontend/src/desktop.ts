@@ -1,6 +1,6 @@
 /** The Ease My Bill Windows app (EaseMyBill-Setup.exe) adds window.embDesktop: printing with no dialog. */
 export interface DesktopPrinter { name: string; displayName: string; isDefault: boolean }
-export interface DesktopSettings { billPrinter?: string; kotPrinter?: string; startWithWindows?: boolean }
+export interface DesktopSettings { billPrinter?: string; kotPrinter?: string; paperMm?: number; startWithWindows?: boolean }
 interface EmbDesktop {
   print: (o?: { kind?: "bill" | "kot"; copies?: number; heightMm?: number; widthMm?: number }) => Promise<{ ok: boolean; error: string | null }>;
   printRaw?: (o: { kind: "bill" | "kot"; data: string }) => Promise<{ ok: boolean; error: string | null }>;

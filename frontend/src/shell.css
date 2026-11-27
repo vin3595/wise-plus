@@ -413,3 +413,5 @@ tr.cancelled td .small { text-decoration: none; }
 .wa-tick.wa-read { color: #0ea5e9; }
 .wa-tick.wa-failed { color: var(--berry, #be123c); }
 .wa-warn { margin: 0.3rem 0; font-size: 0.85rem; color: var(--berry, #be123c); font-weight: 600; }
+.side-ver { display: block; font-size: 0.7rem; color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.side-narrow .side-ver { display: none; }

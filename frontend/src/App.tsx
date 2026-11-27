@@ -143,6 +143,8 @@ function Shell({ children }: { children: ReactNode }) {
     return out;
   };
   const appName = branding?.app_name || "Ease My Bill";
+  const [appVer, setAppVer] = useState("");
+  useEffect(() => { window.embDesktop?.version().then(setAppVer).catch(() => {}); }, []);
   const logo = (size: "sm" | "md") => branding?.logo_url
     ? <img className={`brand-logo ${size}`} src={branding.logo_url} alt="" />
     : <EmbMark size={size === "md" ? 38 : 30} className={size} />;
@@ -165,7 +167,7 @@ function Shell({ children }: { children: ReactNode }) {
       <div className="shell-body">
         {visible.length > 1 && (
           <aside className="side" aria-label="Menu">
-            <div className="side-brand">{logo("md")}<span className="side-label"><strong>{appName}</strong></span></div>
+            <div className="side-brand">{logo("md")}<span className="side-label"><strong>{appName}</strong><span className="side-ver">v{__EMB_BUILD__}{appVer ? ` · App ${appVer}` : ""}</span></span></div>
             <nav className="side-nav">
               {groups(daily, visible.length > 4)}
               {setupEntries.length > 0 && (
