@@ -798,6 +798,7 @@ class BillOut(BillPreviewOut):
     cancelled_at: datetime | None = None
     outlet: dict = {}                   # name, address, gstin, fssai, phone, footer for the printed bill
     upi_link: str | None = None
+    pay_qr: str | None = None              # e-bill: UPI QR for a cash bill (paying it turns the bill to UPI)
     revision: int = 1                   # >1: corrected after issue (printed as "Revised")
     edited_at: datetime | None = None
     locked: bool = False                # in a period closed for GST; can't be corrected

@@ -1175,3 +1175,4 @@ button.held-main { cursor: pointer; }
 @media (min-width: 981px) { .shell .pos.pp .pos-cart > .bill-nums { margin-top: 0.55rem; } }
 .r-payqr { margin-top: 2mm; }
 .r-payqr img, .r-payqr svg, .r-payqr canvas { display: block; margin: 1.5mm auto; }
+.ebill-btn { min-height: 3.3rem; white-space: nowrap; }

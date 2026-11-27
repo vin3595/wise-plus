@@ -71,7 +71,7 @@ const ICONS: Record<string, LucideIcon> = {
 };
 
 function Shell({ children }: { children: ReactNode }) {
-  const { branding, me, can, has, signOut, deviceOutletId } = useSession();
+  const { branding, me, can, has, signOut, deviceOutletId, loginId } = useSession();
   const loc = useLocation();
   // One menu entry per job. An entry with several pages opens on the first one you may use, and the
   // others show as tabs along the top of the page, so the menu stays short.
@@ -167,7 +167,7 @@ function Shell({ children }: { children: ReactNode }) {
       <div className="shell-body">
         {visible.length > 1 && (
           <aside className="side" aria-label="Menu">
-            <div className="side-brand">{logo("md")}<span className="side-label"><strong>{appName}</strong><span className="side-ver">v{__EMB_BUILD__}{appVer ? ` · App ${appVer}` : ""}</span></span></div>
+            <div className="side-brand">{logo("md")}<span className="side-label"><strong>{appName}</strong>{loginId && <span className="side-ver">Restaurant ID: <b>{loginId}</b></span>}<span className="side-ver">v{__EMB_BUILD__}{appVer ? ` · App ${appVer}` : ""}</span></span></div>
             <nav className="side-nav">
               {groups(daily, visible.length > 4)}
               {setupEntries.length > 0 && (

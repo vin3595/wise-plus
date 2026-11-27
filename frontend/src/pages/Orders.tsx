@@ -316,7 +316,7 @@ export default function Orders() {
           customer: { name: customer || null, phone: declined ? null : phone, declined },
           payments: pv.total_paise - (pv.prepaid_paise || 0) > 0 ? [{ mode, amount_paise: pv.total_paise - (pv.prepaid_paise || 0), reference: null }] : [] } });
         resetCart();
-        setPrinting(bill);
+        showBill(bill);
         setRefresh((n) => n + 1);
       } catch (e) {
         resetCart();
@@ -361,7 +361,22 @@ export default function Orders() {
     });
   }
   /** The second tap: kitchen slip, bill and print in one go with the payment picked below the total. */
-  function saveAndPrint() {
+  /** eBill & Save: the bill goes to the customer on WhatsApp/SMS and nothing prints. */
+  const ebillOnly = useRef(false);
+  const [ebillNote, setEbillNote] = useState<string | null>(null);
+  const showBill = (b: Bill) => {
+    if (ebillOnly.current) {
+      ebillOnly.current = false;
+      setEbillNote(`Bill ${b.invoice_no} saved. E-bill sent to ${b.customer_phone ? "XXXXXX" + b.customer_phone.slice(-4) : "the customer"}, nothing printed.`);
+    } else { setEbillNote(null); setPrinting(b); }
+  };
+  function ebillAndSave() {
+    if (declined || !/^\d{10}$/.test((phone || "").replace(/\D/g, "").slice(-10))) { setError("Enter the customer's mobile number to send the e-bill"); return; }
+    if (!off.online) { setError("E-bills need the internet. Use Save & Print"); return; }
+    saveAndPrint(true);
+  }
+  function saveAndPrint(ebill = false) {
+    ebillOnly.current = ebill;
     if (otpPending) { setError("Check the customer first: Send OTP on the offer item and enter the code they got"); return; }
     if (!cart.length || busy) return;
     if (prepaid > 0) return settle(payMode);   // part (or all) paid online already: just the rest
@@ -373,13 +388,14 @@ export default function Orders() {
   keys.current = { saveAndPrint, kot: () => { if (cart.length && !busy && off.online) send(false); } };
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
-      if (e.key === "F2" || (e.key === "Enter" && (e.ctrlKey || e.metaKey))) { e.preventDefault(); keys.current.saveAndPrint(); }
+      if (e.key === "F2" || (e.key === "Enter" && (e.ctrlKey || e.metaKey))) { e.preventDefault(); keys.current.saveAndPrint(false); }
       else if (e.key === "F4") { e.preventDefault(); keys.current.kot(); }
     };
     window.addEventListener("keydown", k);
     return () => window.removeEventListener("keydown", k);
   }, []);
   const billed = (b: Bill) => { setBilling(null); setPrinting(b); setRefresh((n) => n + 1); };
+  const billedHere = (b: Bill) => { setBilling(null); showBill(b); setRefresh((n) => n + 1); };   // bills started with Save & Print / eBill & Save
 
   const fullTotal = quote ?? subtotal;
   const prepaid = Math.min(fullTotal, cart.reduce((s, l) => s + (l.offer?.prepaid || 0), 0));   // WhatsApp offers paid online
@@ -517,7 +533,7 @@ export default function Orders() {
             <span>{count} item{count === 1 ? "" : "s"} · View bill</span><strong>{formatPaise(total)}</strong>
           </button>
           {canBill && !addingTo && (
-            <button className="cj-save" disabled={busy || !outletId || (payMode === "cash" && given > 0 && given < total)} onClick={saveAndPrint}>
+            <button className="cj-save" disabled={busy || !outletId || (payMode === "cash" && given > 0 && given < total)} onClick={() => saveAndPrint(false)}>
               Save &amp; Print<small>{payMode === "cash" ? "Cash" : payMode === "upi" ? "UPI" : "Card"}</small>
             </button>
           )}
@@ -640,9 +656,15 @@ export default function Orders() {
         <div className="send-row">
           {!off.online && <p className="muted small grow">{canBill ? "No internet: Cash, UPI and Card bills still work. Discounts, split bills and pay-later come back with the internet." : "No internet. Take the order on paper or send it to the billing counter."}</p>}
           {canBill && !addingTo && (
-            <Button className="save-print grow" disabled={busy || cart.length === 0 || !outletId || (payMode === "cash" && given > 0 && given < total)} onClick={saveAndPrint}
+            <Button className="save-print grow" disabled={busy || cart.length === 0 || !outletId || (payMode === "cash" && given > 0 && given < total)} onClick={() => saveAndPrint(false)}
               title="Sends the order to the kitchen, settles the bill and prints it (F2)">
               Save &amp; Print{cart.length > 0 && <span className="sp-amt"> {formatPaise(total)}</span>}
+            </Button>
+          )}
+          {canBill && !addingTo && off.online && (
+            <Button variant="ghost" className="ebill-btn" disabled={busy || cart.length === 0 || !outletId || (payMode === "cash" && given > 0 && given < total)} onClick={ebillAndSave}
+              title="Settles the bill and sends it to the customer's mobile on WhatsApp. Nothing prints (saves paper)">
+              eBill &amp; Save
             </Button>
           )}
           {!addingTo && <Button variant="ghost" className="hold-btn" disabled={cart.length === 0} onClick={holdCart}
@@ -658,6 +680,7 @@ export default function Orders() {
         {offlineDone && cart.length === 0 && (
           <div className="sent">Bill <strong>{offlineDone.invoice_no}</strong>, token <strong>#{offlineDone.token_no}</strong> printed with its kitchen slips. Hand the slips to the kitchen.</div>
         )}
+        {ebillNote && cart.length === 0 && <div className="sent">{ebillNote}</div>}
         {sent && (
           <div className="sent">
             {sent.merged_into_existing ? <>Added to table {sent.table_label}'s open order, token <strong>#{sent.token_no}</strong></> :
@@ -674,7 +697,7 @@ export default function Orders() {
       {showHeld && <HeldList held={held} onResume={resumeHeld} onClose={() => setShowHeld(false)}
         onDrop={(h) => { const rest = held.filter((x) => x.id !== h.id); keepHeld(rest); if (!rest.length) setShowHeld(false); }} />}
       {showRecent && outletId && <RecentBills outletId={outletId} q={billQ.trim()} isManager={can("approve")} onClose={() => { setShowRecent(false); setBillQ(""); }} onPrint={(b) => { setShowRecent(false); setBillQ(""); setPrinting(b); }} />}
-      {cardReq && <CardAuto request={cardReq} onBilled={(b) => { setCardReq(null); billed(b); }} onClose={() => { setCardReq(null); setRefresh((n) => n + 1); }}
+      {cardReq && <CardAuto request={cardReq} onBilled={(b) => { setCardReq(null); billedHere(b); }} onClose={() => { setCardReq(null); setRefresh((n) => n + 1); }}
         onRetry={() => { const o = cardReq.order_id; setCardReq(null); cardAutoPay({ id: o } as Order); }} />}
       {pickTerminal && (
         <div className="modal-back" onClick={() => setPickTerminal(null)}>
@@ -688,7 +711,7 @@ export default function Orders() {
           </div>
         </div>
       )}
-      {upiReq && <UpiAuto request={upiReq} onBilled={(b) => { setUpiReq(null); billed(b); }} onClose={() => { setUpiReq(null); setRefresh((n) => n + 1); }}
+      {upiReq && <UpiAuto request={upiReq} onBilled={(b) => { setUpiReq(null); billedHere(b); }} onClose={() => { setUpiReq(null); setRefresh((n) => n + 1); }}
         onLater={() => { setUpiReq(null); setRefresh((n) => n + 1); }} />}
       {upiAuto.enabled && outletId && can("billing") && <UpiWatcher outletId={outletId} hideId={upiReq?.id} onPrint={(b) => setPrinting(b)} />}
       {offlinePrint && <PrintOffline result={offlinePrint} onDone={() => { setOfflineDone(offlinePrint.bill); setOfflinePrint(null); }} />}

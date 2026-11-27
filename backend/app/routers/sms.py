@@ -113,6 +113,15 @@ def public_bill(key: str):
         if bill is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Bill not found")
         out = bill_out(db, bill)
+        # Pay by UPI from the e-bill: the same QR as the printed bill, made fresh only for a recent bill
+        from .payments import bill_qr
+        recent = bill.created_at and bill.created_at > datetime.now(timezone.utc) - timedelta(hours=2)
+        try:
+            out.pay_qr = bill_qr(db, bill, bill.created_by, make=bool(recent)).get("upi")
+            db.commit()
+        except Exception:   # never keep the customer from their bill
+            db.rollback()
+            out.pay_qr = None
     if out.customer_phone:
         out.customer_phone = "XXXXXX" + out.customer_phone[-4:]
     out.cashier_name = None

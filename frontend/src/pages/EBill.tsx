@@ -15,7 +15,7 @@ export default function EBill({ shareKey }: { shareKey: string }) {
   if (!bill) return <div className="splash">Opening your bill…</div>;
   return (
     <div className="ebill">
-      <div className="ebill-paper"><Receipt bill={bill} /></div>
+      <div className="ebill-paper"><Receipt bill={bill} payQr={bill.pay_qr || null} /></div>
       <button className="btn btn-ghost ebill-print" onClick={() => window.print()}>Save as PDF / print</button>
     </div>
   );

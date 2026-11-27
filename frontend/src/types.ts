@@ -374,6 +374,7 @@ export interface BillPreview {
 }
 
 export interface Bill extends BillPreview {
+  pay_qr?: string | null;
   training?: boolean;
   wa?: "queued" | "sent" | "delivered" | "read" | "failed" | null;   // the bill on WhatsApp
   wa_why?: string | null;

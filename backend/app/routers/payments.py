@@ -517,24 +517,31 @@ def check_bill_qrs(db: Session, cfg: PaymentSettings, outlet_id: uuid.UUID, limi
 @router.post("/bills/{bill_id}/pay-qr")
 def bill_pay_qr(bill_id: uuid.UUID, auth: Auth = Depends(require(Perm.billing)), db: Session = Depends(get_db)) -> dict:
     """The UPI QR to print on a cash bill (made once per bill). When it's paid, the bill turns to UPI by itself."""
-    cfg = db.get(PaymentSettings, auth.tenant_id)
-    if cfg is None or not (cfg.enabled and cfg.qr_on_bill and cfg.provider in ("razorpay", "paytm")):
-        return {"upi": None}
     bill = get_or_404(db, Bill, bill_id, "Bill")
     ensure_outlet_access(db, auth, bill.outlet_id)
+    return bill_qr(db, bill, auth.user_id)
+
+
+def bill_qr(db: Session, bill: Bill, user_id: uuid.UUID | None, make: bool = True) -> dict:
+    """The bill's own UPI QR (cash-only bills, when 'QR on every bill' is on). make=False only finds a live one."""
+    cfg = db.get(PaymentSettings, bill.tenant_id)
+    if cfg is None or not (cfg.enabled and cfg.qr_on_bill and cfg.provider in ("razorpay", "paytm")):
+        return {"upi": None}
     from ..services.training import is_training
     pays = list(db.scalars(select(Payment).where(Payment.bill_id == bill.id)))
     if bill.status != "paid" or bill.total_paise <= 0 or [p.mode for p in pays] != ["cash"] or is_training(db, bill.outlet_id):
         return {"upi": None}
     have = db.scalar(select(UpiRequest).where(UpiRequest.bill_id == bill.id, UpiRequest.status == "waiting",
                                               UpiRequest.amount_paise == bill.total_paise))
-    if have and have.upi_string:
+    if have and have.upi_string and (have.expires_at is None or have.expires_at > _now()):
         return {"upi": have.upi_string, "expires_at": have.expires_at.isoformat()}
+    if not make:
+        return {"upi": None}
     order = db.get(Order, bill.order_id)
     outlet = db.get(Outlet, bill.outlet_id)
-    req = UpiRequest(tenant_id=auth.tenant_id, outlet_id=bill.outlet_id, order_id=bill.order_id, amount_paise=bill.total_paise,
+    req = UpiRequest(tenant_id=bill.tenant_id, outlet_id=bill.outlet_id, order_id=bill.order_id, amount_paise=bill.total_paise,
                      provider=cfg.provider, bill_id=bill.id, bill_body={"on_bill": True, "invoice_no": bill.invoice_no},
-                     created_by=auth.user_id, expires_at=_now() + timedelta(
+                     created_by=user_id, expires_at=_now() + timedelta(
                          # Paytm's QR lives as long as Paytm allows on the account (10 minutes unless raised)
                          minutes=BILL_QR_MINUTES if cfg.provider == "razorpay" else (cfg.qr_minutes or QR_MINUTES)))
     db.add(req)
