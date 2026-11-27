@@ -167,7 +167,7 @@ function Shell({ children }: { children: ReactNode }) {
       <div className="shell-body">
         {visible.length > 1 && (
           <aside className="side" aria-label="Menu">
-            <div className="side-brand">{logo("md")}<span className="side-label"><strong>{appName}</strong>{loginId && <span className="side-ver">Restaurant ID: <b>{loginId}</b></span>}<span className="side-ver">v{__EMB_BUILD__}{appVer ? ` · App ${appVer}` : ""}</span></span></div>
+            <div className="side-brand">{logo("md")}<span className="side-label"><strong>{appName}</strong>{(me?.tenant.login_id || loginId) && <span className="side-ver">Restaurant ID: <b>{me?.tenant.login_id || loginId}</b></span>}<span className="side-ver">v{__EMB_BUILD__}{appVer ? ` · App ${appVer}` : ""}</span></span></div>
             <nav className="side-nav">
               {groups(daily, visible.length > 4)}
               {setupEntries.length > 0 && (
