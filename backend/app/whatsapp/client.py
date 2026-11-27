@@ -446,7 +446,13 @@ def get_media(media_id: str) -> tuple[bytes, str]:
     """A photo or PDF someone sent us: (bytes, mime type). Meta gives a short-lived URL that needs the token.
     Through Fast2SMS the 'id' is 'url:' + their download link."""
     if media_id.startswith("url:https://"):
-        r = httpx.get(media_id[4:], timeout=60, follow_redirects=True)
+        # Fast2SMS sends the webhook a moment before the file is on their server: wait for it (404 → try again)
+        import time
+        for wait in (0, 2, 3, 5, 8, 12):
+            time.sleep(wait)
+            r = httpx.get(media_id[4:], timeout=60, follow_redirects=True)
+            if r.status_code not in (403, 404):
+                break
         r.raise_for_status()
         if len(r.content) > 16 * 1024 * 1024:
             raise ValueError("file too large")
