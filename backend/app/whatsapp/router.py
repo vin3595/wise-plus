@@ -288,6 +288,7 @@ DISCARD = {"discard", "cancel", "no", "delete", "nahi", "skip"}
 def reply_rich(phone: str, text: str) -> Reply | None:
     """What to answer, with the taps that follow; None = stay silent (a number that isn't an owner or manager)."""
     from ..assistant.answers import answer_rich
+    text = client.typed_option(phone, text) or text      # "1" / "Discard" after numbered choices
     chosen, text, multi, early = _place(phone, text)
     if chosen is None:
         return early

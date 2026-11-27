@@ -6,6 +6,9 @@ import contextvars
 import logging
 import re
 
+import os
+import json
+import time
 import httpx
 
 from ..config import get_settings
@@ -298,6 +301,8 @@ def _send(payload: dict, _fallback: bool = False) -> dict:
         if payload.get("type") == "template":
             return _post_f2s(payload, _fallback)
         text = _as_text(payload)
+        if payload.get("type") == "interactive":
+            remember_options(str(payload.get("to", "")), payload.get("interactive") or {})
         if text:
             try:                          # inside the 24-hour window: a normal chat message (service rate, often free)
                 return _post_f2s_session(payload, text)
@@ -320,11 +325,50 @@ def _as_text(payload: dict) -> str:
         it = payload.get("interactive") or {}
         act = it.get("action") or {}
         opts = [b["reply"]["title"] for b in act.get("buttons", [])] + [r["title"] for s in act.get("sections", []) for r in s.get("rows", [])]
-        return ((it.get("body") or {}).get("text", "") + (" · Reply: " + " / ".join(opts) if opts else ""))
+        if not opts:
+            return (it.get("body") or {}).get("text", "")
+        # No real buttons through Fast2SMS: numbered choices, and a reply of the number (or the words) taps it
+        return (it.get("body") or {}).get("text", "") + "\n\n" + "\n".join(f"*{i}* - {o}" for i, o in enumerate(opts, 1)) + "\n_Reply with the number_"
     if k in ("image", "document"):
         m = payload.get(k) or {}
         return " ".join(x for x in (m.get("caption"), m.get("link")) if x)
     return ""
+
+
+# ---------------------------------------------------------------- typed replies to numbered choices (Fast2SMS)
+def _opts_file(to: str) -> str:
+    d = os.path.join(get_settings().upload_dir, "wa_options")
+    os.makedirs(d, exist_ok=True)
+    return os.path.join(d, f"{last10(to)}.json")
+
+
+def remember_options(to: str, it: dict) -> None:
+    act = it.get("action") or {}
+    opts = [(b["reply"]["id"], b["reply"]["title"]) for b in act.get("buttons", [])] + \
+           [(r["id"], r["title"]) for sec in act.get("sections", []) for r in sec.get("rows", [])]
+    try:
+        with open(_opts_file(to), "w") as f:
+            json.dump({"at": time.time(), "opts": opts}, f)
+    except OSError:
+        pass
+
+
+def typed_option(frm: str, text: str) -> str | None:
+    """'1' or 'Add & save' after numbered choices → that choice's command (for 30 minutes)."""
+    t = (text or "").strip().lower().strip(".!*")
+    if not t or len(t) > 40:
+        return None
+    try:
+        with open(_opts_file(frm)) as f:
+            got = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if time.time() - float(got.get("at") or 0) > 1800:
+        return None
+    opts = got.get("opts") or []
+    if t.isdigit() and 1 <= int(t) <= len(opts):
+        return opts[int(t) - 1][0]
+    return next((cmd for cmd, label in opts if label.strip().lower() == t), None)
 
 
 def _own_number() -> bool:
