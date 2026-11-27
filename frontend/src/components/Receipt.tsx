@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api } from "../api";
-import { canPrintRaw, desktop, paintDelay, printNow, printRaw, withPrintLock } from "../desktop";
+import { canPrintRaw, desktop, paintDelay, printNow, printRaw, sharpBills, withPrintLock } from "../desktop";
 import { billBytes, logoBytes } from "../escpos";
 import { formatPaise } from "../money";
 import { QrImage } from "../qr";
@@ -104,7 +104,7 @@ export function PrintBill({ bill, onDone }: { bill: Bill; onDone: () => void }) 
     if (qr === undefined || started.current) return;
     started.current = true;             // print once, however often the screen redraws
     void withPrintLock(async () => {
-      if (canPrintRaw()) {              // Windows app: printer text, sharp, and cut right after the last line
+      if (canPrintRaw() && sharpBills()) {   // Windows app, if turned on: printer text, sharp, and cut right after the last line
         try {
           const paper = Number((await desktop()!.settings().catch(() => ({ paperMm: 80 }))).paperMm) === 58 ? 58 : 80;
           const err = await printRaw("bill", billBytes(bill, qr || null, paper, await logoBytes(bill.outlet.logo_url, paper)));

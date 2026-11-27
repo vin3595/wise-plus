@@ -79,3 +79,7 @@ export async function printRaw(kind: "bill" | "kot", bytes: Uint8Array): Promise
   }
 }
 export const canPrintRaw = () => !!desktop()?.printRaw;
+
+/** Sharp bills (printer text) are opt-in per computer: turn on after a test bill prints fine. */
+export const sharpBills = () => { try { return localStorage.getItem("wise.bill_raw") === "on"; } catch { return false; } };
+export const setSharpBills = (on: boolean) => { try { localStorage.setItem("wise.bill_raw", on ? "on" : "off"); } catch { /* */ } };

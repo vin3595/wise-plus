@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { canPrintRaw, desktop, printNow, printRaw, type DesktopPrinter, type DesktopSettings } from "../desktop";
-import { testBytes } from "../escpos";
+import { canPrintRaw, desktop, printNow, printRaw, setSharpBills, sharpBills, type DesktopPrinter, type DesktopSettings } from "../desktop";
+import { billBytes, testBytes } from "../escpos";
+import type { Bill } from "../types";
 import { kotsHere, setKotsHere } from "../components/KotAutoPrinter";
 import { Button, Card, ErrorText, Field, Select, Toggle } from "../ui";
 
@@ -16,6 +17,7 @@ export default function DevicePrinters() {
   const [error, setError] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
   const [kots, setKots] = useState(kotsHere());
+  const [sharp, setSharp] = useState(sharpBills());
   useEffect(() => {
     if (!d) return;
     d.printers().then(setList).catch(() => undefined);
@@ -50,7 +52,9 @@ export default function DevicePrinters() {
     setTesting(true);
     setError(null);
     await new Promise((r) => setTimeout(r, 300));
-    const err = kind === "kot" && canPrintRaw() ? await printRaw("kot", testBytes()) : await printNow(kind);
+    const err = kind === "kot" && canPrintRaw() ? await printRaw("kot", testBytes())
+      : kind === "bill" && sharp && canPrintRaw() ? await printRaw("bill", billBytes(SAMPLE, "upi://pay?pa=test@upi&pn=Test&am=1", Number(s.paperMm) === 58 ? 58 : 80))
+      : await printNow(kind);
     setTesting(false);
     if (err) setError(`Test didn't print: ${err}`); else setSaved("Test page sent to the printer");
   };
@@ -73,6 +77,8 @@ export default function DevicePrinters() {
         </Select></Field>
         <Toggle checked={kots} onChange={(v) => { setKots(v); setKotsHere(v); }}
           label="Print KOTs on this computer (while the order screen is open). Turn off if another PC or a network printer prints them" />
+        {canPrintRaw() && <Toggle checked={sharp} onChange={(v) => { setSharp(v); setSharpBills(v); }}
+          label="Sharp bills: print bills as printer text, like KOTs (clearer text and QR, cut right after the last line). Print a test bill after turning on" />}
         <Toggle checked={s.startWithWindows !== false} onChange={(v) => save({ ...s, startWithWindows: v })} label="Open Ease My Bill when the computer starts" />
         <div className="row"><Button variant="ghost" disabled={testing} onClick={() => test("bill")}>{testing ? "Printing…" : "Print a test bill"}</Button>
           <Button variant="ghost" disabled={testing} onClick={() => test("kot")}>Print a test KOT</Button>
@@ -89,3 +95,12 @@ export default function DevicePrinters() {
     </div>
   );
 }
+
+const SAMPLE = {
+  outlet: { brand: "Ease My Bill", legal_name: "Ease My Bill", name: "Test print", address: null, phone: null, gstin: null, fssai: null, footer: "If you can read this, sharp bills work.", logo_url: null },
+  training: false, status: "paid", revision: 1, invoice_no: "TEST", created_at: new Date().toISOString(), token_no: 1, order_type: "takeaway",
+  customer_name: null, customer_phone: null, customer_gstin: null, table_label: null, car_number: null, cashier_name: null,
+  lines: [{ item_name: "Test item", variant_name: "Regular", qty: 1, gross_paise: 100, unit_paise: 100, addons_text: null, hsn_sac: null }],
+  gross_paise: 100, discount_paise: 0, taxable_paise: 100, tax_summary: [], round_off_paise: 0, total_paise: 100,
+  payments: [{ mode: "cash", amount_paise: 100 }],
+} as unknown as Bill;
