@@ -3,7 +3,7 @@ import { api } from "../api";
 import { Button } from "../ui";
 
 /** Phone notifications: QR orders, alerts, day close and tonight's summary, even when the app is closed. */
-const supported = () => typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+const supported = () => typeof window !== "undefined" && !(window as { embDesktop?: unknown }).embDesktop && "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 
 function keyBytes(b64: string): Uint8Array {
   const pad = "=".repeat((4 - (b64.length % 4)) % 4);
